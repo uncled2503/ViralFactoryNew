@@ -1,0 +1,6 @@
+{
+  "name": "Viral Factory",
+  "description": "Plataforma SaaS para criação e renderização em massa de vídeos curtos para TikTok, Instagram Reels e YouTube Shorts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
