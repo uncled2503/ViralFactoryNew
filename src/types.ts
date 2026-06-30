@@ -72,12 +72,35 @@ export interface Refund {
   createdAt: string;
 }
 
+export type UserRole = 
+  | 'SUPER_ADMIN' 
+  | 'ADMIN' 
+  | 'SUPPORT' 
+  | 'FINANCE' 
+  | 'MODERATOR' 
+  | 'CLIENT_OWNER' 
+  | 'CLIENT_MEMBER'
+  | 'SaaS_Owner' // backward compatibility
+  | 'Administrador' // backward compatibility
+  | 'Membro'; // backward compatibility
+
+export type Permission = 
+  | 'MANAGE_USERS' 
+  | 'VIEW_METRICS' 
+  | 'MANAGE_PAYMENTS' 
+  | 'MANAGE_TEMPLATES' 
+  | 'MANAGE_SYSTEM' 
+  | 'VIEW_LOGS' 
+  | 'MANAGE_SUPPORT'
+  | 'RENDER_VIDEOS'
+  | 'MANAGE_FILES';
+
 export interface User {
   id: string;
   name: string;
   email: string;
   company?: string;
-  role: 'Administrador' | 'SaaS_Owner' | 'Membro';
+  role: UserRole;
   avatarUrl?: string;
   subscription: PlanTier;
   status: 'active' | 'suspended';
@@ -87,6 +110,25 @@ export interface User {
   templatesUsed: number; // quantidade atual
   projectsActive: number; // quantidade atual
   subscriptionDetails?: UserSubscription;
+}
+
+export interface SystemLog {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warning' | 'error' | 'critical';
+  service: 'ffmpeg-worker' | 'auth-service' | 'billing-engine' | 'storage-handler';
+  message: string;
+  ipAddress?: string;
+}
+
+export interface RenderWorker {
+  id: string;
+  name: string;
+  status: 'online' | 'busy' | 'offline';
+  cpuUsage: number;
+  memoryUsage: number;
+  processedCount: number;
+  region: string;
 }
 
 export type AspectRatio = '9:16' | '16:9' | '1:1';

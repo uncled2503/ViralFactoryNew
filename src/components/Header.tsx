@@ -8,7 +8,7 @@ import { useApp } from '../context/AppContext';
 import { Sparkles, Calendar, HelpCircle, FileSpreadsheet } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { activeTab, user, stats } = useApp();
+  const { activeTab, user, stats, setActiveTab } = useApp();
 
   const getBreadcrumbs = () => {
     switch (activeTab) {
@@ -26,6 +26,8 @@ export const Header: React.FC = () => {
         return { parent: 'Minha Conta', current: 'Planos & Cobrança' };
       case 'admin':
         return { parent: 'Administrador', current: 'Painel do SaaS' };
+      case 'help':
+        return { parent: 'Suporte', current: 'Ajuda & Tutoriais' };
       default:
         return { parent: 'Workspace', current: 'Dashboard' };
     }
@@ -66,8 +68,12 @@ export const Header: React.FC = () => {
 
         {/* Action Button: Quick Document or guide */}
         <button
-          onClick={() => alert('Para configurar novos vídeos, crie um projeto associando a qualquer template e pressione "Solicitar Render".')}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-900/60 transition cursor-pointer"
+          onClick={() => setActiveTab('help')}
+          className={`p-1.5 rounded-lg transition cursor-pointer ${
+            activeTab === 'help'
+              ? 'text-indigo-400 bg-indigo-950/20 border border-indigo-500/20'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900/60'
+          }`}
           title="Ajuda e Tutoriais"
         >
           <HelpCircle className="w-4 h-4" />

@@ -7,18 +7,27 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { AspectRatio, Template } from '../types';
 import { ConfirmModal } from './ConfirmModal';
+import { motion, AnimatePresence } from 'motion/react';
+
+type TemplateLayer = Template['layers'][number];
 import {
   Layers,
   Plus,
   Trash2,
+  Edit3,
   Copy,
-  Edit2,
-  Music,
-  Clock,
+  Play,
   X,
   Sparkles,
   HelpCircle,
-  FileJson
+  Eye,
+  CheckCircle2,
+  Video,
+  Clock,
+  Layout,
+  Music,
+  FileText,
+  Image as ImageIcon
 } from 'lucide-react';
 
 export const TemplatesManager: React.FC = () => {
@@ -26,23 +35,38 @@ export const TemplatesManager: React.FC = () => {
     templates,
     createTemplate,
     updateTemplate,
-    duplicateTemplate,
-    deleteTemplate
+    deleteTemplate,
+    createProject,
+    setActiveTab
   } = useApp();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Project spawning modal from template
+  const [isSpawnModalOpen, setIsSpawnModalOpen] = useState(false);
+  const [selectedTemplateForSpawn, setSelectedTemplateForSpawn] = useState<Template | null>(null);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectDesc, setNewProjectDesc] = useState('');
+
+  // Interactive Live Player Preview State
+  const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
+  const [activePreviewLayerIdx, setActivePreviewLayerIdx] = useState(0);
 
   // Custom Confirm Modal States
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null);
 
-  // Form Fields
+  // Template Form Fields
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [aspect, setAspect] = useState<AspectRatio>('9:16');
   const [defaultDuration, setDefaultDuration] = useState(30);
-  const [bgMusicUrl, setBgMusicUrl] = useState('/assets/audio/ambient_satisfying.mp3');
+  const [category, setCategory] = useState('Geral');
+  
+  // Layers State
+  const [layers, setLayers] = useState<TemplateLayer[]>([]);
 
   const openCreateModal = () => {
     setEditingTemplate(null);
@@ -50,7 +74,12 @@ export const TemplatesManager: React.FC = () => {
     setDescription('');
     setAspect('9:16');
     setDefaultDuration(30);
-    setBgMusicUrl('/assets/audio/ambient_satisfying.mp3');
+    setCategory('Social Media');
+    setLayers([
+      { id: `lyr-${Date.now()}-1`, type: 'text', name: 'Título Principal (Header)', defaultValue: 'Texto Exemplo' },
+      { id: `lyr-${Date.now()}-2`, type: 'image', name: 'Gameplay de Fundo (.mp4)', defaultValue: 'gta_gameplay.mp4' },
+      { id: `lyr-${Date.now()}-3`, type: 'audio', name: 'Música de Fundo (.mp3)', defaultValue: 'lofi_ambient.mp3' }
+    ]);
     setIsModalOpen(true);
   };
 
@@ -60,15 +89,33 @@ export const TemplatesManager: React.FC = () => {
     setDescription(template.description);
     setAspect(template.aspect);
     setDefaultDuration(template.defaultDuration);
-    setBgMusicUrl(template.bgMusicUrl || '');
+    // Custom category mappings
+    if (template.id === 'tpl-reddit-stories') setCategory('Entretenimento');
+    else if (template.id === 'tpl-motivational') setCategory('Desenvolvimento Pessoal');
+    else if (template.id === 'tpl-saas-showcase') setCategory('SaaS Showcase');
+    else if (template.id === 'tpl-ecom-quick') setCategory('E-commerce');
+    else setCategory('Geral');
+
+    setLayers([...template.layers]);
     setIsModalOpen(true);
+  };
+
+  const handleDuplicate = (template: Template) => {
+    const duplicatedName = `${template.name} (Cópia)`;
+    const newTpl = createTemplate(duplicatedName, template.description, template.aspect, template.defaultDuration);
+    if (newTpl) {
+      const updated: Template = {
+        ...newTpl,
+        scenesCount: template.scenesCount,
+        layers: template.layers.map(l => ({ ...l, id: `lyr-${Math.random().toString(36).substr(2, 9)}` }))
+      };
+      updateTemplate(updated);
+    }
   };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) {
-      return;
-    }
+    if (!name) return;
 
     if (editingTemplate) {
       const updated: Template = {
@@ -77,235 +124,496 @@ export const TemplatesManager: React.FC = () => {
         description,
         aspect,
         defaultDuration,
-        bgMusicUrl
+        layers
       };
       updateTemplate(updated);
     } else {
-      createTemplate(name, description, aspect, defaultDuration);
+      const newTpl = createTemplate(name, description, aspect, defaultDuration);
+      if (newTpl) {
+        const updated: Template = {
+          ...newTpl,
+          layers
+        };
+        updateTemplate(updated);
+      }
     }
-
     setIsModalOpen(false);
   };
 
+  const handleSpawnProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTemplateForSpawn || !newProjectName) return;
+
+    createProject(
+      newProjectName,
+      newProjectDesc || `Projeto automatizado gerado a partir do template ${selectedTemplateForSpawn.name}`,
+      selectedTemplateForSpawn.id,
+      selectedTemplateForSpawn.aspect,
+      {
+        title: newProjectName,
+        subtitles: selectedTemplateForSpawn.layers
+          .filter(l => l.type === 'text')
+          .map(l => l.defaultValue),
+        brandColor: '#6366f1',
+        fontName: 'Inter Bold'
+      }
+    );
+
+    // Trigger update
+    updateTemplate(selectedTemplateForSpawn);
+
+    setIsSpawnModalOpen(false);
+    setSelectedTemplateForSpawn(null);
+    setNewProjectName('');
+    setNewProjectDesc('');
+    setActiveTab('projects'); // Smooth redirect!
+  };
+
+  const handleAddLayer = () => {
+    const newLyr: TemplateLayer = {
+      id: `lyr-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      type: 'text',
+      name: 'Nova Camada de Texto',
+      defaultValue: 'Subtexto dinâmico'
+    };
+    setLayers([...layers, newLyr]);
+  };
+
+  const handleRemoveLayer = (id: string) => {
+    setLayers(layers.filter(l => l.id !== id));
+  };
+
+  const handleLayerFieldChange = (id: string, field: keyof TemplateLayer, value: any) => {
+    setLayers(layers.map(l => l.id === id ? { ...l, [field]: value } : l));
+  };
+
+  const getLayerIcon = (type: TemplateLayer['type']) => {
+    switch (type) {
+      case 'text': return <FileText className="w-3.5 h-3.5 text-indigo-400" />;
+      case 'image': return <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />;
+      case 'audio': return <Music className="w-3.5 h-3.5 text-blue-400" />;
+      default: return <Layers className="w-3.5 h-3.5 text-gray-400" />;
+    }
+  };
+
+  const getTemplateCategory = (tpl: Template) => {
+    if (tpl.id === 'tpl-reddit-stories') return 'Entretenimento';
+    if (tpl.id === 'tpl-motivational') return 'Desenvolvimento Pessoal';
+    if (tpl.id === 'tpl-saas-showcase') return 'SaaS Showcase';
+    if (tpl.id === 'tpl-ecom-quick') return 'E-commerce';
+    return 'Geral';
+  };
+
+  const getMockTemplatePreviewThumbnail = (tplId: string) => {
+    switch (tplId) {
+      case 'tpl-reddit-stories':
+        return (
+          <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-indigo-950/20 to-slate-950 flex flex-col items-center justify-center p-4">
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 max-w-[85%] space-y-1.5 shadow-lg">
+              <span className="text-[8px] font-bold text-red-400 flex items-center gap-1">r/AskReddit 💬</span>
+              <p className="text-[10px] font-bold text-gray-200 leading-tight">Qual o maior mistério que você descobriu na internet?</p>
+            </div>
+            <div className="mt-4 bg-gray-950/80 rounded-lg py-1 px-3 border border-gray-900 text-[8px] font-mono text-indigo-400 animate-pulse">
+              Legenda viva sincronizada...
+            </div>
+          </div>
+        );
+      case 'tpl-motivational':
+        return (
+          <div className="absolute inset-0 bg-gradient-to-b from-gray-950 via-purple-950/10 to-gray-950 flex flex-col items-center justify-center p-4">
+            <div className="text-center space-y-2">
+              <p className="text-xs font-serif font-bold text-gray-100 tracking-wider">"A dor é temporária. O orgulho é para sempre."</p>
+              <span className="text-[8px] font-mono uppercase text-purple-400 block tracking-widest">— Provérbio Espartano</span>
+            </div>
+          </div>
+        );
+      case 'tpl-saas-showcase':
+        return (
+          <div className="absolute inset-0 bg-gradient-to-r from-gray-950 via-slate-900 to-gray-950 flex flex-col items-center justify-center p-4">
+            <div className="w-[80%] aspect-video bg-gray-950 border border-gray-900 rounded-lg p-2 flex flex-col justify-between">
+              <div className="flex gap-1.5 border-b border-gray-900 pb-1 items-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+              </div>
+              <div className="bg-indigo-950/20 rounded h-8 border border-indigo-500/10 flex items-center justify-center">
+                <span className="text-[7px] text-indigo-400 font-mono">saas-dashboard-mock.png</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'tpl-ecom-quick':
+        return (
+          <div className="absolute inset-0 bg-gradient-to-tr from-pink-950/30 via-slate-950 to-slate-950 flex flex-col items-center justify-center p-4">
+            <div className="text-center space-y-1">
+              <span className="bg-pink-600 text-white font-extrabold text-[8px] py-0.5 px-2 rounded-full">OFERTA IMPERDÍVEL</span>
+              <h4 className="text-[10px] font-extrabold text-white">Fone de Ouvido Noise Cancel 300</h4>
+              <p className="text-emerald-400 font-mono text-[10px] font-bold">Apenas R$ 199,90</p>
+            </div>
+          </div>
+        );
+      default:
+        return (
+          <div className="absolute inset-0 bg-gray-900/10 flex items-center justify-center">
+            <Layout className="w-8 h-8 text-gray-800" />
+          </div>
+        );
+    }
+  };
+
+  const filteredTemplates = templates.filter(t => 
+    t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.description.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.05 }
+    }
+  };
+
+  const cardVariants = {
+    hidden: { opacity: 0, scale: 0.95 },
+    show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 100, damping: 15 } }
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Header section with active action */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 pb-12">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-gray-100 tracking-tight flex items-center gap-2">
             <Layers className="w-5 h-5 text-indigo-400" />
-            <span>Templates de Layout</span>
+            <span>Biblioteca de Templates de Vídeo</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Defina estruturas visuais, trilhas sonoras padrões e disposições de camadas para replicação em massa.
+            Gerencie layouts de áudio, voz, gameplays de fundo e legendas automatizadas para replicação massiva.
           </p>
         </div>
 
         <button
           onClick={openCreateModal}
-          className="py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/10 transition flex items-center gap-1.5 cursor-pointer"
+          className="py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/10 transition flex items-center gap-1.5 cursor-pointer self-start md:self-auto"
         >
           <Plus className="w-4 h-4" />
           <span>Criar Template</span>
         </button>
       </div>
 
-      {/* Info Warning */}
-      <div className="p-4 rounded-xl bg-gray-950 border border-gray-900 flex items-start gap-3">
-        <HelpCircle className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
-        <p className="text-xs text-gray-400 leading-relaxed">
-          <strong>Nota de Arquitetura:</strong> O editor visual de timeline de vídeo da segunda etapa será ancorado nessas definições. Atualmente, os templates servem de guia estrutural para a injeção automatizada de legendas e renderização via FFmpeg.
-        </p>
+      {/* Filter and Search Bar */}
+      <div className="flex items-center gap-4 p-4 rounded-xl border border-gray-900 bg-gray-950/30">
+        <div className="relative w-80">
+          <Trash2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 hidden" />
+          <input
+            type="text"
+            placeholder="Pesquisar templates..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full px-4 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-300 outline-none focus:border-indigo-500 transition"
+          />
+        </div>
       </div>
 
-      {/* Templates List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {templates.map((template) => {
-          return (
-            <div
+      {/* Templates Catalog Grid */}
+      <motion.div 
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+      >
+        <AnimatePresence mode="popLayout">
+          {filteredTemplates.map((template) => (
+            <motion.div
               key={template.id}
-              className="glass-panel glass-panel-hover rounded-2xl border border-gray-900 flex flex-col justify-between overflow-hidden"
+              layout
+              variants={cardVariants}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="group relative bg-gray-950 border border-gray-900/60 rounded-2xl overflow-hidden flex flex-col justify-between h-[360px] transition-all duration-300 hover:border-indigo-500/35 hover:shadow-xl hover:shadow-indigo-500/5"
             >
-              {/* Template Content */}
-              <div className="p-5 space-y-4">
-                <div className="flex justify-between items-start gap-2">
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-gray-200 truncate">{template.name}</h3>
-                    <span className="inline-block mt-1 px-2 py-0.5 rounded bg-gray-900 border border-gray-800 text-gray-400 text-[9px] font-mono font-semibold">
-                      Proporção {template.aspect}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1 shrink-0 text-gray-400">
-                    <button
-                      onClick={() => duplicateTemplate(template.id)}
-                      className="p-1.5 rounded-lg hover:bg-gray-900 hover:text-white transition cursor-pointer"
-                      title="Duplicar Template"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
+              {/* Aspect Ratio Badge */}
+              <div className="absolute top-4 left-4 z-10 flex flex-wrap gap-1.5 pointer-events-none">
+                <span className="text-[9px] font-mono font-bold bg-gray-950/90 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-900/30 shadow-sm">
+                  {template.aspect}
+                </span>
+                <span className="text-[9px] font-mono font-bold bg-gray-950/90 text-gray-400 px-2 py-0.5 rounded-full border border-gray-900 shadow-sm">
+                  {getTemplateCategory(template)}
+                </span>
+              </div>
+
+              {/* Layers count badge */}
+              <div className="absolute top-4 right-4 z-10 pointer-events-none">
+                <span className="text-[8px] font-mono font-bold bg-gray-950/95 text-pink-400 px-2 py-0.5 rounded-full border border-pink-900/20">
+                  {template.layers.length} CAMADAS
+                </span>
+              </div>
+
+              {/* Custom realistic visual thumbnail background representing design layout */}
+              <div className="h-48 bg-gray-900/30 border-b border-gray-900/60 relative overflow-hidden flex items-center justify-center">
+                {getMockTemplatePreviewThumbnail(template.id)}
+
+                {/* Hover Quick Action Buttons */}
+                <div className="absolute inset-0 bg-gray-950/85 backdrop-blur-xs flex flex-col items-center justify-center gap-3.5 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => openEditModal(template)}
-                      className="p-1.5 rounded-lg hover:bg-gray-900 hover:text-white transition cursor-pointer"
-                      title="Editar Propriedades"
+                      className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-xs font-bold flex items-center gap-1 shadow-md shadow-indigo-600/20 cursor-pointer"
+                      title="Editar Layout"
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
+                      <Edit3 className="w-4 h-4" />
+                      <span>Editar</span>
                     </button>
+
+                    <button
+                      onClick={() => handleDuplicate(template)}
+                      className="p-2 rounded-xl bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 hover:text-white transition-all text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      title="Duplicar Template"
+                    >
+                      <Copy className="w-4 h-4" />
+                      <span>Duplicar</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setPreviewTemplate(template);
+                        setActivePreviewLayerIdx(0);
+                      }}
+                      className="p-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 hover:text-white transition-all text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Ver Preview</span>
+                    </button>
+
                     <button
                       onClick={() => {
                         setTemplateToDelete(template);
                         setIsConfirmOpen(true);
                       }}
-                      className="p-1.5 rounded-lg hover:bg-red-950/20 hover:text-red-400 transition cursor-pointer"
-                      title="Deletar Template"
+                      className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-950/20 transition cursor-pointer"
+                      title="Excluir"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
-
-                <p className="text-[11px] text-gray-500 line-clamp-2 leading-relaxed h-[34px]">
-                  {template.description}
-                </p>
-
-                {/* Sub Metadata rows */}
-                <div className="pt-3 border-t border-gray-900/60 grid grid-cols-2 gap-3 text-[10px] font-mono text-gray-400">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-gray-600 shrink-0" />
-                    <span>Duração: {template.defaultDuration}s</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Music className="w-3.5 h-3.5 text-gray-600 shrink-0" />
-                    <span className="truncate" title={template.bgMusicUrl || 'Sem áudio padrão'}>
-                      Áudio: {template.bgMusicUrl?.split('/').pop() || 'Sem música'}
-                    </span>
-                  </div>
-                </div>
               </div>
 
-              {/* Layers breakdown representation */}
-              <div className="px-5 py-3 bg-gray-950/60 border-t border-gray-900/40 flex items-center justify-between text-[10px] font-mono text-gray-500">
-                <span className="flex items-center gap-1">
-                  <FileJson className="w-3.5 h-3.5 text-gray-700" />
-                  <span>Estrutura de JSON</span>
-                </span>
-                <span>{template.layers.length} camadas mapeadas</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Modal: Create or Edit Template */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            {/* Modal Header */}
-            <div className="p-6 border-b border-gray-900/80 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-lg bg-indigo-950/60 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-gray-100">
-                    {editingTemplate ? 'Propriedades do Template' : 'Criar Template de Vídeo'}
+              {/* Card Metadata & Layer Chips Preview */}
+              <div className="p-4 space-y-2 bg-gray-950 flex-1 flex flex-col justify-between">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold text-gray-200 truncate group-hover:text-indigo-400 transition-colors">
+                    {template.name}
                   </h3>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Parâmetros padrões para replicação automatizada.</p>
+                  <p className="text-[10px] text-gray-500 line-clamp-1 leading-relaxed">
+                    {template.description}
+                  </p>
+
+                  {/* Micro list of dynamic preview layers */}
+                  <div className="flex flex-wrap gap-1.5 pt-1.5">
+                    {template.layers.map((lyr, idx) => (
+                      <span
+                        key={lyr.id}
+                        className="inline-flex items-center gap-1 text-[8px] font-mono bg-gray-900 px-1.5 py-0.5 rounded border border-gray-850/60 text-gray-400"
+                        title={lyr.name}
+                      >
+                        {getLayerIcon(lyr.type)}
+                        <span>{lyr.name.length > 10 ? lyr.name.substring(0, 10) + '..' : lyr.name}</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
+
+                {/* Bottom Trigger: Spawns video immediately */}
+                <div className="pt-3 border-t border-gray-900/60 flex items-center justify-between">
+                  <span className="text-[9px] text-gray-500 font-mono flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-gray-500" /> {template.defaultDuration}s padrão
+                  </span>
+                  
+                  <button
+                    onClick={() => {
+                      setSelectedTemplateForSpawn(template);
+                      setNewProjectName(`Campanha ${template.name}`);
+                      setIsSpawnModalOpen(true);
+                    }}
+                    className="py-1 px-2.5 bg-indigo-600/10 hover:bg-indigo-600 hover:text-white border border-indigo-500/20 hover:border-indigo-500 text-indigo-400 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Usar Template</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Modal: Live Player Preview of Template */}
+      {previewTemplate && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-gray-950 border border-gray-850 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="p-5 border-b border-gray-900/80 flex items-center justify-between">
+              <div>
+                <span className="text-[9px] font-mono text-indigo-400 font-bold uppercase tracking-wider">Live Frame Preview</span>
+                <h3 className="text-xs font-bold text-gray-200 mt-0.5">{previewTemplate.name}</h3>
               </div>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => setPreviewTemplate(null)}
                 className="p-1.5 text-gray-400 hover:text-gray-200 transition rounded-lg hover:bg-gray-900 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <form onSubmit={handleSave} className="p-6 space-y-4">
-              {/* Template Name */}
+            {/* Simulated Live Mobile View Device Player Frame */}
+            <div className="p-6 bg-gray-900/30 flex items-center justify-center">
+              <div 
+                className="relative bg-black rounded-3xl border-4 border-gray-800 shadow-2xl overflow-hidden"
+                style={{
+                  width: previewTemplate.aspect === '9:16' ? '220px' : previewTemplate.aspect === '1:1' ? '220px' : '340px',
+                  height: previewTemplate.aspect === '9:16' ? '380px' : '220px',
+                }}
+              >
+                {/* Visual Content based on active layer */}
+                <div className="absolute inset-0 flex flex-col justify-between p-4 bg-gradient-to-b from-black/40 via-transparent to-black/80">
+                  <div className="w-full flex justify-between items-center text-[8px] font-mono text-gray-500">
+                    <span>{previewTemplate.aspect} Playback</span>
+                    <span className="animate-pulse text-red-500 font-bold">● LIVE REC</span>
+                  </div>
+
+                  {/* Active content block */}
+                  <div className="text-center space-y-3">
+                    {previewTemplate.layers[activePreviewLayerIdx]?.type === 'text' && (
+                      <motion.div
+                        key={activePreviewLayerIdx}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-yellow-500 text-black py-1 px-3 rounded font-sans font-black text-xs inline-block uppercase leading-tight shadow-md"
+                      >
+                        {previewTemplate.layers[activePreviewLayerIdx].defaultValue}
+                      </motion.div>
+                    )}
+
+                    {previewTemplate.layers[activePreviewLayerIdx]?.type === 'image' && (
+                      <div className="bg-gray-950 p-2 border border-indigo-500/20 rounded text-[9px] font-mono text-indigo-400 flex flex-col items-center gap-1 animate-pulse">
+                        <Video className="w-6 h-6" />
+                        <span>[Render de {previewTemplate.layers[activePreviewLayerIdx].defaultValue}]</span>
+                      </div>
+                    )}
+
+                    {previewTemplate.layers[activePreviewLayerIdx]?.type === 'audio' && (
+                      <div className="bg-gray-950 p-2 border border-blue-500/20 rounded text-[9px] font-mono text-blue-400 flex flex-col items-center gap-1">
+                        <Music className="w-5 h-5 animate-bounce" />
+                        <span>[Audio: {previewTemplate.layers[activePreviewLayerIdx].defaultValue}]</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="w-full space-y-1">
+                    <div className="w-full h-1 bg-gray-900 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-indigo-500 rounded-full" 
+                        style={{ width: `${((activePreviewLayerIdx + 1) / previewTemplate.layers.length) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-[7px] text-gray-500 font-mono text-right block uppercase">
+                      Camada {activePreviewLayerIdx + 1} de {previewTemplate.layers.length} ({previewTemplate.layers[activePreviewLayerIdx]?.name})
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Stepper Controllers */}
+            <div className="p-5 border-t border-gray-900 flex items-center justify-between bg-gray-950">
+              <button
+                disabled={activePreviewLayerIdx === 0}
+                onClick={() => setActivePreviewLayerIdx(prev => prev - 1)}
+                className="px-3 py-1.5 text-[10px] text-gray-400 bg-gray-900 rounded-md border border-gray-850 hover:bg-gray-800 disabled:opacity-40 cursor-pointer"
+              >
+                Camada Anterior
+              </button>
+              
+              <button
+                disabled={activePreviewLayerIdx === previewTemplate.layers.length - 1}
+                onClick={() => setActivePreviewLayerIdx(prev => prev + 1)}
+                className="px-3 py-1.5 text-[10px] text-gray-100 bg-indigo-600 rounded-md hover:bg-indigo-500 disabled:opacity-40 cursor-pointer"
+              >
+                Próxima Camada
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Spawn Project from Template */}
+      {isSpawnModalOpen && selectedTemplateForSpawn && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-950 border border-gray-900 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            {/* Header */}
+            <div className="p-5 border-b border-gray-900/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Video className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-xs font-bold text-gray-100">Alimentar Novo Projeto</h3>
+              </div>
+              <button
+                onClick={() => { setIsSpawnModalOpen(false); setSelectedTemplateForSpawn(null); }}
+                className="p-1.5 text-gray-400 hover:text-gray-200 transition rounded-lg hover:bg-gray-900 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSpawnProject} className="p-5 space-y-4">
               <div>
-                <label className="block text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-1.5">Nome do Layout</label>
+                <label className="block text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-1.5">Nome do Projeto</label>
                 <input
                   type="text"
                   required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Reddit Gameplay v2"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="Nomeie seu projeto de escala"
                   className="w-full px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 transition"
                 />
               </div>
 
-              {/* Description */}
               <div>
-                <label className="block text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-1.5">Descrição</label>
-                <textarea
-                  rows={2}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Ex: Fundo dinâmico com gameplay do Minecraft e legendas em caixa amarela centralizada."
-                  className="w-full px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 transition resize-none"
+                <label className="block text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-1.5">Notas do Projeto</label>
+                <input
+                  type="text"
+                  value={newProjectDesc}
+                  onChange={(e) => setNewProjectDesc(e.target.value)}
+                  placeholder="Ex: Campanha de tráfego pago TikTok"
+                  className="w-full px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 transition"
                 />
               </div>
 
-              {/* Aspect Ratio */}
-              <div>
-                <label className="block text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-1.5">Proporção (Aspect Ratio)</label>
-                <select
-                  value={aspect}
-                  onChange={(e) => setAspect(e.target.value as AspectRatio)}
-                  className="w-full px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 transition"
-                >
-                  <option value="9:16">9:16 (TikTok, Reels, Shorts)</option>
-                  <option value="16:9">16:9 (YouTube Landscape)</option>
-                  <option value="1:1">1:1 (Square Posts)</option>
-                </select>
-              </div>
+              {/* Spawning Terms */}
+              <p className="text-[10px] text-gray-500 leading-normal bg-indigo-950/15 border border-indigo-950/30 p-3 rounded-lg flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <span>
+                  Isso irá criar uma instância viva do projeto pré-carregando todas as camadas de design deste template. Você será redirecionado para preencher as headlines finais.
+                </span>
+              </p>
 
-              <div className="grid grid-cols-2 gap-4">
-                {/* Duration */}
-                <div>
-                  <label className="block text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-1.5">Duração Padrão (s)</label>
-                  <input
-                    type="number"
-                    min={5}
-                    max={120}
-                    value={defaultDuration}
-                    onChange={(e) => setDefaultDuration(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 transition"
-                  />
-                </div>
-
-                {/* Music selection */}
-                <div>
-                  <label className="block text-[11px] font-mono text-gray-500 uppercase tracking-wider mb-1.5">Áudio de Fundo Padrão</label>
-                  <select
-                    value={bgMusicUrl}
-                    onChange={(e) => setBgMusicUrl(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 transition"
-                  >
-                    <option value="/assets/audio/ambient_satisfying.mp3">ambient_satisfying.mp3</option>
-                    <option value="/assets/audio/cinematic_motivation.mp3">cinematic_motivation.mp3</option>
-                    <option value="/assets/audio/sleek_corporate.mp3">sleek_corporate.mp3</option>
-                    <option value="/assets/audio/high_energy_hype.mp3">high_energy_hype.mp3</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-4 border-t border-gray-900/80 flex items-center justify-end gap-3.5">
+              {/* Actions */}
+              <div className="pt-3 border-t border-gray-900 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 hover:bg-gray-900 text-gray-400 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  onClick={() => { setIsSpawnModalOpen(false); setSelectedTemplateForSpawn(null); }}
+                  className="px-3 py-1.5 hover:bg-gray-900 text-gray-400 rounded-lg text-xs font-semibold transition cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/10 transition cursor-pointer"
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md shadow-indigo-600/10 transition cursor-pointer"
                 >
-                  {editingTemplate ? 'Salvar Alterações' : 'Criar Template'}
+                  Confirmar e Criar
                 </button>
               </div>
             </form>

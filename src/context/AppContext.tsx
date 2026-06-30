@@ -4,6 +4,8 @@
  */
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { CheckCircle, AlertCircle, Info, X } from 'lucide-react';
 import {
   User,
   Project,
@@ -25,8 +27,16 @@ import {
   INITIAL_RENDERING_TASKS,
   INITIAL_FOLDERS,
 } from '../mockData';
+import { isSupabaseConfigured, supabaseClient } from '../services/dbClient';
+import { UserService } from '../services/UserService';
+import { ProjectService } from '../services/ProjectService';
+import { TemplateService } from '../services/TemplateService';
+import { RenderService } from '../services/RenderService';
+import { SubscriptionService } from '../services/SubscriptionService';
+import { StorageService } from '../services/StorageService';
+import { PaymentService } from '../services/PaymentService';
 
-export type TabName = 'dashboard' | 'projects' | 'templates' | 'renderings' | 'storage' | 'subscription' | 'admin';
+export type TabName = 'dashboard' | 'projects' | 'templates' | 'renderings' | 'storage' | 'subscription' | 'admin' | 'help' | 'profile-settings';
 
 interface LimitExceededInfo {
   type: 'videos' | 'templates' | 'projects' | 'storage';
@@ -34,6 +44,12 @@ interface LimitExceededInfo {
   message: string;
   limitLabel: string;
   currentLabel: string;
+}
+
+export interface ToastInfo {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
 }
 
 interface AppContextType {
@@ -45,15 +61,19 @@ interface AppContextType {
   renderingTasks: RenderingTask[];
   folders: StorageFolder[];
   stats: SystemStats;
+  toasts: ToastInfo[];
+  showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   
   // Auth Functions
-  login: (email: string, name?: string) => Promise<boolean>;
-  register: (name: string, email: string, company: string) => Promise<boolean>;
+  login: (email: string, password?: string) => Promise<boolean>;
+  register: (name: string, email: string, company: string, password?: string) => Promise<boolean>;
+  loginWithGoogle: () => Promise<void>;
   recoverPassword: (email: string) => Promise<string>;
   logout: () => void;
+  updateUser: (updatedUser: User) => Promise<boolean>;
   
   // Projects Functions
-  createProject: (name: string, description: string, templateId: string, aspect: AspectRatio) => Project | null;
+  createProject: (name: string, description: string, templateId: string, aspect: AspectRatio, variables?: any) => Project | null;
   updateProject: (updatedProject: Project) => void;
   deleteProject: (id: string) => void;
   
@@ -247,6 +267,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [limitError, setLimitError] = useState<LimitExceededInfo | null>(null);
+  const [toasts, setToasts] = useState<ToastInfo[]>([]);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
 
   // Initialize/Load user database on mount
   useEffect(() => {
@@ -275,6 +304,78 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loadUserWorkspace(parsedUser);
       }
     }
+
+    // If Supabase is configured, subscribe to auth state changes to keep sessions in sync
+    if (isSupabaseConfigured() && supabaseClient) {
+      const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          const supabaseUser = session.user;
+          let resolvedUser = await UserService.getUser(supabaseUser.id);
+          
+          if (!resolvedUser) {
+            resolvedUser = await UserService.getUserByEmail(supabaseUser.email || '');
+          }
+
+          if (!resolvedUser) {
+            const plan: PlanTier = 'Starter';
+            const userMetadata = supabaseUser.user_metadata || {};
+            const name = userMetadata.full_name || userMetadata.name || supabaseUser.email?.split('@')[0] || 'Usuário Google';
+            const company = userMetadata.company || 'Minha Empresa';
+            
+            resolvedUser = {
+              id: supabaseUser.id,
+              name,
+              email: supabaseUser.email || '',
+              company,
+              role: 'Administrador',
+              avatarUrl: userMetadata.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=256&h=256&fit=crop',
+              subscription: plan,
+              status: 'active',
+              usageCurrent: 0,
+              usageLimit: PLAN_LIMITS_MAP[plan].maxVideosPerMonth,
+              storageUsedMB: 0,
+              templatesUsed: 0,
+              projectsActive: 0,
+              subscriptionDetails: {
+                id: `sub-${Math.random().toString(36).substr(2, 9)}`,
+                userId: supabaseUser.id,
+                tier: plan,
+                status: 'active',
+                billingCycle: 'monthly',
+                price: 49,
+                startDate: new Date().toISOString(),
+                endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+                cancelAtPeriodEnd: false,
+                autoRenew: true
+              }
+            };
+            await UserService.upsertUser(resolvedUser);
+          } else {
+            if (resolvedUser.id !== supabaseUser.id) {
+              resolvedUser.id = supabaseUser.id;
+              await UserService.upsertUser(resolvedUser);
+            }
+          }
+
+          const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
+          const nextUsersList = [resolvedUser, ...savedUsers.filter(u => u.id !== resolvedUser.id)];
+          setAllUsers(nextUsersList);
+          localStorage.setItem('vf_all_users', JSON.stringify(nextUsersList));
+          
+          setUser(resolvedUser);
+          localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
+          await loadUserWorkspace(resolvedUser);
+          setActiveTab('dashboard');
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          localStorage.removeItem('vf_user');
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, []);
 
   // Helper to parse file size string (e.g. "85.4 MB" or "320 KB") into numeric MB
@@ -298,7 +399,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Load and isolate workspace elements specific to a user
-  const loadUserWorkspace = (targetUser: User) => {
+  const loadUserWorkspace = async (targetUser: User) => {
     const userId = targetUser.id;
 
     // 1. Projects
@@ -307,12 +408,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let curProjects: Project[] = [];
     if (savedProjects) {
       curProjects = JSON.parse(savedProjects);
-      setProjects(curProjects);
     } else {
       curProjects = INITIAL_PROJECTS;
-      setProjects(INITIAL_PROJECTS);
       localStorage.setItem(userProjectsKey, JSON.stringify(INITIAL_PROJECTS));
     }
+    setProjects(curProjects);
 
     // 2. Templates
     const userTemplatesKey = `vf_templates_${userId}`;
@@ -320,22 +420,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let curTemplates: Template[] = [];
     if (savedTemplates) {
       curTemplates = JSON.parse(savedTemplates);
-      setTemplates(curTemplates);
     } else {
       curTemplates = INITIAL_TEMPLATES;
-      setTemplates(INITIAL_TEMPLATES);
       localStorage.setItem(userTemplatesKey, JSON.stringify(INITIAL_TEMPLATES));
     }
+    setTemplates(curTemplates);
 
     // 3. Rendering Tasks
     const userTasksKey = `vf_tasks_${userId}`;
     const savedTasks = localStorage.getItem(userTasksKey);
+    let curTasks: RenderingTask[] = [];
     if (savedTasks) {
-      setRenderingTasks(JSON.parse(savedTasks));
+      curTasks = JSON.parse(savedTasks);
     } else {
-      setRenderingTasks(INITIAL_RENDERING_TASKS);
+      curTasks = INITIAL_RENDERING_TASKS;
       localStorage.setItem(userTasksKey, JSON.stringify(INITIAL_RENDERING_TASKS));
     }
+    setRenderingTasks(curTasks);
 
     // 4. Folders
     const userFoldersKey = `vf_folders_${userId}`;
@@ -343,21 +444,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let curFolders: StorageFolder[] = [];
     if (savedFolders) {
       curFolders = JSON.parse(savedFolders);
-      setFolders(curFolders);
     } else {
       curFolders = INITIAL_FOLDERS;
-      setFolders(INITIAL_FOLDERS);
       localStorage.setItem(userFoldersKey, JSON.stringify(INITIAL_FOLDERS));
     }
+    setFolders(curFolders);
 
     // 5. Invoices
     const userInvoicesKey = `vf_invoices_${userId}`;
     const savedInvoices = localStorage.getItem(userInvoicesKey);
+    let curInvoices: Invoice[] = [];
     if (savedInvoices) {
-      setInvoices(JSON.parse(savedInvoices));
+      curInvoices = JSON.parse(savedInvoices);
     } else {
-      // Create a few mock historical invoices for an authentic experience
-      const mockInvoices: Invoice[] = [
+      curInvoices = [
         {
           id: `inv-${Math.random().toString(36).substr(2, 6)}`,
           subscriptionId: targetUser.subscriptionDetails?.id || 'sub-001',
@@ -383,43 +483,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           billingPeriodEnd: new Date().toISOString(),
         }
       ];
-      setInvoices(mockInvoices);
-      localStorage.setItem(userInvoicesKey, JSON.stringify(mockInvoices));
+      localStorage.setItem(userInvoicesKey, JSON.stringify(curInvoices));
     }
+    setInvoices(curInvoices);
 
-    // Calculate dynamic usage metrics based on current loaded state
-    let totalStorageMB = 0;
-    curFolders.forEach(folder => {
-      folder.files.forEach(file => {
-        totalStorageMB += parseSizeToMB(file.size);
+    const computeAndSetStats = (
+      loadedUser: User,
+      loadedProjects: Project[],
+      loadedTemplates: Template[],
+      loadedFolders: StorageFolder[]
+    ) => {
+      let totalStorageMB = 0;
+      loadedFolders.forEach(folder => {
+        folder.files.forEach(file => {
+          totalStorageMB += parseSizeToMB(file.size);
+        });
       });
-    });
 
-    // Update system stats specific to the current plan and isolation of user
-    const limitObj = PLAN_LIMITS_MAP[targetUser.subscription];
-    const limitsConfig = PLAN_LIMITS_MAP[targetUser.subscription];
-    const storageLimitGB = limitsConfig.maxStorageMB / 1024;
-    const currentStorageGB = totalStorageMB / 1024;
+      const limitsConfig = PLAN_LIMITS_MAP[loadedUser.subscription];
+      const isolatedStats: SystemStats = {
+        totalVideosRendered: loadedUser.usageCurrent + 24,
+        totalRenderingMinutes: Math.ceil(loadedUser.usageCurrent * 0.8) + 12,
+        activeTemplates: loadedTemplates.length,
+        activeProjects: loadedProjects.length,
+        storageUsed: `${totalStorageMB.toFixed(1)} MB / ${(limitsConfig.maxStorageMB).toLocaleString('pt-BR')} MB`,
+        renderSuccessRate: 98.8
+      };
+      setStats(isolatedStats);
 
-    const isolatedStats: SystemStats = {
-      totalVideosRendered: targetUser.usageCurrent + 24, // baseline simulation offset
-      totalRenderingMinutes: Math.ceil(targetUser.usageCurrent * 0.8) + 12,
-      activeTemplates: curTemplates.length,
-      activeProjects: curProjects.length,
-      storageUsed: `${totalStorageMB.toFixed(1)} MB / ${(limitsConfig.maxStorageMB).toLocaleString('pt-BR')} MB`,
-      renderSuccessRate: 98.8
+      const updatedUser: User = {
+        ...loadedUser,
+        templatesUsed: loadedTemplates.length,
+        projectsActive: loadedProjects.length,
+        storageUsedMB: parseFloat(totalStorageMB.toFixed(2)),
+      };
+      setUser(updatedUser);
+      localStorage.setItem('vf_user', JSON.stringify(updatedUser));
     };
-    setStats(isolatedStats);
 
-    // Save initial computed limits directly on the session user
-    const updatedUser: User = {
-      ...targetUser,
-      templatesUsed: curTemplates.length,
-      projectsActive: curProjects.length,
-      storageUsedMB: parseFloat(totalStorageMB.toFixed(2)),
-    };
-    setUser(updatedUser);
-    localStorage.setItem('vf_user', JSON.stringify(updatedUser));
+    // First do a fast local load
+    computeAndSetStats(targetUser, curProjects, curTemplates, curFolders);
+
+    // Then, if Supabase is connected, do an async fetch and sync
+    if (isSupabaseConfigured()) {
+      try {
+        const dbUser = await UserService.getUser(userId);
+        if (dbUser) {
+          const dbProjects = await ProjectService.getProjects(userId);
+          const dbTemplates = await TemplateService.getTemplates(userId);
+          const dbTasks = await RenderService.getRenderingTasks(userId);
+          const dbFolders = await StorageService.getFolders(userId);
+          const dbInvoices = await PaymentService.getInvoices(userId);
+
+          const finalProjects = dbProjects && dbProjects.length > 0 ? dbProjects : curProjects;
+          const finalTemplates = dbTemplates && dbTemplates.length > 0 ? dbTemplates : curTemplates;
+          const finalTasks = dbTasks && dbTasks.length > 0 ? dbTasks : curTasks;
+          const finalFolders = dbFolders && dbFolders.length > 0 ? dbFolders : curFolders;
+          const finalInvoices = dbInvoices && dbInvoices.length > 0 ? dbInvoices : curInvoices;
+
+          if (dbProjects && dbProjects.length > 0) setProjects(dbProjects);
+          if (dbTemplates && dbTemplates.length > 0) setTemplates(dbTemplates);
+          if (dbTasks && dbTasks.length > 0) setRenderingTasks(dbTasks);
+          if (dbFolders && dbFolders.length > 0) setFolders(dbFolders);
+          if (dbInvoices && dbInvoices.length > 0) setInvoices(dbInvoices);
+
+          computeAndSetStats(dbUser, finalProjects, finalTemplates, finalFolders);
+        } else {
+          // Sync current local profile to Supabase saas_users table
+          await UserService.upsertUser(targetUser);
+        }
+      } catch (err) {
+        console.warn('Falha na sincronização inicial do Supabase (as tabelas podem não existir ainda):', err);
+      }
+    }
   };
 
   // Limits Validation Middleware Helper
@@ -507,24 +643,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Auth Functions with Multi-Tenant Isolation
-  const login = async (email: string, name?: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
-        let resolvedUser = savedUsers.find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
-        
-        if (!resolvedUser) {
-          // Automatic create on the fly if not found
+  const login = async (email: string, password?: string): Promise<boolean> => {
+    const cleanEmail = email.toLowerCase().trim();
+    if (isSupabaseConfigured() && supabaseClient) {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
+        email: cleanEmail,
+        password: password || '',
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      if (data?.user) {
+        // Load user profile
+        const resolvedUser = await UserService.getUser(data.user.id);
+        if (resolvedUser) {
+          const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
+          const updatedUsersList = [resolvedUser, ...savedUsers.filter(u => u.id !== resolvedUser.id)];
+          setAllUsers(updatedUsersList);
+          localStorage.setItem('vf_all_users', JSON.stringify(updatedUsersList));
+          setUser(resolvedUser);
+          localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
+          await loadUserWorkspace(resolvedUser);
+          setActiveTab('dashboard');
+          return true;
+        } else {
+          // Profile didn't exist? Create profile on the fly!
           const plan: PlanTier = 'Starter';
-          const defaultName = name || email.split('@')[0].replace('.', ' ');
-          const formattedName = defaultName.charAt(0).toUpperCase() + defaultName.slice(1);
-          resolvedUser = {
-            id: `usr-${Math.random().toString(36).substr(2, 9)}`,
-            name: formattedName,
-            email: email.toLowerCase().trim(),
-            company: 'Sua Empresa',
+          const resolvedUser: User = {
+            id: data.user.id,
+            name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
+            email: cleanEmail,
+            company: data.user.user_metadata?.company || 'Minha Empresa',
             role: 'Administrador',
-            avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=256&h=256&fit=crop',
+            avatarUrl: data.user.user_metadata?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=256&h=256&fit=crop',
             subscription: plan,
             status: 'active',
             usageCurrent: 0,
@@ -534,58 +685,157 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             projectsActive: 0,
             subscriptionDetails: {
               id: `sub-${Math.random().toString(36).substr(2, 9)}`,
-              userId: `usr-${Math.random().toString(36).substr(2, 9)}`,
+              userId: data.user.id,
               tier: plan,
               status: 'active',
               billingCycle: 'monthly',
-              price: PLAN_LIMITS_MAP[plan].maxVideosPerMonth === 100 ? 49 : 149,
+              price: 49,
               startDate: new Date().toISOString(),
               endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
               cancelAtPeriodEnd: false,
               autoRenew: true
             }
           };
+          await UserService.upsertUser(resolvedUser);
+          const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
+          const updatedUsersList = [resolvedUser, ...savedUsers.filter(u => u.id !== resolvedUser.id)];
+          setAllUsers(updatedUsersList);
+          localStorage.setItem('vf_all_users', JSON.stringify(updatedUsersList));
+          setUser(resolvedUser);
+          localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
+          await loadUserWorkspace(resolvedUser);
+          setActiveTab('dashboard');
+          return true;
+        }
+      }
+      return false;
+    }
 
-          const nextUsersList = [...savedUsers, resolvedUser];
-          setAllUsers(nextUsersList);
-          localStorage.setItem('vf_all_users', JSON.stringify(nextUsersList));
+    // Local Storage Real Fallback Auth Flow
+    return new Promise((resolve, reject) => {
+      setTimeout(async () => {
+        const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
+        const resolvedUser = savedUsers.find(u => u.email.toLowerCase().trim() === cleanEmail);
+        
+        if (!resolvedUser) {
+          reject(new Error('Este e-mail não está cadastrado. Crie uma conta para continuar.'));
+          return;
         }
 
+        const savedPassword = localStorage.getItem(`vf_pwd_${cleanEmail}`);
+        const isMockUser = MOCK_ADMIN_USERS.some(u => u.email.toLowerCase().trim() === cleanEmail);
+        
+        if (!isMockUser && savedPassword && savedPassword !== password) {
+          reject(new Error('Senha incorreta. Verifique suas credenciais.'));
+          return;
+        }
+
+        // Successfully logged in
         setUser(resolvedUser);
         localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
-        loadUserWorkspace(resolvedUser);
+        await loadUserWorkspace(resolvedUser);
         setActiveTab('dashboard');
         resolve(true);
       }, 500);
     });
   };
 
-  const register = async (name: string, email: string, company: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
-        
-        // Remove existing if any to avoid duplication
-        const filteredUsers = savedUsers.filter(u => u.email.toLowerCase().trim() !== email.toLowerCase().trim());
-
+  const register = async (name: string, email: string, company: string, password?: string): Promise<boolean> => {
+    const cleanEmail = email.toLowerCase().trim();
+    if (isSupabaseConfigured() && supabaseClient) {
+      const { data, error } = await supabaseClient.auth.signUp({
+        email: cleanEmail,
+        password: password || '',
+        options: {
+          data: {
+            name,
+            company,
+          }
+        }
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      if (data?.user) {
+        // Create profile in saas_users table
+        const plan: PlanTier = 'Starter';
         const newUser: User = {
-          id: `usr-${Math.random().toString(36).substr(2, 9)}`,
+          id: data.user.id,
           name,
-          email: email.toLowerCase().trim(),
+          email: cleanEmail,
           company,
           role: 'Administrador',
           avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
-          subscription: 'Starter', // Starts on Starter
+          subscription: plan,
           status: 'active',
           usageCurrent: 0,
-          usageLimit: PLAN_LIMITS_MAP.Starter.maxVideosPerMonth,
+          usageLimit: PLAN_LIMITS_MAP[plan].maxVideosPerMonth,
+          storageUsedMB: 0,
+          templatesUsed: 0,
+          projectsActive: 0,
+          subscriptionDetails: {
+            id: `sub-${Math.random().toString(36).substr(2, 9)}`,
+            userId: data.user.id,
+            tier: plan,
+            status: 'active',
+            billingCycle: 'monthly',
+            price: 49,
+            startDate: new Date().toISOString(),
+            endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            cancelAtPeriodEnd: false,
+            autoRenew: true
+          }
+        };
+        await UserService.upsertUser(newUser);
+        
+        // If they are logged in right away
+        if (data.session) {
+          const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
+          const updatedUsersList = [newUser, ...savedUsers.filter(u => u.id !== newUser.id)];
+          setAllUsers(updatedUsersList);
+          localStorage.setItem('vf_all_users', JSON.stringify(updatedUsersList));
+          setUser(newUser);
+          localStorage.setItem('vf_user', JSON.stringify(newUser));
+          await loadUserWorkspace(newUser);
+          setActiveTab('dashboard');
+        } else {
+          showToast('Conta criada! Verifique seu e-mail para confirmar o cadastro.', 'success');
+        }
+        return true;
+      }
+      return false;
+    }
+
+    // Local Storage Real Fallback Auth Flow
+    return new Promise((resolve, reject) => {
+      setTimeout(async () => {
+        const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
+        const existingUser = savedUsers.find(u => u.email.toLowerCase().trim() === cleanEmail);
+        
+        if (existingUser) {
+          reject(new Error('Este e-mail já está cadastrado. Faça login para continuar.'));
+          return;
+        }
+
+        const plan: PlanTier = 'Starter';
+        const newUser: User = {
+          id: `usr-${Math.random().toString(36).substr(2, 9)}`,
+          name,
+          email: cleanEmail,
+          company,
+          role: 'Administrador',
+          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
+          subscription: plan,
+          status: 'active',
+          usageCurrent: 0,
+          usageLimit: PLAN_LIMITS_MAP[plan].maxVideosPerMonth,
           storageUsedMB: 0,
           templatesUsed: 0,
           projectsActive: 0,
           subscriptionDetails: {
             id: `sub-${Math.random().toString(36).substr(2, 9)}`,
             userId: `usr-${Math.random().toString(36).substr(2, 9)}`,
-            tier: 'Starter',
+            tier: plan,
             status: 'active',
             billingCycle: 'monthly',
             price: 49,
@@ -596,18 +846,185 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         };
 
-        const nextUsersList = [...filteredUsers, newUser];
+        // Save password
+        if (password) {
+          localStorage.setItem(`vf_pwd_${cleanEmail}`, password);
+        }
+
+        const nextUsersList = [...savedUsers, newUser];
         setAllUsers(nextUsersList);
         localStorage.setItem('vf_all_users', JSON.stringify(nextUsersList));
 
         setUser(newUser);
         localStorage.setItem('vf_user', JSON.stringify(newUser));
-        loadUserWorkspace(newUser);
+        await loadUserWorkspace(newUser);
         setActiveTab('dashboard');
         resolve(true);
       }, 500);
     });
   };
+
+  const loginWithGoogle = async (): Promise<void> => {
+    if (isSupabaseConfigured() && supabaseClient) {
+      const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        }
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+    } else {
+      // Simulate OAuth Popup Flow for offline testing so it is beautiful and fully testable!
+      return new Promise<void>((resolve, reject) => {
+        showToast('Iniciando conexão segura com a Conta Google...', 'info');
+        
+        // Open a gorgeous mock popup
+        const width = 500;
+        const height = 600;
+        const left = window.screen.width / 2 - width / 2;
+        const top = window.screen.height / 2 - height / 2;
+        
+        const popup = window.open(
+          '',
+          'google_oauth_popup',
+          `width=${width},height=${height},left=${left},top=${top}`
+        );
+        
+        if (popup) {
+          popup.document.write(`
+            <html>
+              <head>
+                <title>Fazer login com o Google</title>
+                <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+                <style>
+                  body { background-color: #030712; color: #f3f4f6; font-family: ui-sans-serif, system-ui; }
+                </style>
+              </head>
+              <body class="flex flex-col items-center justify-center h-screen px-6 text-center">
+                <div class="mb-6">
+                  <svg class="w-12 h-12 mx-auto text-indigo-500" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                </div>
+                <h2 class="text-sm font-bold mb-1 text-gray-100">Selecionar Conta Google</h2>
+                <p class="text-[11px] text-gray-400 mb-6">para continuar no Viral Factory</p>
+                
+                <div class="w-full space-y-3">
+                  <button id="select-btn" class="w-full p-4 bg-gray-900 hover:bg-gray-850 rounded-xl border border-gray-800 flex items-center gap-3 text-left transition">
+                    <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=64&h=64&fit=crop" class="w-8 h-8 rounded-full border border-indigo-500/30"/>
+                    <div>
+                      <div class="text-xs font-bold text-gray-200">Gabriel Moura</div>
+                      <div class="text-[10px] text-gray-500">mouragabriel2011@gmail.com</div>
+                    </div>
+                  </button>
+                  
+                  <button id="other-btn" class="w-full p-3 bg-gray-950 hover:bg-gray-900 rounded-xl border border-gray-900 text-xs font-semibold text-gray-400 transition">
+                    Usar outra conta
+                  </button>
+                </div>
+                
+                <p class="text-[9px] text-gray-600 mt-8">
+                  Para fins de teste sem chaves de API, este popup simula o comportamento real do Google OAuth. Configure as credenciais no .env para integrar as contas de produção.
+                </p>
+                
+                <script>
+                  document.getElementById('select-btn').addEventListener('click', () => {
+                    window.opener.postMessage({
+                      type: 'MOCK_GOOGLE_AUTH_SUCCESS',
+                      user: {
+                        name: 'Gabriel Moura',
+                        email: 'mouragabriel2011@gmail.com',
+                        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop'
+                      }
+                    }, '*');
+                    window.close();
+                  });
+                  
+                  document.getElementById('other-btn').addEventListener('click', () => {
+                    const email = prompt('Digite o e-mail da sua conta Google:');
+                    if (email) {
+                      const name = email.split('@')[0].replace('.', ' ');
+                      const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
+                      window.opener.postMessage({
+                        type: 'MOCK_GOOGLE_AUTH_SUCCESS',
+                        user: {
+                          name: formattedName,
+                          email: email,
+                          avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=256&h=256&fit=crop'
+                        }
+                      }, '*');
+                    }
+                    window.close();
+                  });
+                </script>
+              </body>
+            </html>
+          `);
+          
+          const handlePopupMessage = async (event: MessageEvent) => {
+            if (event.data?.type === 'MOCK_GOOGLE_AUTH_SUCCESS') {
+              window.removeEventListener('message', handlePopupMessage);
+              const googleUser = event.data.user;
+              
+              const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
+              let resolvedUser = savedUsers.find(u => u.email.toLowerCase().trim() === googleUser.email.toLowerCase().trim());
+              
+              if (!resolvedUser) {
+                const plan: PlanTier = 'Starter';
+                resolvedUser = {
+                  id: `usr-ggl-${Math.random().toString(36).substr(2, 9)}`,
+                  name: googleUser.name,
+                  email: googleUser.email.toLowerCase().trim(),
+                  company: 'Minha Empresa Google',
+                  role: 'Administrador',
+                  avatarUrl: googleUser.avatarUrl,
+                  subscription: plan,
+                  status: 'active',
+                  usageCurrent: 0,
+                  usageLimit: PLAN_LIMITS_MAP[plan].maxVideosPerMonth,
+                  storageUsedMB: 0,
+                  templatesUsed: 0,
+                  projectsActive: 0,
+                  subscriptionDetails: {
+                    id: `sub-${Math.random().toString(36).substr(2, 9)}`,
+                    userId: `usr-${Math.random().toString(36).substr(2, 9)}`,
+                    tier: plan,
+                    status: 'active',
+                    billingCycle: 'monthly',
+                    price: 49,
+                    startDate: new Date().toISOString(),
+                    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+                    cancelAtPeriodEnd: false,
+                    autoRenew: true
+                  }
+                };
+                
+                const nextUsersList = [...savedUsers, resolvedUser];
+                setAllUsers(nextUsersList);
+                localStorage.setItem('vf_all_users', JSON.stringify(nextUsersList));
+              }
+              
+              setUser(resolvedUser);
+              localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
+              await loadUserWorkspace(resolvedUser);
+              setActiveTab('dashboard');
+              showToast(`Conectado como ${resolvedUser.name}!`, 'success');
+              resolve();
+            }
+          };
+          window.addEventListener('message', handlePopupMessage);
+        } else {
+          reject(new Error('Bloqueador de popup ativo. Por favor, libere popups para efetuar login com o Google.'));
+        }
+      });
+    }
+  };
+
 
   const recoverPassword = async (email: string): Promise<string> => {
     return new Promise((resolve) => {
@@ -623,44 +1040,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveTab('dashboard');
   };
 
+  const updateUser = async (updatedUser: User): Promise<boolean> => {
+    try {
+      setUser(updatedUser);
+      localStorage.setItem('vf_user', JSON.stringify(updatedUser));
+      
+      const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
+      const nextUsersList = [updatedUser, ...savedUsers.filter(u => u.id !== updatedUser.id)];
+      setAllUsers(nextUsersList);
+      localStorage.setItem('vf_all_users', JSON.stringify(nextUsersList));
+      
+      if (isSupabaseConfigured()) {
+        const success = await UserService.upsertUser(updatedUser);
+        if (!success) {
+          console.warn('Sincronização falhou no Supabase, salvo localmente.');
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error('Erro ao atualizar usuário:', err);
+      return false;
+    }
+  };
+
   // Projects Functions with Limit Checks
-  const createProject = (name: string, description: string, templateId: string, aspect: AspectRatio): Project | null => {
+  const createProject = (name: string, description: string, templateId: string, aspect: AspectRatio, variables?: any): Project | null => {
     if (!verifyAndTriggerLimitExceeded('projects')) {
+      showToast('Limite de projetos ativos atingido no seu plano atual!', 'error');
       return null;
     }
 
-    const newProject: Project = {
-      id: `prj-${Math.random().toString(36).substr(2, 9)}`,
-      name,
-      description,
-      templateId,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      aspect,
-      variables: {
+    try {
+      const defaultVariables = {
         title: name,
         subtitles: ['Fábrica viral ativada...', 'Criando shorts em escala...'],
         brandColor: '#6366f1',
         fontName: 'Inter Regular'
-      }
-    };
-
-    const updated = [newProject, ...projects];
-    setProjects(updated);
-    
-    if (user) {
-      localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(updated));
-      const updatedUser: User = {
-        ...user,
-        projectsActive: updated.length
       };
-      setUser(updatedUser);
-      syncUserToAllUsers(updatedUser);
-      loadUserWorkspace(updatedUser);
-    }
 
-    return newProject;
+      const newProject: Project = {
+        id: `prj-${Math.random().toString(36).substr(2, 9)}`,
+        name,
+        description,
+        templateId,
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        aspect,
+        variables: variables ? { ...defaultVariables, ...variables } : defaultVariables
+      };
+
+      const updated = [newProject, ...projects];
+      setProjects(updated);
+      
+      if (user) {
+        localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(updated));
+        const updatedUser: User = {
+          ...user,
+          projectsActive: updated.length
+        };
+        setUser(updatedUser);
+        syncUserToAllUsers(updatedUser);
+        loadUserWorkspace(updatedUser);
+
+        if (isSupabaseConfigured()) {
+          ProjectService.upsertProject(user.id, newProject)
+            .then(() => {
+              showToast(`Projeto "${name}" salvo com sucesso no banco de dados!`, 'success');
+            })
+            .catch((err) => {
+              console.error('Erro ao sincronizar projeto com Supabase:', err);
+              showToast('Projeto criado localmente, mas houve um erro ao salvar no banco de dados.', 'error');
+            });
+          UserService.upsertUser(updatedUser).catch(err => {
+            console.error('Erro ao sincronizar estatísticas do usuário:', err);
+          });
+        } else {
+          showToast(`Projeto "${name}" criado com sucesso!`, 'success');
+        }
+      } else {
+        showToast(`Projeto "${name}" criado com sucesso!`, 'success');
+      }
+
+      return newProject;
+    } catch (err: any) {
+      console.error('Erro fatal durante a criação do projeto:', err);
+      showToast('Houve um erro inesperado ao criar o projeto.', 'error');
+      return null;
+    }
   };
 
   const updateProject = (updatedProject: Project) => {
@@ -668,6 +1135,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProjects(updated);
     if (user) {
       localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(updated));
+      if (isSupabaseConfigured()) {
+        const fullProj = updated.find(p => p.id === updatedProject.id);
+        if (fullProj) ProjectService.upsertProject(user.id, fullProj);
+      }
     }
   };
 
@@ -683,6 +1154,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUser(updatedUser);
       syncUserToAllUsers(updatedUser);
       loadUserWorkspace(updatedUser);
+
+      if (isSupabaseConfigured()) {
+        ProjectService.deleteProject(id);
+        UserService.upsertUser(updatedUser);
+      }
     }
   };
 
@@ -719,6 +1195,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUser(updatedUser);
       syncUserToAllUsers(updatedUser);
       loadUserWorkspace(updatedUser);
+
+      if (isSupabaseConfigured()) {
+        TemplateService.upsertTemplate(user.id, newTemplate);
+        UserService.upsertUser(updatedUser);
+      }
     }
 
     return newTemplate;
@@ -729,6 +1210,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTemplates(updated);
     if (user) {
       localStorage.setItem(`vf_templates_${user.id}`, JSON.stringify(updated));
+      if (isSupabaseConfigured()) {
+        const fullTpl = updated.find(t => t.id === updatedTemplate.id);
+        if (fullTpl) TemplateService.upsertTemplate(user.id, fullTpl);
+      }
     }
   };
 
@@ -760,6 +1245,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUser(updatedUser);
       syncUserToAllUsers(updatedUser);
       loadUserWorkspace(updatedUser);
+
+      if (isSupabaseConfigured()) {
+        TemplateService.upsertTemplate(user.id, duplicated);
+        UserService.upsertUser(updatedUser);
+      }
     }
     return true;
   };
@@ -776,6 +1266,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUser(updatedUser);
       syncUserToAllUsers(updatedUser);
       loadUserWorkspace(updatedUser);
+
+      if (isSupabaseConfigured()) {
+        TemplateService.deleteTemplate(id);
+        UserService.upsertUser(updatedUser);
+      }
     }
   };
 
@@ -812,6 +1307,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     if (user) {
       localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(updatedTasks));
+      if (isSupabaseConfigured()) {
+        RenderService.upsertRenderingTask(user.id, newTask);
+      }
     }
 
     // Simulate progress loop
@@ -850,10 +1348,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   return folder;
                 });
                 localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
+                if (isSupabaseConfigured()) {
+                  StorageService.upsertFolders(user.id, nextFolders);
+                }
                 return nextFolders;
               });
 
-              return {
+              const completedTask: RenderingTask = {
                 ...t,
                 status: 'completed' as const,
                 progress: 100,
@@ -861,6 +1362,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 outputUrl: mockFile.url,
                 completedAt: completedTime
               };
+
+              if (isSupabaseConfigured()) {
+                RenderService.upsertRenderingTask(user.id, completedTask);
+              }
+
+              return completedTask;
             }
             return t;
           });
@@ -870,12 +1377,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Update project status
         setProjects(prevProjects => {
-          const nextProjects = prevProjects.map(p => p.id === projectId ? {
-            ...p,
-            status: 'completed' as const,
-            videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-gaming-streamer-screen-playing-with-headphones-40439-large.mp4',
-            updatedAt: new Date().toISOString()
-          } : p);
+          const nextProjects = prevProjects.map(p => {
+            if (p.id === projectId) {
+              const updatedP: Project = {
+                ...p,
+                status: 'completed' as const,
+                videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-gaming-streamer-screen-playing-with-headphones-40439-large.mp4',
+                updatedAt: new Date().toISOString()
+              };
+              if (isSupabaseConfigured()) {
+                ProjectService.upsertProject(user.id, updatedP);
+              }
+              return updatedP;
+            }
+            return p;
+          });
           localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(nextProjects));
           return nextProjects;
         });
@@ -888,17 +1404,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUser(updatedUser);
         syncUserToAllUsers(updatedUser);
         loadUserWorkspace(updatedUser);
+        if (isSupabaseConfigured()) {
+          UserService.upsertUser(updatedUser);
+        }
 
       } else {
         if (!user) return;
         setRenderingTasks(prevTasks => {
           const nextTasks = prevTasks.map(t => {
             if (t.id === taskId) {
-              return {
+              const updatedT: RenderingTask = {
                 ...t,
                 status: (progress > 5 ? 'processing' : 'queued') as any,
                 progress
               };
+              if (isSupabaseConfigured()) {
+                RenderService.upsertRenderingTask(user.id, updatedT);
+              }
+              return updatedT;
             }
             return t;
           });
@@ -956,6 +1479,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUser(updatedUser);
       syncUserToAllUsers(updatedUser);
       loadUserWorkspace(updatedUser);
+
+      if (isSupabaseConfigured()) {
+        StorageService.upsertFolders(user.id, nextFolders);
+        UserService.upsertUser(updatedUser);
+      }
     }
     return true;
   };
@@ -990,6 +1518,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUser(updatedUser);
       syncUserToAllUsers(updatedUser);
       loadUserWorkspace(updatedUser);
+
+      if (isSupabaseConfigured()) {
+        StorageService.upsertFolders(user.id, nextFolders);
+        UserService.upsertUser(updatedUser);
+      }
     }
   };
 
@@ -1157,10 +1690,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         renderingTasks,
         folders,
         stats,
+        toasts,
+        showToast,
         login,
         register,
+        loginWithGoogle,
         recoverPassword,
         logout,
+        updateUser,
         createProject,
         updateProject,
         deleteProject,
@@ -1183,6 +1720,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }}
     >
       {children}
+
+      {/* Floating Toast Notification Stack */}
+      <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        <AnimatePresence>
+          {toasts.map((toast) => {
+            const Icon = toast.type === 'success' 
+              ? CheckCircle 
+              : toast.type === 'error' 
+                ? AlertCircle 
+                : Info;
+            
+            const accentColor = toast.type === 'success'
+              ? 'border-emerald-500/30 shadow-emerald-500/5'
+              : toast.type === 'error'
+                ? 'border-rose-500/30 shadow-rose-500/5'
+                : 'border-indigo-500/30 shadow-indigo-500/5';
+
+            const iconColor = toast.type === 'success'
+              ? 'text-emerald-400'
+              : toast.type === 'error'
+                ? 'text-rose-400'
+                : 'text-indigo-400';
+
+            return (
+              <motion.div
+                key={toast.id}
+                initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
+                className={`pointer-events-auto flex items-start gap-3 bg-gray-950/95 backdrop-blur-md border ${accentColor} rounded-xl p-4 shadow-xl text-xs font-medium text-gray-200`}
+              >
+                <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${iconColor}`} />
+                <div className="flex-1 leading-relaxed">{toast.message}</div>
+                <button
+                  onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                  className="text-gray-500 hover:text-gray-300 transition shrink-0 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
     </AppContext.Provider>
   );
 };

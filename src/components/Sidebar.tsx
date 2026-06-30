@@ -15,7 +15,9 @@ import {
   LogOut,
   Sparkles,
   Layers,
-  ShieldCheck
+  ShieldCheck,
+  HelpCircle,
+  Settings
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -34,12 +36,10 @@ export const Sidebar: React.FC = () => {
       badge: activeJobsCount > 0 ? activeJobsCount : undefined
     },
     { id: 'storage', label: 'Arquivos & Pastas', icon: HardDrive },
-    { id: 'subscription', label: 'Minha Assinatura', icon: Sparkles }
+    { id: 'subscription', label: 'Minha Assinatura', icon: Sparkles },
+    { id: 'profile-settings', label: 'Configurações', icon: Settings },
+    { id: 'help', label: 'Ajuda & Tutoriais', icon: HelpCircle }
   ];
-
-  if (user && user.role === 'SaaS_Owner') {
-    navItems.push({ id: 'admin' as const, label: 'SaaS Admin', icon: ShieldCheck });
-  }
 
   if (!user) return null;
 
