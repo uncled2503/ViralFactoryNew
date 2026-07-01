@@ -20,6 +20,7 @@ import { LimitExceededModal } from './components/LimitExceededModal';
 import { useRouter } from './hooks/useRouter';
 import { AdminLayout } from './components/layout/AdminLayout';
 import { ProjectEditor } from './components/ProjectEditor';
+import { LandingPage } from './components/LandingPage';
 
 const AppContent: React.FC = () => {
   const { user, activeTab, setActiveTab } = useApp();
@@ -73,9 +74,18 @@ const AppContent: React.FC = () => {
     }
   }, [activeTab, user, path, navigate]);
 
-  // If user is not authenticated, show Auth Panel
+  // If user is not authenticated, choose between landing page or auth routes
   if (!user) {
-    return <Auth />;
+    if (path === '/login') {
+      return <Auth initialMode="login" />;
+    }
+    if (path === '/register') {
+      return <Auth initialMode="register" />;
+    }
+    if (path === '/recovery') {
+      return <Auth initialMode="recovery" />;
+    }
+    return <LandingPage />;
   }
 
   // 3. COMPLETE ARCHITECTURAL INTERCEPTOR: /admin gets its own application frame
@@ -83,9 +93,9 @@ const AppContent: React.FC = () => {
     return <AdminLayout />;
   }
 
-  // Interceptor for Project Editor route /project/:id
-  if (path.startsWith('/project/')) {
-    const projectId = path.split('/project/')[1];
+  // Interceptor for Project Editor route /project/:id or /projects/:id
+  if (path.startsWith('/project/') || (path.startsWith('/projects/') && path !== '/projects')) {
+    const projectId = path.split('/projects/')[1] || path.split('/project/')[1];
     return <ProjectEditor projectId={projectId} />;
   }
 

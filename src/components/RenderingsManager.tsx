@@ -24,15 +24,40 @@ import {
   Sliders,
   Sparkles,
   Database,
-  Info
+  Info,
+  Trash2,
+  Copy,
+  Search
 } from 'lucide-react';
 import { RenderingTask, Project } from '../types';
 
 export const RenderingsManager: React.FC = () => {
-  const { renderingTasks, projects } = useApp();
+  const { renderingTasks, projects, deleteRenderingTask, duplicateRenderingTask } = useApp();
 
   // State to track which job's logs are collapsed
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'queued' | 'processing' | 'completed' | 'failed'>('all');
+  const [sortBy, setSortBy] = useState<'newest' | 'projectName' | 'progress'>('newest');
+
+  const filteredTasks = renderingTasks
+    .filter(t => 
+      (t.projectName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+       t.id.toLowerCase().includes(searchQuery.toLowerCase())) &&
+      (statusFilter === 'all' || t.status === statusFilter)
+    )
+    .sort((a, b) => {
+      if (sortBy === 'projectName') {
+        return a.projectName.localeCompare(b.projectName);
+      }
+      if (sortBy === 'progress') {
+        return b.progress - a.progress;
+      }
+      if (sortBy === 'newest') {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+      return 0;
+    });
 
   // Trigger default expanded for active renders
   useEffect(() => {
@@ -218,6 +243,45 @@ export const RenderingsManager: React.FC = () => {
         </div>
       </div>
 
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-gray-900 bg-gray-950/30">
+        <div className="relative w-full md:w-80">
+          <input
+            type="text"
+            placeholder="Pesquisar por projeto ou ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full px-4 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-300 outline-none focus:border-indigo-500 transition"
+          />
+        </div>
+
+        <div className="flex items-center gap-3 self-end md:self-auto">
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-300 outline-none focus:border-indigo-500 transition cursor-pointer"
+          >
+            <option value="all">Todos Status</option>
+            <option value="queued">Em Fila</option>
+            <option value="processing">Codificando</option>
+            <option value="completed">Concluídos</option>
+            <option value="failed">Falhas</option>
+          </select>
+
+          {/* Sort Selector */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-300 outline-none focus:border-indigo-500 transition cursor-pointer"
+          >
+            <option value="newest">Mais Recentes</option>
+            <option value="projectName">Nome do Projeto</option>
+            <option value="progress">Progresso</option>
+          </select>
+        </div>
+      </div>
+
       {/* Render History list container */}
       <motion.div 
         className="space-y-4"
@@ -225,19 +289,19 @@ export const RenderingsManager: React.FC = () => {
         initial="hidden"
         animate="show"
       >
-        {renderingTasks.length === 0 ? (
+        {filteredTasks.length === 0 ? (
           <motion.div 
             variants={rowVariants}
             className="glass-panel rounded-2xl p-16 text-center border border-gray-900"
           >
             <Film className="w-12 h-12 text-gray-700 mx-auto mb-4 animate-pulse" />
-            <h3 className="text-sm font-semibold text-gray-300">Nenhum pipeline ativo</h3>
+            <h3 className="text-sm font-semibold text-gray-300">Nenhum pipeline correspondente</h3>
             <p className="text-xs text-gray-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
-              Vá até a aba "Projetos", selecione suas mídias de fundo, preencha as variáveis e dispare o render do vídeo para alimentar esta fila.
+              Tente alterar os termos da busca ou os filtros de status selecionados.
             </p>
           </motion.div>
         ) : (
-          renderingTasks.map((task) => {
+          filteredTasks.map((task) => {
             const isLogOpen = !!expandedLogs[task.id];
             return (
               <motion.div
@@ -298,7 +362,7 @@ export const RenderingsManager: React.FC = () => {
                   </div>
 
                   {/* Output Controls & Actions */}
-                  <div className="md:col-span-2 flex items-center justify-end gap-3 self-stretch md:self-auto border-t md:border-t-0 border-gray-900 pt-3 md:pt-0">
+                  <div className="md:col-span-2 flex items-center justify-end gap-2.5 self-stretch md:self-auto border-t md:border-t-0 border-gray-900 pt-3 md:pt-0">
                     <button
                       onClick={() => toggleLog(task.id)}
                       className={`p-2 rounded-xl border text-xs font-mono font-bold transition flex items-center gap-1 cursor-pointer ${
@@ -310,6 +374,26 @@ export const RenderingsManager: React.FC = () => {
                     >
                       <Terminal className="w-3.5 h-3.5" />
                       <span>LOGS</span>
+                    </button>
+
+                    <button
+                      onClick={() => duplicateRenderingTask(task.id)}
+                      className="p-2.5 rounded-xl bg-gray-950 border border-gray-900 hover:border-gray-800 text-gray-400 hover:text-gray-200 transition cursor-pointer"
+                      title="Duplicar Renderização"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (confirm('Deseja realmente remover esta tarefa de renderização do histórico?')) {
+                          deleteRenderingTask(task.id);
+                        }
+                      }}
+                      className="p-2.5 rounded-xl bg-gray-950 border border-gray-900 hover:border-red-950 hover:text-red-400 text-gray-500 transition cursor-pointer"
+                      title="Excluir Renderização"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
 
                     {task.status === 'completed' && task.outputUrl ? (

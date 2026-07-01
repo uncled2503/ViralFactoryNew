@@ -692,12 +692,29 @@ export const ProfileSettings: React.FC = () => {
                       <div className="flex flex-col md:flex-row items-center gap-6">
                         {/* Avatar photo preview circle */}
                         <div className="relative group/avatar shrink-0">
-                          <img
-                            src={user.avatarUrl}
-                            alt={user.name}
-                            className="w-20 h-20 rounded-full border-2 border-indigo-500/30 object-cover shadow-lg shadow-indigo-500/5 group-hover/avatar:border-indigo-400 transition"
-                            referrerPolicy="no-referrer"
-                          />
+                          {user.avatarUrl && !user.avatarUrl.includes('unsplash') ? (
+                            <img
+                              src={user.avatarUrl}
+                              alt={user.name}
+                              className="w-20 h-20 rounded-full border-2 border-indigo-500/30 object-cover shadow-lg shadow-indigo-500/5 group-hover/avatar:border-indigo-400 transition"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className={`w-20 h-20 rounded-full border-2 border-indigo-500/30 flex items-center justify-center text-3xl font-black text-white shrink-0 shadow-lg shadow-indigo-500/5 group-hover/avatar:border-indigo-400 transition ${(() => {
+                              const charCodeSum = (user.name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                              const colors = [
+                                'bg-gradient-to-br from-indigo-500 to-purple-600',
+                                'bg-gradient-to-br from-purple-500 to-pink-500',
+                                'bg-gradient-to-br from-blue-500 to-teal-500',
+                                'bg-gradient-to-br from-emerald-500 to-teal-600',
+                                'bg-gradient-to-br from-rose-500 to-pink-600',
+                                'bg-gradient-to-br from-amber-500 to-orange-600'
+                              ];
+                              return colors[charCodeSum % colors.length];
+                            })()}`}>
+                              {(user.name || 'U').trim().charAt(0).toUpperCase()}
+                            </div>
+                          )}
                           <button
                             onClick={() => fileInputRef.current?.click()}
                             className="absolute inset-0 bg-black/60 rounded-full opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center text-white transition cursor-pointer"

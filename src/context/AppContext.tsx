@@ -85,10 +85,16 @@ interface AppContextType {
   
   // Render System
   triggerRender: (projectId: string) => boolean;
+  deleteRenderingTask: (id: string) => void;
+  duplicateRenderingTask: (id: string) => void;
   
   // Storage System
   uploadFileToFolder: (folderId: string, fileName: string, fileSize: string, fileType: StorageFile['type']) => boolean;
   deleteFileFromFolder: (folderId: string, fileId: string) => void;
+  createFolder: (name: string, description?: string) => void;
+  renameFolder: (id: string, name: string) => void;
+  deleteFolder: (id: string) => void;
+  moveFile: (srcFolderId: string, destFolderId: string, fileId: string) => void;
 
   // Subscription System
   changeSubscription: (tier: PlanTier, cycle: BillingCycle) => void;
@@ -1434,6 +1440,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
+  const deleteRenderingTask = (id: string) => {
+    const nextTasks = renderingTasks.filter(t => t.id !== id);
+    setRenderingTasks(nextTasks);
+    if (user) {
+      localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(nextTasks));
+      if (isSupabaseConfigured()) {
+        RenderService.deleteRenderingTask(user.id, id);
+      }
+    }
+  };
+
+  const duplicateRenderingTask = (id: string) => {
+    const original = renderingTasks.find(t => t.id === id);
+    if (!original) return;
+    const newTask: RenderingTask = {
+      ...original,
+      id: `rnd-${Math.random().toString(36).substr(2, 9)}`,
+      status: 'queued',
+      progress: 0,
+      createdAt: new Date().toISOString()
+    };
+    const nextTasks = [newTask, ...renderingTasks];
+    setRenderingTasks(nextTasks);
+    if (user) {
+      localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(nextTasks));
+      if (isSupabaseConfigured()) {
+        RenderService.upsertRenderingTask(user.id, newTask);
+      }
+    }
+  };
+
   // Storage Functions with Limit Checks
   const uploadFileToFolder = (folderId: string, fileName: string, fileSize: string, fileType: StorageFile['type']): boolean => {
     const fileMB = parseSizeToMB(fileSize);
@@ -1522,6 +1559,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (isSupabaseConfigured()) {
         StorageService.upsertFolders(user.id, nextFolders);
         UserService.upsertUser(updatedUser);
+      }
+    }
+  };
+
+  const createFolder = (name: string, description?: string) => {
+    const newFolder: StorageFolder = {
+      id: `fld-${Math.random().toString(36).substr(2, 9)}`,
+      name,
+      description: description || 'Pasta criada pelo usuário',
+      path: `/${name.toLowerCase().replace(/\s+/g, '-')}`,
+      files: []
+    };
+    const nextFolders = [...folders, newFolder];
+    setFolders(nextFolders);
+    if (user) {
+      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
+      if (isSupabaseConfigured()) {
+        StorageService.upsertFolders(user.id, nextFolders);
+      }
+    }
+  };
+
+  const renameFolder = (id: string, name: string) => {
+    const nextFolders = folders.map(f => {
+      if (f.id === id) {
+        return {
+          ...f,
+          name,
+          path: `/${name.toLowerCase().replace(/\s+/g, '-')}`
+        };
+      }
+      return f;
+    });
+    setFolders(nextFolders);
+    if (user) {
+      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
+      if (isSupabaseConfigured()) {
+        StorageService.upsertFolders(user.id, nextFolders);
+      }
+    }
+  };
+
+  const deleteFolder = (id: string) => {
+    const nextFolders = folders.filter(f => f.id !== id);
+    setFolders(nextFolders);
+    if (user) {
+      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
+      if (isSupabaseConfigured()) {
+        StorageService.upsertFolders(user.id, nextFolders);
+      }
+    }
+  };
+
+  const moveFile = (srcFolderId: string, destFolderId: string, fileId: string) => {
+    const srcFolder = folders.find(f => f.id === srcFolderId);
+    if (!srcFolder) return;
+    const fileToMove = srcFolder.files.find(f => f.id === fileId);
+    if (!fileToMove) return;
+
+    const nextFolders = folders.map(folder => {
+      if (folder.id === srcFolderId) {
+        return {
+          ...folder,
+          files: folder.files.filter(f => f.id !== fileId)
+        };
+      }
+      if (folder.id === destFolderId) {
+        return {
+          ...folder,
+          files: [fileToMove, ...folder.files]
+        };
+      }
+      return folder;
+    });
+
+    setFolders(nextFolders);
+    if (user) {
+      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
+      if (isSupabaseConfigured()) {
+        StorageService.upsertFolders(user.id, nextFolders);
       }
     }
   };
@@ -1706,8 +1823,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         duplicateTemplate,
         deleteTemplate,
         triggerRender,
+        deleteRenderingTask,
+        duplicateRenderingTask,
         uploadFileToFolder,
         deleteFileFromFolder,
+        createFolder,
+        renameFolder,
+        deleteFolder,
+        moveFile,
         changeSubscription,
         cancelSubscription,
         invoices,

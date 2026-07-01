@@ -73,6 +73,19 @@ export class RenderService {
   }
 
   /**
+   * Deletes a rendering job state
+   */
+  static async deleteRenderingTask(userId: string, taskId: string): Promise<boolean> {
+    try {
+      const result = await db.delete(this.JOBS_TABLE, { id: taskId, user_id: userId });
+      return result;
+    } catch (err) {
+      console.error('RenderService.deleteRenderingTask failed:', err);
+      return false;
+    }
+  }
+
+  /**
    * Creates a structured system render pipeline log for diagnostics (RenderLogs support)
    */
   static async logRenderEvent(

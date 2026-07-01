@@ -114,12 +114,29 @@ export const Sidebar: React.FC = () => {
       {/* User profile dropdown drawer */}
       <div className="p-4 border-t border-gray-900/60 bg-gray-950/40 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <img
-            src={user.avatarUrl}
-            alt={user.name}
-            className="w-8 h-8 rounded-full border border-gray-800 object-cover shrink-0"
-            referrerPolicy="no-referrer"
-          />
+          {user.avatarUrl && !user.avatarUrl.includes('unsplash') ? (
+            <img
+              src={user.avatarUrl}
+              alt={user.name}
+              className="w-8 h-8 rounded-full border border-gray-800 object-cover shrink-0"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className={`w-8 h-8 rounded-full border border-gray-800 flex items-center justify-center text-xs font-black text-white shrink-0 shadow-md ${(() => {
+              const charCodeSum = (user.name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+              const colors = [
+                'bg-gradient-to-br from-indigo-500 to-purple-600',
+                'bg-gradient-to-br from-purple-500 to-pink-500',
+                'bg-gradient-to-br from-blue-500 to-teal-500',
+                'bg-gradient-to-br from-emerald-500 to-teal-600',
+                'bg-gradient-to-br from-rose-500 to-pink-600',
+                'bg-gradient-to-br from-amber-500 to-orange-600'
+              ];
+              return colors[charCodeSum % colors.length];
+            })()}`}>
+              {(user.name || 'U').trim().charAt(0).toUpperCase()}
+            </div>
+          )}
           <div className="min-w-0">
             <h4 className="text-xs font-semibold text-gray-200 truncate">{user.name}</h4>
             <p className="text-[10px] text-gray-500 truncate">{user.company || 'Fábrica de Vídeos'}</p>

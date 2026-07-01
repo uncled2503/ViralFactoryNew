@@ -29,6 +29,7 @@ import {
   FileText,
   Image as ImageIcon
 } from 'lucide-react';
+import { Editor } from './editor/Editor';
 
 export const TemplatesManager: React.FC = () => {
   const {
@@ -40,9 +41,12 @@ export const TemplatesManager: React.FC = () => {
     setActiveTab
   } = useApp();
 
+  const [activeEditorTemplate, setActiveEditorTemplate] = useState<Template | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedSort, setSelectedSort] = useState<string>('newest');
 
   // Project spawning modal from template
   const [isSpawnModalOpen, setIsSpawnModalOpen] = useState(false);
@@ -69,35 +73,21 @@ export const TemplatesManager: React.FC = () => {
   const [layers, setLayers] = useState<TemplateLayer[]>([]);
 
   const openCreateModal = () => {
-    setEditingTemplate(null);
-    setName('');
-    setDescription('');
-    setAspect('9:16');
-    setDefaultDuration(30);
-    setCategory('Social Media');
-    setLayers([
-      { id: `lyr-${Date.now()}-1`, type: 'text', name: 'Título Principal (Header)', defaultValue: 'Texto Exemplo' },
-      { id: `lyr-${Date.now()}-2`, type: 'image', name: 'Gameplay de Fundo (.mp4)', defaultValue: 'gta_gameplay.mp4' },
-      { id: `lyr-${Date.now()}-3`, type: 'audio', name: 'Música de Fundo (.mp3)', defaultValue: 'lofi_ambient.mp3' }
-    ]);
-    setIsModalOpen(true);
+    // Generate a template directly and launch the visual editor
+    const newTplName = `Template #${templates.length + 1}`;
+    const newTpl = createTemplate(
+      newTplName,
+      'Layout de automação em massa',
+      '9:16',
+      30
+    );
+    if (newTpl) {
+      setActiveEditorTemplate(newTpl);
+    }
   };
 
   const openEditModal = (template: Template) => {
-    setEditingTemplate(template);
-    setName(template.name);
-    setDescription(template.description);
-    setAspect(template.aspect);
-    setDefaultDuration(template.defaultDuration);
-    // Custom category mappings
-    if (template.id === 'tpl-reddit-stories') setCategory('Entretenimento');
-    else if (template.id === 'tpl-motivational') setCategory('Desenvolvimento Pessoal');
-    else if (template.id === 'tpl-saas-showcase') setCategory('SaaS Showcase');
-    else if (template.id === 'tpl-ecom-quick') setCategory('E-commerce');
-    else setCategory('Geral');
-
-    setLayers([...template.layers]);
-    setIsModalOpen(true);
+    setActiveEditorTemplate(template);
   };
 
   const handleDuplicate = (template: Template) => {
@@ -261,10 +251,24 @@ export const TemplatesManager: React.FC = () => {
     }
   };
 
-  const filteredTemplates = templates.filter(t => 
-    t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredTemplates = templates
+    .filter(t => 
+      (t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+       t.description.toLowerCase().includes(searchQuery.toLowerCase())) &&
+      (selectedCategory === 'all' || getTemplateCategory(t) === selectedCategory)
+    )
+    .sort((a, b) => {
+      if (selectedSort === 'name') {
+        return a.name.localeCompare(b.name);
+      }
+      if (selectedSort === 'newest') {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+      if (selectedSort === 'duration') {
+        return a.defaultDuration - b.defaultDuration;
+      }
+      return 0;
+    });
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -278,6 +282,25 @@ export const TemplatesManager: React.FC = () => {
     hidden: { opacity: 0, scale: 0.95 },
     show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 100, damping: 15 } }
   };
+
+  if (activeEditorTemplate) {
+    return (
+      <Editor
+        projectId={activeEditorTemplate.id}
+        projectName={activeEditorTemplate.name}
+        onClose={() => setActiveEditorTemplate(null)}
+        onSaveProjectData={(saveObj) => {
+          const updated: Template = {
+            ...activeEditorTemplate,
+            aspect: saveObj.canvas.aspectRatio,
+            defaultDuration: saveObj.totalDuration,
+            layers: saveObj.layers as any
+          };
+          updateTemplate(updated);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 pb-12">
@@ -303,9 +326,8 @@ export const TemplatesManager: React.FC = () => {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex items-center gap-4 p-4 rounded-xl border border-gray-900 bg-gray-950/30">
-        <div className="relative w-80">
-          <Trash2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 hidden" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-gray-900 bg-gray-950/30">
+        <div className="relative w-full md:w-80">
           <input
             type="text"
             placeholder="Pesquisar templates..."
@@ -313,6 +335,33 @@ export const TemplatesManager: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full px-4 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-300 outline-none focus:border-indigo-500 transition"
           />
+        </div>
+
+        <div className="flex items-center gap-3 self-end md:self-auto">
+          {/* Category Selector */}
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-300 outline-none focus:border-indigo-500 transition cursor-pointer"
+          >
+            <option value="all">Todas Categorias</option>
+            <option value="Entretenimento">Entretenimento</option>
+            <option value="Desenvolvimento Pessoal">Desenvolvimento Pessoal</option>
+            <option value="SaaS Showcase">SaaS Showcase</option>
+            <option value="E-commerce">E-commerce</option>
+            <option value="Geral">Geral</option>
+          </select>
+
+          {/* Sort Selector */}
+          <select
+            value={selectedSort}
+            onChange={(e) => setSelectedSort(e.target.value)}
+            className="px-3 py-2 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-300 outline-none focus:border-indigo-500 transition cursor-pointer"
+          >
+            <option value="newest">Mais Recentes</option>
+            <option value="name">Ordem Alfabética (A-Z)</option>
+            <option value="duration">Duração Curta</option>
+          </select>
         </div>
       </div>
 

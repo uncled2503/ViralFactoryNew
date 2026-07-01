@@ -36,11 +36,21 @@ import {
   FolderPlus,
   ChevronRight,
   ExternalLink,
-  RefreshCw
+  RefreshCw,
+  Edit3
 } from 'lucide-react';
 
 export const StorageManager: React.FC = () => {
-  const { folders, uploadFileToFolder, deleteFileFromFolder, stats } = useApp();
+  const { 
+    folders, 
+    uploadFileToFolder, 
+    deleteFileFromFolder, 
+    stats,
+    createFolder,
+    renameFolder,
+    deleteFolder,
+    moveFile
+  } = useApp();
 
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -49,6 +59,37 @@ export const StorageManager: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [fileTypeFilter, setFileTypeFilter] = useState<'all' | 'video' | 'audio' | 'image' | 'font'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>('name');
+
+  // Drag and Drop support
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    if (!selectedFolderId) return;
+
+    const files = Array.from(e.dataTransfer.files) as File[];
+    if (files.length > 0) {
+      files.forEach(f => {
+        const sizeMB = (f.size / (1024 * 1024)).toFixed(1) + ' MB';
+        let type: StorageFile['type'] = 'video';
+        if (f.type.startsWith('image/')) type = 'image';
+        else if (f.type.startsWith('audio/')) type = 'audio';
+        else if (f.name.endsWith('.json')) type = 'font';
+        
+        uploadFileToFolder(selectedFolderId, f.name, sizeMB, type);
+      });
+    }
+  };
 
   // File Preview Modal Overlay
   const [previewFile, setPreviewFile] = useState<StorageFile | null>(null);
@@ -257,15 +298,33 @@ export const StorageManager: React.FC = () => {
           </p>
         </div>
 
-        {selectedFolderId && (
-          <button
-            onClick={() => setIsUploadOpen(true)}
-            className="py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/10 transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Upload em Lote</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!selectedFolderId && (
+            <button
+              onClick={() => {
+                const name = prompt('Nome da nova pasta:');
+                if (name) {
+                  const desc = prompt('Descrição da pasta (opcional):');
+                  createFolder(name, desc || undefined);
+                }
+              }}
+              className="py-2.5 px-4 bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto animate-in fade-in"
+            >
+              <FolderPlus className="w-4 h-4 text-indigo-400" />
+              <span>Nova Pasta</span>
+            </button>
+          )}
+
+          {selectedFolderId && (
+            <button
+              onClick={() => setIsUploadOpen(true)}
+              className="py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/10 transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Upload em Lote</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Directory Path Breadcrumbs */}
@@ -317,9 +376,38 @@ export const StorageManager: React.FC = () => {
                       <div className="h-10 w-10 rounded-xl bg-indigo-950/40 border border-indigo-500/15 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300">
                         <Folder className="w-5 h-5 fill-current opacity-80" />
                       </div>
-                      <span className="text-[9px] font-mono text-gray-500 bg-gray-950 px-2 py-0.5 rounded border border-gray-900">
-                        {folder.path}
-                      </span>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newName = prompt('Renomear pasta para:', folder.name);
+                            if (newName) {
+                              renameFolder(folder.id, newName);
+                            }
+                          }}
+                          className="p-1 rounded text-gray-500 hover:text-indigo-400 hover:bg-gray-900 transition cursor-pointer"
+                          title="Renomear Pasta"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Deseja realmente excluir a pasta "${folder.name}" e todos os seus arquivos?`)) {
+                              deleteFolder(folder.id);
+                            }
+                          }}
+                          className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-900 transition cursor-pointer"
+                          title="Excluir Pasta"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <span className="text-[9px] font-mono text-gray-500 bg-gray-950 px-2 py-0.5 rounded border border-gray-900">
+                          {folder.path}
+                        </span>
+                      </div>
                     </div>
 
                     <h3 className="text-sm font-bold text-gray-200 mt-2 group-hover:text-indigo-400 transition-colors">{folder.name}</h3>
@@ -416,6 +504,22 @@ export const StorageManager: React.FC = () => {
             </div>
           </div>
 
+          {/* Drag & Drop Upload Zone */}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center gap-2 ${
+              isDraggingOver 
+                ? 'border-indigo-500 bg-indigo-950/15 text-indigo-400' 
+                : 'border-gray-900 hover:border-gray-800 bg-gray-950/20 text-gray-500'
+            }`}
+          >
+            <Upload className={`w-7 h-7 ${isDraggingOver ? 'animate-bounce text-indigo-400' : 'text-gray-600'}`} />
+            <span className="text-xs font-bold text-gray-300">Arraste e solte arquivos aqui para fazer upload instantâneo para esta pasta</span>
+            <span className="text-[10px] text-gray-500 font-mono">Suporta seleção múltipla de Vídeos, Áudios, Imagens e Fontes</span>
+          </div>
+
           {/* Files Render Grid/List */}
           <AnimatePresence mode="popLayout">
             {sortedFiles.length === 0 ? (
@@ -462,6 +566,30 @@ export const StorageManager: React.FC = () => {
                           title="Visualizar Detalhado"
                         >
                           <Eye className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const otherFolders = folders.filter(f => f.id !== selectedFolderId);
+                            if (otherFolders.length === 0) {
+                              alert('Não há outras pastas disponíveis para mover.');
+                              return;
+                            }
+                            const folderListStr = otherFolders.map((f, i) => `${i + 1}. ${f.name}`).join('\n');
+                            const choice = prompt(`Mover "${file.name}" para qual pasta?\nDigite o número correspondente:\n${folderListStr}`);
+                            if (choice) {
+                              const idx = parseInt(choice) - 1;
+                              if (idx >= 0 && idx < otherFolders.length) {
+                                moveFile(selectedFolderId!, otherFolders[idx].id, file.id);
+                              } else {
+                                alert('Escolha inválida.');
+                              }
+                            }
+                          }}
+                          className="p-1.5 bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 rounded-lg transition cursor-pointer"
+                          title="Mover de Pasta"
+                        >
+                          <Folder className="w-3.5 h-3.5" />
                         </button>
 
                         <button
@@ -530,6 +658,29 @@ export const StorageManager: React.FC = () => {
                           title="Detalhes"
                         >
                           <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            const otherFolders = folders.filter(f => f.id !== selectedFolderId);
+                            if (otherFolders.length === 0) {
+                              alert('Não há outras pastas disponíveis para mover.');
+                              return;
+                            }
+                            const folderListStr = otherFolders.map((f, i) => `${i + 1}. ${f.name}`).join('\n');
+                            const choice = prompt(`Mover "${file.name}" para qual pasta?\nDigite o número correspondente:\n${folderListStr}`);
+                            if (choice) {
+                              const idx = parseInt(choice) - 1;
+                              if (idx >= 0 && idx < otherFolders.length) {
+                                moveFile(selectedFolderId!, otherFolders[idx].id, file.id);
+                              } else {
+                                alert('Escolha inválida.');
+                              }
+                            }
+                          }}
+                          className="p-1 rounded text-gray-400 hover:text-indigo-400 hover:bg-gray-900 transition md:opacity-0 group-hover:opacity-100 cursor-pointer"
+                          title="Mover de Pasta"
+                        >
+                          <Folder className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => {

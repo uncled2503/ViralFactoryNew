@@ -3,14 +3,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { LogoFull } from './Logo';
 import { Sparkles, Mail, Lock, User, Building, ArrowRight, Video, AlertCircle } from 'lucide-react';
+import { useRouter } from '../hooks/useRouter';
 
-export const Auth: React.FC = () => {
+interface AuthProps {
+  initialMode?: 'login' | 'register' | 'recovery';
+}
+
+export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
   const { login, register, loginWithGoogle, recoverPassword } = useApp();
-  const [mode, setMode] = useState<'login' | 'register' | 'recovery'>('login');
+  const { navigate } = useRouter();
+  const [mode, setMode] = useState<'login' | 'register' | 'recovery'>(initialMode);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -284,8 +294,8 @@ export const Auth: React.FC = () => {
               <p className="text-gray-400 text-xs">
                 Ainda não tem conta?{' '}
                 <button
-                  onClick={() => { setMode('register'); setError(''); setMessage(''); setConfirmEmail(''); }}
-                  className="text-indigo-400 hover:text-indigo-300 font-semibold transition"
+                  onClick={() => { navigate('/register'); setMode('register'); setError(''); setMessage(''); setConfirmEmail(''); }}
+                  className="text-indigo-400 hover:text-indigo-300 font-semibold transition cursor-pointer"
                 >
                   Cadastre-se grátis
                 </button>
@@ -296,8 +306,8 @@ export const Auth: React.FC = () => {
               <p className="text-gray-400 text-xs">
                 Já possui uma conta?{' '}
                 <button
-                  onClick={() => { setMode('login'); setError(''); setMessage(''); setConfirmEmail(''); }}
-                  className="text-indigo-400 hover:text-indigo-300 font-semibold transition"
+                  onClick={() => { navigate('/login'); setMode('login'); setError(''); setMessage(''); setConfirmEmail(''); }}
+                  className="text-indigo-400 hover:text-indigo-300 font-semibold transition cursor-pointer"
                 >
                   Fazer login
                 </button>
@@ -306,8 +316,8 @@ export const Auth: React.FC = () => {
 
             {mode === 'recovery' && (
               <button
-                onClick={() => { setMode('login'); setError(''); setMessage(''); setConfirmEmail(''); }}
-                className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition"
+                onClick={() => { navigate('/login'); setMode('login'); setError(''); setMessage(''); setConfirmEmail(''); }}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition cursor-pointer"
               >
                 Voltar para o login
               </button>
