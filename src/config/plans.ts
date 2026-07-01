@@ -16,6 +16,18 @@ export interface PlanConfig {
 }
 
 export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
+  Free: {
+    maxVideosPerMonth: 5,
+    maxTemplates: 1,
+    maxProjects: 1,
+    maxStorageMB: 500,
+    renderPriority: 'normal',
+    hasAutoSubtitles: false,
+    hasMultiFormatExport: false,
+    hasPrivateTemplates: false,
+    hasApiAccess: false,
+    hasTeamManagement: false,
+  },
   Starter: {
     maxVideosPerMonth: 100,
     maxTemplates: 5,
@@ -55,6 +67,26 @@ export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
 };
 
 export const PLANS_DETAILS: PlanConfig[] = [
+  {
+    tier: 'Free',
+    name: 'Free',
+    priceMonthly: 0,
+    priceAnnual: 0,
+    description: 'Experimente as ferramentas básicas do Viral Factory.',
+    limits: PLAN_LIMITS_MAP.Free,
+    features: [
+      '5 renderizações de vídeo (total para teste)',
+      '1 template',
+      '1 projeto',
+      '500 MB de armazenamento',
+      'Upload máximo de 100 MB por arquivo',
+      'Sem renderização em lote',
+      'Sem legenda automática',
+      'Sem exportação ZIP',
+      'Marca d\'água do Viral Factory nas renderizações',
+      'Sem prioridade na fila',
+    ],
+  },
   {
     tier: 'Starter',
     name: 'Starter',

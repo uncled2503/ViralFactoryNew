@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type PlanTier = 'Starter' | 'Pro' | 'Business';
+export type PlanTier = 'Free' | 'Starter' | 'Pro' | 'Business';
 export type BillingCycle = 'monthly' | 'quarterly' | 'semestral' | 'annual';
 export type SubscriptionStatus = 'active' | 'canceled' | 'suspended' | 'past_due';
 

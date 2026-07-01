@@ -49,7 +49,8 @@ export const StorageManager: React.FC = () => {
     createFolder,
     renameFolder,
     deleteFolder,
-    moveFile
+    moveFile,
+    showToast
   } = useApp();
 
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -97,6 +98,22 @@ export const StorageManager: React.FC = () => {
   // Custom Confirm Modal States
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<StorageFile | null>(null);
+
+  // Non-blocking folder/file management modals states
+  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderDesc, setNewFolderDesc] = useState('');
+
+  const [isRenameFolderOpen, setIsRenameFolderOpen] = useState(false);
+  const [folderToRename, setFolderToRename] = useState<StorageFolder | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState('');
+
+  const [isDeleteFolderOpen, setIsDeleteFolderOpen] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState<StorageFolder | null>(null);
+
+  const [isMoveFileOpen, setIsMoveFileOpen] = useState(false);
+  const [fileToMove, setFileToMove] = useState<StorageFile | null>(null);
+  const [targetFolderId, setTargetFolderId] = useState('');
 
   // Upload modal state
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -302,11 +319,9 @@ export const StorageManager: React.FC = () => {
           {!selectedFolderId && (
             <button
               onClick={() => {
-                const name = prompt('Nome da nova pasta:');
-                if (name) {
-                  const desc = prompt('Descrição da pasta (opcional):');
-                  createFolder(name, desc || undefined);
-                }
+                setNewFolderName('');
+                setNewFolderDesc('');
+                setIsCreateFolderOpen(true);
               }}
               className="py-2.5 px-4 bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto animate-in fade-in"
             >
@@ -381,10 +396,9 @@ export const StorageManager: React.FC = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const newName = prompt('Renomear pasta para:', folder.name);
-                            if (newName) {
-                              renameFolder(folder.id, newName);
-                            }
+                            setFolderToRename(folder);
+                            setRenameFolderName(folder.name);
+                            setIsRenameFolderOpen(true);
                           }}
                           className="p-1 rounded text-gray-500 hover:text-indigo-400 hover:bg-gray-900 transition cursor-pointer"
                           title="Renomear Pasta"
@@ -394,9 +408,8 @@ export const StorageManager: React.FC = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`Deseja realmente excluir a pasta "${folder.name}" e todos os seus arquivos?`)) {
-                              deleteFolder(folder.id);
-                            }
+                            setFolderToDelete(folder);
+                            setIsDeleteFolderOpen(true);
                           }}
                           className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-900 transition cursor-pointer"
                           title="Excluir Pasta"
@@ -572,19 +585,12 @@ export const StorageManager: React.FC = () => {
                           onClick={() => {
                             const otherFolders = folders.filter(f => f.id !== selectedFolderId);
                             if (otherFolders.length === 0) {
-                              alert('Não há outras pastas disponíveis para mover.');
+                              showToast('Não há outras pastas disponíveis para mover.', 'error');
                               return;
                             }
-                            const folderListStr = otherFolders.map((f, i) => `${i + 1}. ${f.name}`).join('\n');
-                            const choice = prompt(`Mover "${file.name}" para qual pasta?\nDigite o número correspondente:\n${folderListStr}`);
-                            if (choice) {
-                              const idx = parseInt(choice) - 1;
-                              if (idx >= 0 && idx < otherFolders.length) {
-                                moveFile(selectedFolderId!, otherFolders[idx].id, file.id);
-                              } else {
-                                alert('Escolha inválida.');
-                              }
-                            }
+                            setFileToMove(file);
+                            setTargetFolderId(otherFolders[0].id);
+                            setIsMoveFileOpen(true);
                           }}
                           className="p-1.5 bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 rounded-lg transition cursor-pointer"
                           title="Mover de Pasta"
@@ -663,19 +669,12 @@ export const StorageManager: React.FC = () => {
                           onClick={() => {
                             const otherFolders = folders.filter(f => f.id !== selectedFolderId);
                             if (otherFolders.length === 0) {
-                              alert('Não há outras pastas disponíveis para mover.');
+                              showToast('Não há outras pastas disponíveis para mover.', 'error');
                               return;
                             }
-                            const folderListStr = otherFolders.map((f, i) => `${i + 1}. ${f.name}`).join('\n');
-                            const choice = prompt(`Mover "${file.name}" para qual pasta?\nDigite o número correspondente:\n${folderListStr}`);
-                            if (choice) {
-                              const idx = parseInt(choice) - 1;
-                              if (idx >= 0 && idx < otherFolders.length) {
-                                moveFile(selectedFolderId!, otherFolders[idx].id, file.id);
-                              } else {
-                                alert('Escolha inválida.');
-                              }
-                            }
+                            setFileToMove(file);
+                            setTargetFolderId(otherFolders[0].id);
+                            setIsMoveFileOpen(true);
                           }}
                           className="p-1 rounded text-gray-400 hover:text-indigo-400 hover:bg-gray-900 transition md:opacity-0 group-hover:opacity-100 cursor-pointer"
                           title="Mover de Pasta"
@@ -924,6 +923,217 @@ export const StorageManager: React.FC = () => {
         cancelText="Cancelar"
         type="danger"
       />
+
+      {/* Non-blocking: Create Folder Modal */}
+      {isCreateFolderOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-gray-950 border border-gray-900 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-900/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FolderPlus className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-sm font-bold text-gray-100">Criar Nova Pasta</h3>
+              </div>
+              <button
+                onClick={() => setIsCreateFolderOpen(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-200 transition rounded-lg hover:bg-gray-900 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 mb-1.5">Nome da Pasta</label>
+                <input
+                  type="text"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="Ex: Recursos de Campanha"
+                  className="w-full bg-gray-900 border border-gray-850 rounded-xl px-3.5 py-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 font-medium"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 mb-1.5">Descrição (Opcional)</label>
+                <textarea
+                  value={newFolderDesc}
+                  onChange={(e) => setNewFolderDesc(e.target.value)}
+                  placeholder="Descreva o propósito desta pasta..."
+                  className="w-full bg-gray-900 border border-gray-850 rounded-xl px-3.5 py-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 font-medium h-20 resize-none"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setIsCreateFolderOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-gray-400 hover:text-white transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    if (newFolderName.trim()) {
+                      createFolder(newFolderName.trim(), newFolderDesc.trim() || undefined);
+                      setIsCreateFolderOpen(false);
+                    } else {
+                      showToast('O nome da pasta é obrigatório.', 'error');
+                    }
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Criar Pasta
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Non-blocking: Rename Folder Modal */}
+      {isRenameFolderOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-gray-950 border border-gray-900 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-900/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-sm font-bold text-gray-100">Renomear Pasta</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsRenameFolderOpen(false);
+                  setFolderToRename(null);
+                }}
+                className="p-1.5 text-gray-400 hover:text-gray-200 transition rounded-lg hover:bg-gray-900 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 mb-1.5">Novo Nome da Pasta</label>
+                <input
+                  type="text"
+                  value={renameFolderName}
+                  onChange={(e) => setRenameFolderName(e.target.value)}
+                  placeholder="Ex: Novo Nome da Pasta"
+                  className="w-full bg-gray-900 border border-gray-850 rounded-xl px-3.5 py-2 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 font-medium"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setIsRenameFolderOpen(false);
+                    setFolderToRename(null);
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-gray-400 hover:text-white transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    if (folderToRename && renameFolderName.trim()) {
+                      renameFolder(folderToRename.id, renameFolderName.trim());
+                      setIsRenameFolderOpen(false);
+                      setFolderToRename(null);
+                    } else {
+                      showToast('O nome da pasta não pode ser vazio.', 'error');
+                    }
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Non-blocking: Delete Folder Confirmation */}
+      <ConfirmModal
+        isOpen={isDeleteFolderOpen}
+        onClose={() => {
+          setIsDeleteFolderOpen(false);
+          setFolderToDelete(null);
+        }}
+        onConfirm={() => {
+          if (folderToDelete) {
+            deleteFolder(folderToDelete.id);
+          }
+          setIsDeleteFolderOpen(false);
+          setFolderToDelete(null);
+        }}
+        title="Excluir Pasta"
+        message={`Deseja realmente excluir a pasta "${folderToDelete?.name}" e todos os seus arquivos? Esta ação é irreversível.`}
+        confirmText="Excluir"
+        cancelText="Cancelar"
+        type="danger"
+      />
+
+      {/* Non-blocking: Move File Modal */}
+      {isMoveFileOpen && fileToMove && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-gray-950 border border-gray-900 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-900/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Folder className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-sm font-bold text-gray-100">Mover de Pasta</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsMoveFileOpen(false);
+                  setFileToMove(null);
+                }}
+                className="p-1.5 text-gray-400 hover:text-gray-200 transition rounded-lg hover:bg-gray-900 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-gray-400">
+                Escolha a pasta de destino para o arquivo <strong className="text-gray-200">{fileToMove.name}</strong>:
+              </p>
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-gray-500 mb-1.5">Pasta de Destino</label>
+                <select
+                  value={targetFolderId}
+                  onChange={(e) => setTargetFolderId(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-850 rounded-xl px-3.5 py-2.5 text-xs text-gray-200 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+                >
+                  {folders
+                    .filter(f => f.id !== selectedFolderId)
+                    .map(f => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setIsMoveFileOpen(false);
+                    setFileToMove(null);
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-gray-400 hover:text-white transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    if (fileToMove && targetFolderId) {
+                      moveFile(selectedFolderId!, targetFolderId, fileToMove.id);
+                      showToast(`Arquivo "${fileToMove.name}" movido com sucesso.`, 'success');
+                      setIsMoveFileOpen(false);
+                      setFileToMove(null);
+                    }
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Mover Arquivo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

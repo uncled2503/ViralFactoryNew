@@ -1168,7 +1168,7 @@ export const ProfileSettings: React.FC = () => {
                           />
                           <div className="space-y-0.5">
                             <span className="text-xs font-semibold text-gray-200">Vídeo Renderizado</span>
-                            <p className="text-[10px] text-gray-500">Notificar quando a renderização do FFmpeg concluir.</p>
+                            <p className="text-[10px] text-gray-500">Notificar quando a geração do vídeo for concluída.</p>
                           </div>
                         </label>
 

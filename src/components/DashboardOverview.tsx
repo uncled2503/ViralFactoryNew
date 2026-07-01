@@ -137,6 +137,9 @@ export const DashboardOverview: React.FC = () => {
     show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100, damping: 15 } }
   };
 
+  const hoursSaved = (stats.totalVideosRendered * 2) / 60;
+  const hoursSavedStr = hoursSaved === 0 ? '0h' : `${hoursSaved.toFixed(1)}h`;
+
   return (
     <motion.div 
       className="space-y-8 pb-12"
@@ -176,7 +179,6 @@ export const DashboardOverview: React.FC = () => {
               <button
                 onClick={() => {
                   setActiveTab('projects');
-                  // Quick simulated trigger to create a project
                 }}
                 className="py-2.5 px-5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/25 hover:shadow-indigo-500/35 transition-all flex items-center gap-2 cursor-pointer duration-300"
               >
@@ -296,67 +298,90 @@ export const DashboardOverview: React.FC = () => {
 
         <div className="space-y-1.5 p-3 rounded-lg hover:bg-gray-900/30 transition-all border border-transparent hover:border-gray-900">
           <span className="text-[10px] font-mono text-emerald-400 font-bold block">04 / RENDERIZAR</span>
-          <h4 className="text-xs font-bold text-gray-200">Dispare os FFmpeg Jobs</h4>
-          <p className="text-[11px] text-gray-500">Inicie renders em lote e baixe tudo empacotado em ZIP.</p>
+          <h4 className="text-xs font-bold text-gray-200">Gere seus Vídeos</h4>
+          <p className="text-[11px] text-gray-500">Inicie a criação em lote e baixe tudo empacotado em ZIP.</p>
         </div>
       </motion.div>
 
       {/* 3. METRICS CARDS WITH CLEAR HIERARCHY */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Rendered Videos */}
-        <div className="glass-panel rounded-xl p-5 border border-gray-900 flex items-center justify-between group hover:border-indigo-500/20 transition-all duration-300">
-          <div>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Total Renderizado</p>
-            <h3 className="text-2xl font-bold font-mono text-gray-100 mt-1.5">{stats.totalVideosRendered}</h3>
-            <p className="text-[10px] text-emerald-400 flex items-center gap-1 mt-1 font-mono">
-              <TrendingUp className="w-3 h-3" /> +14% essa semana
-            </p>
+      <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
+        {/* Horas Economizadas */}
+        <div className="glass-panel rounded-xl p-4 border border-gray-900 flex flex-col justify-between group hover:border-indigo-500/20 transition-all duration-300">
+          <div className="flex justify-between items-start">
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Horas Economizadas</p>
+            <span className="p-1.5 rounded-lg bg-indigo-950/30 border border-indigo-500/10 text-indigo-400">
+              <Clock className="w-3.5 h-3.5" />
+            </span>
           </div>
-          <div className="p-3 rounded-lg bg-indigo-950/30 border border-indigo-500/10 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300">
-            <Film className="w-5 h-5" />
-          </div>
+          <h3 className="text-xl font-bold font-mono text-gray-100 mt-4">{hoursSavedStr}</h3>
         </div>
 
-        {/* Minutes Consumed */}
-        <div className="glass-panel rounded-xl p-5 border border-gray-900 flex items-center justify-between group hover:border-purple-500/20 transition-all duration-300">
-          <div>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Minutos de Processamento</p>
-            <h3 className="text-2xl font-bold font-mono text-gray-100 mt-1.5">{stats.totalRenderingMinutes} min</h3>
-            <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-1 font-mono">
-              <Clock className="w-3 h-3" /> Limite renova em 15 dias
-            </p>
+        {/* Vídeos Gerados */}
+        <div className="glass-panel rounded-xl p-4 border border-gray-900 flex flex-col justify-between group hover:border-purple-500/20 transition-all duration-300">
+          <div className="flex justify-between items-start">
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Vídeos Gerados</p>
+            <span className="p-1.5 rounded-lg bg-purple-950/30 border border-purple-500/10 text-purple-400">
+              <Film className="w-3.5 h-3.5" />
+            </span>
           </div>
-          <div className="p-3 rounded-lg bg-purple-950/30 border border-purple-500/10 text-purple-400 group-hover:bg-purple-600 group-hover:text-white transition-all duration-300">
-            <Clock className="w-5 h-5" />
-          </div>
+          <h3 className="text-xl font-bold font-mono text-gray-100 mt-4">{stats.totalVideosRendered}</h3>
         </div>
 
-        {/* Templates Count */}
-        <div className="glass-panel rounded-xl p-5 border border-gray-900 flex items-center justify-between group hover:border-pink-500/20 transition-all duration-300">
-          <div>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Templates Prontos</p>
-            <h3 className="text-2xl font-bold font-mono text-gray-100 mt-1.5">{stats.activeTemplates}</h3>
-            <p className="text-[10px] text-pink-400 flex items-center gap-1 mt-1 font-mono">
-              Pronto para replicação
-            </p>
+        {/* Templates */}
+        <div className="glass-panel rounded-xl p-4 border border-gray-900 flex flex-col justify-between group hover:border-pink-500/20 transition-all duration-300">
+          <div className="flex justify-between items-start">
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Templates</p>
+            <span className="p-1.5 rounded-lg bg-pink-950/30 border border-pink-500/10 text-pink-400">
+              <Layers className="w-3.5 h-3.5" />
+            </span>
           </div>
-          <div className="p-3 rounded-lg bg-pink-950/30 border border-pink-500/10 text-pink-400 group-hover:bg-pink-600 group-hover:text-white transition-all duration-300">
-            <Layers className="w-5 h-5" />
-          </div>
+          <h3 className="text-xl font-bold font-mono text-gray-100 mt-4">{stats.activeTemplates}</h3>
         </div>
 
-        {/* Render Success Rate */}
-        <div className="glass-panel rounded-xl p-5 border border-gray-900 flex items-center justify-between group hover:border-emerald-500/20 transition-all duration-300">
-          <div>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Taxa de Sucesso</p>
-            <h3 className="text-2xl font-bold font-mono text-gray-100 mt-1.5">{stats.renderSuccessRate}%</h3>
-            <p className="text-[10px] text-emerald-400 flex items-center gap-1 mt-1 font-mono">
-              Estabilidade de Worker ideal
-            </p>
+        {/* Projetos */}
+        <div className="glass-panel rounded-xl p-4 border border-gray-900 flex flex-col justify-between group hover:border-blue-500/20 transition-all duration-300">
+          <div className="flex justify-between items-start">
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Projetos</p>
+            <span className="p-1.5 rounded-lg bg-blue-950/30 border border-blue-500/10 text-blue-400">
+              <Video className="w-3.5 h-3.5" />
+            </span>
           </div>
-          <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-500/10 text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
-            <Activity className="w-5 h-5" />
+          <h3 className="text-xl font-bold font-mono text-gray-100 mt-4">{stats.activeProjects}</h3>
+        </div>
+
+        {/* Renderizações */}
+        <div className="glass-panel rounded-xl p-4 border border-gray-900 flex flex-col justify-between group hover:border-yellow-500/20 transition-all duration-300">
+          <div className="flex justify-between items-start">
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Renderizações</p>
+            <span className="p-1.5 rounded-lg bg-yellow-950/30 border border-yellow-500/10 text-yellow-400">
+              <Activity className="w-3.5 h-3.5" />
+            </span>
           </div>
+          <h3 className="text-xl font-bold font-mono text-gray-100 mt-4">{renderingTasks.length}</h3>
+        </div>
+
+        {/* Armazenamento */}
+        <div className="glass-panel rounded-xl p-4 border border-gray-900 flex flex-col justify-between group hover:border-teal-500/20 transition-all duration-300 col-span-1">
+          <div className="flex justify-between items-start">
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Armazenamento</p>
+            <span className="p-1.5 rounded-lg bg-teal-950/30 border border-teal-500/10 text-teal-400">
+              <HardDrive className="w-3.5 h-3.5" />
+            </span>
+          </div>
+          <h3 className="text-[11px] font-bold font-mono text-gray-100 mt-4 truncate" title={stats.storageUsed}>
+            {stats.storageUsed.split(' / ')[0]} <span className="text-gray-500 text-[9px]">/ {stats.storageUsed.split(' / ')[1]}</span>
+          </h3>
+        </div>
+
+        {/* Fila */}
+        <div className="glass-panel rounded-xl p-4 border border-gray-900 flex flex-col justify-between group hover:border-orange-500/20 transition-all duration-300">
+          <div className="flex justify-between items-start">
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest font-semibold">Fila</p>
+            <span className="p-1.5 rounded-lg bg-orange-950/30 border border-orange-500/10 text-orange-400">
+              <Zap className="w-3.5 h-3.5" />
+            </span>
+          </div>
+          <h3 className="text-xl font-bold font-mono text-gray-100 mt-4">{activeRenders.length}</h3>
         </div>
       </motion.div>
 
@@ -473,10 +498,10 @@ export const DashboardOverview: React.FC = () => {
                             triggerRender(project.id);
                           }}
                           className="p-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-white transition-all text-[10px] font-bold flex items-center gap-1 cursor-pointer shadow-md shadow-pink-600/20"
-                          title="Iniciar Renderizador FFmpeg"
+                          title="Gerar Vídeo"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>Render</span>
+                          <span>Gerar</span>
                         </button>
                       )}
                     </div>
@@ -507,16 +532,16 @@ export const DashboardOverview: React.FC = () => {
           <div className="space-y-3">
             <h2 className="text-sm font-bold text-gray-200 flex items-center gap-2">
               <Activity className="w-4 h-4 text-purple-400" />
-              <span>Jobs Ativos (FFmpeg Worker)</span>
+              <span>Processamentos Ativos</span>
             </h2>
 
             <div className="glass-panel rounded-xl p-5 border border-gray-900 space-y-4">
               {activeRenders.length === 0 ? (
                 <div className="text-center py-6">
                   <CheckCircle2 className="w-6 h-6 text-gray-600 mx-auto mb-2" />
-                  <p className="text-xs text-gray-400 font-medium">Fila de render vazia</p>
+                  <p className="text-xs text-gray-400 font-medium">Nenhum processamento ativo</p>
                   <p className="text-[10px] text-gray-600 mt-1 max-w-[200px] mx-auto leading-relaxed">
-                    Nenhum vídeo sendo processado neste momento. Crie um projeto e inicie o render.
+                    Nenhum vídeo sendo processado neste momento. Crie um projeto e inicie a geração do vídeo.
                   </p>
                 </div>
               ) : (

@@ -26,53 +26,12 @@ const AppContent: React.FC = () => {
   const { user, activeTab, setActiveTab } = useApp();
   const { path, navigate } = useRouter();
 
-  // 1. Path-to-Tab Routing Sync Layer (Frontend Router)
+  // Redirect root path '/' to '/dashboard' once authenticated
   useEffect(() => {
-    if (!user) return;
-
-    if (path === '/dashboard') {
-      if (activeTab !== 'dashboard') setActiveTab('dashboard');
-    } else if (path === '/projects') {
-      if (activeTab !== 'projects') setActiveTab('projects');
-    } else if (path === '/templates') {
-      if (activeTab !== 'templates') setActiveTab('templates');
-    } else if (path === '/renders' || path === '/renderings') {
-      if (activeTab !== 'renderings') setActiveTab('renderings');
-    } else if (path === '/files' || path === '/storage') {
-      if (activeTab !== 'storage') setActiveTab('storage');
-    } else if (path === '/subscription') {
-      if (activeTab !== 'subscription') setActiveTab('subscription');
-    } else if (path === '/settings/profile') {
-      if (activeTab !== 'profile-settings') setActiveTab('profile-settings');
-    } else if (path === '/settings' || path === '/help') {
-      if (activeTab !== 'help') setActiveTab('help');
-    } else if (path === '/') {
+    if (user && path === '/') {
       navigate('/dashboard');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, user, navigate, setActiveTab]);
-
-  // 2. Tab-to-Path Reverse Sync Layer (Browser URL bar update)
-  useEffect(() => {
-    if (!user) return;
-    if (path.startsWith('/admin')) return; // Let admin routes have full URL control
-
-    const tabToPathMap: Record<string, string> = {
-      dashboard: '/dashboard',
-      projects: '/projects',
-      templates: '/templates',
-      renderings: '/renders',
-      storage: '/files',
-      subscription: '/subscription',
-      help: '/settings',
-      'profile-settings': '/settings/profile'
-    };
-
-    const targetPath = tabToPathMap[activeTab];
-    if (targetPath && path !== targetPath) {
-      navigate(targetPath);
-    }
-  }, [activeTab, user, path, navigate]);
+  }, [path, user, navigate]);
 
   // If user is not authenticated, choose between landing page or auth routes
   if (!user) {
@@ -141,7 +100,7 @@ const AppContent: React.FC = () => {
         {/* Footer info bar */}
         <footer className="h-12 border-t border-gray-900/40 flex items-center justify-between px-8 text-[10px] font-mono text-gray-600">
           <span>Viral Factory © 2026</span>
-          <span>SaaS Video Rendering Platform (FFmpeg Engine Ready)</span>
+          <span>Plataforma de Produção e Edição de Vídeos</span>
         </footer>
       </div>
 

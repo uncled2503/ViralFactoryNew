@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle, AlertCircle, Info, X } from 'lucide-react';
 import {
@@ -123,22 +123,22 @@ const MOCK_ADMIN_USERS: User[] = [
     company: 'Viral S.A.',
     role: 'SaaS_Owner', // Main user can access SaaS Admin!
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
-    subscription: 'Pro',
+    subscription: 'Free',
     status: 'active',
-    usageCurrent: 142,
-    usageLimit: 2000,
-    storageUsedMB: 1840, // 1.84 GB
-    templatesUsed: 4,
-    projectsActive: 3,
+    usageCurrent: 0,
+    usageLimit: 5,
+    storageUsedMB: 0,
+    templatesUsed: 0,
+    projectsActive: 0,
     subscriptionDetails: {
       id: 'sub-001',
       userId: 'usr-001',
-      tier: 'Pro',
+      tier: 'Free',
       status: 'active',
       billingCycle: 'monthly',
-      price: 149,
-      startDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-      endDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
+      price: 0,
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       cancelAtPeriodEnd: false,
       autoRenew: true
     }
@@ -256,7 +256,84 @@ const MOCK_ADMIN_USERS: User[] = [
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [activeTab, setActiveTab] = useState<TabName>('dashboard');
+  
+  const [activeTab, setActiveTabState] = useState<TabName>(() => {
+    const path = window.location.pathname;
+    const pathToTabMap: Record<string, TabName> = {
+      '/dashboard': 'dashboard',
+      '/projects': 'projects',
+      '/templates': 'templates',
+      '/renders': 'renderings',
+      '/renderings': 'renderings',
+      '/files': 'storage',
+      '/storage': 'storage',
+      '/subscription': 'subscription',
+      '/settings': 'help',
+      '/help': 'help',
+      '/settings/profile': 'profile-settings',
+      '/admin': 'admin'
+    };
+    return pathToTabMap[path] || 'dashboard';
+  });
+
+  const setActiveTab = useCallback((tab: TabName) => {
+    setActiveTabState(tab);
+    const tabToPathMap: Record<TabName, string> = {
+      dashboard: '/dashboard',
+      projects: '/projects',
+      templates: '/templates',
+      renderings: '/renders',
+      storage: '/files',
+      subscription: '/subscription',
+      help: '/settings',
+      'profile-settings': '/settings/profile',
+      admin: '/admin'
+    };
+    const targetPath = tabToPathMap[tab];
+    if (targetPath && window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      const pathToTabMap: Record<string, TabName> = {
+        '/dashboard': 'dashboard',
+        '/projects': 'projects',
+        '/templates': 'templates',
+        '/renders': 'renderings',
+        '/renderings': 'renderings',
+        '/files': 'storage',
+        '/storage': 'storage',
+        '/subscription': 'subscription',
+        '/settings': 'help',
+        '/help': 'help',
+        '/settings/profile': 'profile-settings',
+        '/admin': 'admin'
+      };
+      
+      if (path.startsWith('/admin')) {
+        setActiveTabState('admin');
+        return;
+      }
+      if (path.startsWith('/project/') || (path.startsWith('/projects/') && path !== '/projects')) {
+        setActiveTabState('projects');
+        return;
+      }
+
+      const targetTab = pathToTabMap[path];
+      if (targetTab) {
+        setActiveTabState(targetTab);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
   
   const [projects, setProjects] = useState<Project[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -323,7 +400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
 
           if (!resolvedUser) {
-            const plan: PlanTier = 'Starter';
+            const plan: PlanTier = 'Free';
             const userMetadata = supabaseUser.user_metadata || {};
             const name = userMetadata.full_name || userMetadata.name || supabaseUser.email?.split('@')[0] || 'Usuário Google';
             const company = userMetadata.company || 'Minha Empresa';
@@ -338,7 +415,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               subscription: plan,
               status: 'active',
               usageCurrent: 0,
-              usageLimit: PLAN_LIMITS_MAP[plan].maxVideosPerMonth,
+              usageLimit: 5,
               storageUsedMB: 0,
               templatesUsed: 0,
               projectsActive: 0,
@@ -348,7 +425,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 tier: plan,
                 status: 'active',
                 billingCycle: 'monthly',
-                price: 49,
+                price: 0,
                 startDate: new Date().toISOString(),
                 endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
                 cancelAtPeriodEnd: false,
@@ -508,12 +585,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const limitsConfig = PLAN_LIMITS_MAP[loadedUser.subscription];
       const isolatedStats: SystemStats = {
-        totalVideosRendered: loadedUser.usageCurrent + 24,
-        totalRenderingMinutes: Math.ceil(loadedUser.usageCurrent * 0.8) + 12,
+        totalVideosRendered: loadedUser.usageCurrent,
+        totalRenderingMinutes: loadedUser.usageCurrent * 2, // 2 minutes per rendering
         activeTemplates: loadedTemplates.length,
         activeProjects: loadedProjects.length,
         storageUsed: `${totalStorageMB.toFixed(1)} MB / ${(limitsConfig.maxStorageMB).toLocaleString('pt-BR')} MB`,
-        renderSuccessRate: 98.8
+        renderSuccessRate: 100
       };
       setStats(isolatedStats);
 
@@ -764,7 +841,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       if (data?.user) {
         // Create profile in saas_users table
-        const plan: PlanTier = 'Starter';
+        const plan: PlanTier = 'Free';
         const newUser: User = {
           id: data.user.id,
           name,
@@ -775,7 +852,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           subscription: plan,
           status: 'active',
           usageCurrent: 0,
-          usageLimit: PLAN_LIMITS_MAP[plan].maxVideosPerMonth,
+          usageLimit: 5,
           storageUsedMB: 0,
           templatesUsed: 0,
           projectsActive: 0,
@@ -785,7 +862,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             tier: plan,
             status: 'active',
             billingCycle: 'monthly',
-            price: 49,
+            price: 0,
             startDate: new Date().toISOString(),
             endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
             cancelAtPeriodEnd: false,
@@ -823,7 +900,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return;
         }
 
-        const plan: PlanTier = 'Starter';
+        const plan: PlanTier = 'Free';
         const newUser: User = {
           id: `usr-${Math.random().toString(36).substr(2, 9)}`,
           name,
@@ -834,7 +911,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           subscription: plan,
           status: 'active',
           usageCurrent: 0,
-          usageLimit: PLAN_LIMITS_MAP[plan].maxVideosPerMonth,
+          usageLimit: 5,
           storageUsedMB: 0,
           templatesUsed: 0,
           projectsActive: 0,
@@ -844,7 +921,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             tier: plan,
             status: 'active',
             billingCycle: 'monthly',
-            price: 49,
+            price: 0,
             startDate: new Date().toISOString(),
             endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
             cancelAtPeriodEnd: false,
@@ -981,7 +1058,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               let resolvedUser = savedUsers.find(u => u.email.toLowerCase().trim() === googleUser.email.toLowerCase().trim());
               
               if (!resolvedUser) {
-                const plan: PlanTier = 'Starter';
+                const plan: PlanTier = 'Free';
                 resolvedUser = {
                   id: `usr-ggl-${Math.random().toString(36).substr(2, 9)}`,
                   name: googleUser.name,
@@ -992,7 +1069,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   subscription: plan,
                   status: 'active',
                   usageCurrent: 0,
-                  usageLimit: PLAN_LIMITS_MAP[plan].maxVideosPerMonth,
+                  usageLimit: 5,
                   storageUsedMB: 0,
                   templatesUsed: 0,
                   projectsActive: 0,
@@ -1002,7 +1079,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     tier: plan,
                     status: 'active',
                     billingCycle: 'monthly',
-                    price: 49,
+                    price: 0,
                     startDate: new Date().toISOString(),
                     endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
                     cancelAtPeriodEnd: false,

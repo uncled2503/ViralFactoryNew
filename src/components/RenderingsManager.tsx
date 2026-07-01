@@ -30,9 +30,14 @@ import {
   Search
 } from 'lucide-react';
 import { RenderingTask, Project } from '../types';
+import { ConfirmModal } from './ConfirmModal';
 
 export const RenderingsManager: React.FC = () => {
   const { renderingTasks, projects, deleteRenderingTask, duplicateRenderingTask } = useApp();
+
+  // Confirm delete states
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
   // State to track which job's logs are collapsed
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
@@ -123,49 +128,41 @@ export const RenderingsManager: React.FC = () => {
     return `ffmpeg -y ${inputs.join(' ')} ${filters.join(' ')} ${audioMap} -c:v libx264 -preset fast -crf 22 output_${project.id}.mp4`;
   };
 
-  // Helper to generate dynamic, authentic, and educational FFmpeg validation lines
+  // Helper to generate dynamic, user-friendly system process logs
   const getCompileLogs = (task: RenderingTask) => {
-    const cmd = getFFmpegCommand(task.projectId);
     const timeStr = new Date(task.createdAt).toLocaleTimeString('pt-BR');
 
     if (task.status === 'queued') {
       return [
-        `[${timeStr}] [Database] Registro de tarefa persistido com sucesso no Supabase (ID: ${task.id})`,
-        `[${timeStr}] [Scheduler] Analisando camadas e metadados de mídia do projeto...`,
-        `[${timeStr}] [Compiler] Script de codificação de vídeo compilado com sucesso com base nas variáveis:`,
-        `  ${cmd}`,
-        `[${timeStr}] [Queue] Aguardando conexão do Worker de Produção do cluster FFmpeg...`,
-        `[${timeStr}] [Sandbox] Sincronização em modo local ativa: compilando rascunho temporário no navegador.`
+        `[${timeStr}] [Sistema] Tarefa de geração de vídeo registrada com sucesso (ID: ${task.id})`,
+        `[${timeStr}] [Layout] Analisando camadas de legenda e metadados de mídia do projeto...`,
+        `[${timeStr}] [Fila] Aguardando alocação na fila de processamento automático...`,
+        `[${timeStr}] [Status] Sincronização em tempo real ativa.`
       ];
     }
 
     if (task.status === 'processing') {
       const p = task.progress;
-      const frameNum = Math.floor(p * 2.4);
       return [
-        `[Database] Iniciando simulação do pipeline (ID: ${task.id})`,
-        `[Compiler] Comando FFmpeg ativo:`,
-        `  ${cmd}`,
-        `[Engine] Executando simulação de codec de vídeo: libx264 (H.264) & aac (AAC Audio)`,
-        `[Engine] frame= ${frameNum} fps=24 progress= ${p}% time=00:00:${Math.floor(p/3.5).toString().padStart(2, '0')}`,
-        `[Sandbox] Sincronizando progresso das tabelas de codificação com o Supabase...`
+        `[Sistema] Iniciando a composição visual das cenas (ID: ${task.id})`,
+        `[Processando] Aplicando legendagem automática e sincronização de áudio...`,
+        `[Mídia] Codificando trilha sonora e backgrounds na proporção selecionada`,
+        `[Status] Progresso atual: ${p}% concluído.`
       ];
     }
 
     if (task.status === 'completed') {
       const completedTime = task.completedAt ? new Date(task.completedAt).toLocaleTimeString('pt-BR') : 'Recent';
       return [
-        `[Database] Processamento do lote finalizado com sucesso.`,
-        `[Compiler] Script compilado e verificado:`,
-        `  ${cmd}`,
-        `[Exporter] Arquivo gerado mapeado para a pasta de arquivos renderizados.`,
-        `[${completedTime}] [Sandbox] Download do arquivo final liberado para homologação.`
+        `[Sistema] Processamento do vídeo finalizado com sucesso.`,
+        `[Mídia] Arquivo gerado mapeado para sua pasta de armazenamento de mídias.`,
+        `[${completedTime}] [Status] Vídeo finalizado disponível para download.`
       ];
     }
 
     return [
-      `[Error] Falha no pipeline ou cota mensal atingida.`,
-      `[Database] Erro ao instanciar o compilador local (FALHOU).`
+      `[Erro] Falha no processamento do vídeo.`,
+      `[Status] Verifique se as mídias selecionadas e fontes estão disponíveis.`
     ];
   };
 
@@ -218,28 +215,11 @@ export const RenderingsManager: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-gray-100 tracking-tight flex items-center gap-2">
             <Film className="w-5 h-5 text-indigo-400" />
-            <span>Fila de Renderização</span>
+            <span>Fila de Geração de Vídeos</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Acompanhe a codificação de áudio, legendas automáticas de alto impacto e backgrounds em lote do <strong>Viral Factory Engine™</strong>.
+            Acompanhe o andamento da criação, legendagem e exportação dos seus vídeos em lote.
           </p>
-        </div>
-
-        {/* Database Sync Status Chip */}
-        <div className="flex items-center gap-2 bg-gray-950 border border-gray-900 rounded-xl px-4 py-2 font-mono text-[10px] text-gray-400 self-start md:self-auto shadow-inner">
-          <Database className="w-4 h-4 text-emerald-400" />
-          <span>Supabase Sync: <strong className="text-emerald-400">Ativa</strong></span>
-          <span className="text-gray-700">|</span>
-          <span>FFmpeg Cluster: <strong className="text-indigo-400">Aguardando Integração</strong></span>
-        </div>
-      </div>
-
-      {/* Honest Architectural Status Banner */}
-      <div className="bg-gradient-to-r from-amber-950/20 to-indigo-950/20 border border-amber-500/10 rounded-2xl p-4 flex gap-3 text-xs text-gray-400 leading-relaxed shadow-sm">
-        <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-        <div>
-          <strong className="text-gray-200 block mb-0.5">Nota de Integração e Homologação de Arquitetura</strong>
-          A infraestrutura de banco de dados do Supabase está sincronizada e registrando todas as tarefas em tempo real na tabela <code className="text-indigo-400 font-mono">rendering_tasks</code>. O cluster de processamento de produção do FFmpeg está aguardando integração de webhook para renderização real. Para fins de testes e validação das views de saída, o sistema processa um pipeline simulado no front-end que gera os logs exatos do script FFmpeg compilado.
         </div>
       </div>
 
@@ -386,9 +366,8 @@ export const RenderingsManager: React.FC = () => {
 
                     <button
                       onClick={() => {
-                        if (confirm('Deseja realmente remover esta tarefa de renderização do histórico?')) {
-                          deleteRenderingTask(task.id);
-                        }
+                        setTaskToDelete(task.id);
+                        setIsConfirmOpen(true);
                       }}
                       className="p-2.5 rounded-xl bg-gray-950 border border-gray-900 hover:border-red-950 hover:text-red-400 text-gray-500 transition cursor-pointer"
                       title="Excluir Renderização"
@@ -422,8 +401,8 @@ export const RenderingsManager: React.FC = () => {
                 <div className="px-5 py-2.5 bg-gray-950 border-t border-b border-gray-900/60 grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px] font-mono text-gray-500">
                   <span>ID do Projeto: <strong className="text-gray-400">{task.projectId}</strong></span>
                   <span>Duração: <strong className="text-gray-400">{task.duration}</strong></span>
-                  <span>Codec de Vídeo: <strong className="text-gray-400">libx264 (H.264)</strong></span>
-                  <span>Tempo de Compilação: <strong className="text-indigo-400">{task.renderTime || 'Calculando...'}</strong></span>
+                  <span>Formato: <strong className="text-gray-400">MP4 (H.264)</strong></span>
+                  <span>Tempo Processado: <strong className="text-indigo-400">{task.renderTime || 'Calculando...'}</strong></span>
                 </div>
 
                 {/* Collapsible Console Log Terminal Container */}
@@ -437,8 +416,8 @@ export const RenderingsManager: React.FC = () => {
                     >
                       <div className="p-5 font-mono text-[10px] text-gray-400 space-y-1.5 border-t border-gray-900">
                         <div className="flex justify-between text-gray-600 text-[9px] uppercase font-bold tracking-widest mb-1 pb-1 border-b border-gray-950">
-                          <span>CONSOLE DE COMPILAÇÃO FFmpeg</span>
-                          <span>Logs de Saída</span>
+                          <span>LOGS DE COMPOSIÇÃO E EXPORTAÇÃO</span>
+                          <span>Status do Processamento</span>
                         </div>
                         {getCompileLogs(task).map((line, idx) => (
                           <div key={idx} className="flex gap-2 font-mono leading-relaxed">
@@ -458,6 +437,25 @@ export const RenderingsManager: React.FC = () => {
           })
         )}
       </motion.div>
+
+      {/* Custom Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        onClose={() => {
+          setIsConfirmOpen(false);
+          setTaskToDelete(null);
+        }}
+        onConfirm={() => {
+          if (taskToDelete) {
+            deleteRenderingTask(taskToDelete);
+          }
+          setIsConfirmOpen(false);
+          setTaskToDelete(null);
+        }}
+        title="Excluir Registro de Vídeo"
+        message="Deseja realmente remover esta tarefa de renderização do histórico de forma permanente?"
+        confirmText="Excluir"
+      />
     </div>
   );
 };
