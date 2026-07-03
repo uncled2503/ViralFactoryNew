@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { AspectRatio, Template } from '../types';
 import {
@@ -59,7 +60,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
   // Background state
   const [backgroundType, setBackgroundType] = useState<'upload' | 'preset'>('preset');
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string>(
-    (template as any).backgroundImageUrl || BACKGROUND_PRESETS[0].url
+    template.backgroundImageUrl || BACKGROUND_PRESETS[0].url
   );
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
@@ -163,19 +164,32 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
     if (!file) return;
 
     setUploadProgress(10);
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev === null) return 10;
-        if (prev >= 100) {
+    
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64Url = reader.result as string;
+      
+      // Simulate progress to 100% for smooth UI feedback, then set backgroundImageUrl
+      let progress = 10;
+      const interval = setInterval(() => {
+        progress += 30;
+        if (progress >= 100) {
           clearInterval(interval);
-          setBackgroundImageUrl(URL.createObjectURL(file));
+          setBackgroundImageUrl(base64Url);
           setUploadProgress(null);
           showToast('Template de fundo carregado com sucesso!', 'success');
-          return null;
+        } else {
+          setUploadProgress(progress);
         }
-        return prev + 30;
-      });
-    }, 150);
+      }, 150);
+    };
+
+    reader.onerror = () => {
+      setUploadProgress(null);
+      showToast('Erro ao ler o arquivo de imagem', 'error');
+    };
+
+    reader.readAsDataURL(file);
   };
 
   // Add Dynamic Zone
@@ -320,13 +334,13 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
     } as any;
     
     // Store background meta
-    (updated as any).backgroundImageUrl = backgroundImageUrl;
+    updated.backgroundImageUrl = backgroundImageUrl;
 
     onSave(updated);
     showToast('Template salvo com sucesso na fábrica!', 'success');
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-[#03050a] flex flex-col z-[100] text-gray-200 select-none overflow-hidden">
       {/* Top Header */}
       <header className="h-16 border-b border-gray-900/60 bg-gray-950 px-6 flex items-center justify-between">
@@ -926,6 +940,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
           )}
         </aside>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

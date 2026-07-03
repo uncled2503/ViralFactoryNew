@@ -36,6 +36,7 @@ export const SubscriptionDashboard: React.FC = () => {
     triggerMockRenewal,
     projects,
     templates,
+    renderingTasks,
   } = useApp();
 
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
@@ -61,6 +62,13 @@ export const SubscriptionDashboard: React.FC = () => {
   const projectsProgress = limits.maxProjects === 99999
     ? 0
     : Math.min((activeProjectsCount / limits.maxProjects) * 100, 100);
+
+  // Dynamic ROI metric calculations
+  const hoursSavedVal = user.usageCurrent * 1.5;
+  const hoursSavedStr = hoursSavedVal === 0 ? '0h' : (hoursSavedVal % 1 === 0 ? `${hoursSavedVal}h` : `${hoursSavedVal.toFixed(1)}h`);
+  const workdaysStr = hoursSavedVal === 0 ? '0' : (hoursSavedVal / 8).toFixed(1);
+
+  const productivityMultiplier = user.usageCurrent === 0 ? '0%' : `${user.usageCurrent * 45}%`;
 
   const handleSubscribe = (tier: PlanTier) => {
     if (tier === user.subscription) return;
@@ -148,7 +156,15 @@ export const SubscriptionDashboard: React.FC = () => {
               <span className="text-[9px] font-mono text-indigo-400 tracking-wider font-extrabold uppercase">ESTATÍSTICAS DE ROI</span>
               <h2 className="text-sm font-bold text-gray-200 mt-0.5">Valor de Negócio Entregue na Sandbox</h2>
             </div>
-            <span className="text-[9px] font-mono text-gray-500 bg-gray-950 border border-gray-900 px-2 py-1 rounded">Sua produtividade saltou em 840% ⚡</span>
+            {user.usageCurrent > 0 ? (
+              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/25 border border-emerald-900/40 px-2 py-1 rounded">
+                Sua produtividade saltou em {productivityMultiplier} ⚡
+              </span>
+            ) : (
+              <span className="text-[9px] font-mono text-gray-500 bg-gray-950 border border-gray-900 px-2 py-1 rounded">
+                Nenhum vídeo renderizado neste ciclo 💤
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -156,40 +172,42 @@ export const SubscriptionDashboard: React.FC = () => {
             <div className="p-4 rounded-xl bg-gray-950/50 border border-gray-900 text-center space-y-1 hover:border-indigo-500/15 transition">
               <Clock className="w-5 h-5 text-indigo-400 mx-auto" />
               <p className="text-[10px] font-mono text-gray-500 uppercase tracking-wider font-semibold">Horas Economizadas</p>
-              <h3 className="text-lg font-bold font-mono text-white">142h</h3>
-              <span className="text-[8px] text-indigo-300 block font-mono">~17.5 dias úteis</span>
+              <h3 className="text-lg font-bold font-mono text-white">{hoursSavedStr}</h3>
+              <span className="text-[8px] text-indigo-300 block font-mono">~{workdaysStr} dias úteis</span>
             </div>
 
             {/* Videos Produced */}
             <div className="p-4 rounded-xl bg-gray-950/50 border border-gray-900 text-center space-y-1 hover:border-purple-500/15 transition">
               <Film className="w-5 h-5 text-purple-400 mx-auto" />
               <p className="text-[10px] font-mono text-gray-500 uppercase tracking-wider font-semibold">Vídeos Gerados</p>
-              <h3 className="text-lg font-bold font-mono text-white">1.240</h3>
-              <span className="text-[8px] text-purple-300 block font-mono">Em lote automático</span>
+              <h3 className="text-lg font-bold font-mono text-white">{user.usageCurrent}</h3>
+              <span className="text-[8px] text-purple-300 block font-mono">No ciclo atual</span>
             </div>
 
             {/* Templates Utilized */}
             <div className="p-4 rounded-xl bg-gray-950/50 border border-gray-900 text-center space-y-1 hover:border-pink-500/15 transition">
               <Layers className="w-5 h-5 text-pink-400 mx-auto" />
               <p className="text-[10px] font-mono text-gray-500 uppercase tracking-wider font-semibold">Templates Deploy</p>
-              <h3 className="text-lg font-bold font-mono text-white">12</h3>
-              <span className="text-[8px] text-pink-300 block font-mono">Reutilizados em lote</span>
+              <h3 className="text-lg font-bold font-mono text-white">{templates.length}</h3>
+              <span className="text-[8px] text-pink-300 block font-mono">Criados por você</span>
             </div>
 
             {/* Storage bandwidth */}
             <div className="p-4 rounded-xl bg-gray-950/50 border border-gray-900 text-center space-y-1 hover:border-emerald-500/15 transition">
               <Database className="w-5 h-5 text-emerald-400 mx-auto" />
               <p className="text-[10px] font-mono text-gray-500 uppercase tracking-wider font-semibold">Ativos em Disco</p>
-              <h3 className="text-lg font-bold font-mono text-white">12.4 GB</h3>
-              <span className="text-[8px] text-emerald-300 block font-mono">Armazenados no SaaS</span>
+              <h3 className="text-lg font-bold font-mono text-white">
+                {user.storageUsedMB >= 1024 ? `${(user.storageUsedMB / 1024).toFixed(2)} GB` : `${(user.storageUsedMB || 0).toFixed(1)} MB`}
+              </h3>
+              <span className="text-[8px] text-emerald-300 block font-mono">Armazenamento usado</span>
             </div>
 
             {/* FFmpeg Renders */}
             <div className="p-4 rounded-xl bg-gray-950/50 border border-gray-900 col-span-2 md:col-span-1 text-center space-y-1 hover:border-indigo-500/15 transition">
               <Zap className="w-5 h-5 text-yellow-400 mx-auto" />
               <p className="text-[10px] font-mono text-gray-500 uppercase tracking-wider font-semibold">Gerações de Vídeo</p>
-              <h3 className="text-lg font-bold font-mono text-white">340</h3>
-              <span className="text-[8px] text-yellow-300 block font-mono">Alta prioridade de fila</span>
+              <h3 className="text-lg font-bold font-mono text-white">{renderingTasks.length}</h3>
+              <span className="text-[8px] text-yellow-300 block font-mono">Histórico de renders</span>
             </div>
           </div>
         </div>
@@ -213,6 +231,7 @@ export const SubscriptionDashboard: React.FC = () => {
         <div className="bg-gray-950 border border-gray-900 rounded-xl p-5">
           <p className="text-[9px] font-mono text-gray-500 uppercase tracking-wider">Investimento</p>
           <h2 className="text-lg font-bold text-white mt-1">
+            {user.subscription === 'Free' && 'R$ 0,00'}
             {user.subscription === 'Starter' && 'R$ 49,00'}
             {user.subscription === 'Pro' && 'R$ 149,00'}
             {user.subscription === 'Business' && 'R$ 499,00'}
@@ -236,14 +255,18 @@ export const SubscriptionDashboard: React.FC = () => {
         <div className="bg-gray-950 border border-gray-900 rounded-xl p-5 flex flex-col justify-between">
           <div>
             <p className="text-[9px] font-mono text-gray-500 uppercase tracking-wider">Forma de Pagamento</p>
-            <div className="flex items-center gap-2 mt-1.5">
-              <div className="bg-indigo-600/10 text-indigo-400 p-1 rounded border border-indigo-600/15">
-                <CreditCard className="w-3.5 h-3.5" />
+            {user.subscription === 'Free' ? (
+              <p className="text-[10px] font-mono text-gray-500 mt-2">Nenhum cartão cadastrado</p>
+            ) : (
+              <div className="flex items-center gap-2 mt-1.5">
+                <div className="bg-indigo-600/10 text-indigo-400 p-1 rounded border border-indigo-600/15">
+                  <CreditCard className="w-3.5 h-3.5" />
+                </div>
+                <span className="text-[10px] font-mono text-gray-300">•••• 4242 (Stripe)</span>
               </div>
-              <span className="text-[10px] font-mono text-gray-300">•••• 4242 (Stripe)</span>
-            </div>
+            )}
           </div>
-          {user.subscriptionDetails && !user.subscriptionDetails.cancelAtPeriodEnd && (
+          {user.subscriptionDetails && user.subscription !== 'Free' && !user.subscriptionDetails.cancelAtPeriodEnd && (
             <button
               onClick={cancelSubscription}
               className="text-[9px] text-red-400 hover:text-red-300 transition-colors text-left font-mono mt-3 hover:underline"

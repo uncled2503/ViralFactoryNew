@@ -30,7 +30,8 @@ import {
   ArrowRight,
   Sliders,
   Maximize,
-  Tag
+  Tag,
+  Upload
 } from 'lucide-react';
 import { TemplateEditor } from './TemplateEditor';
 
@@ -40,13 +41,21 @@ export const TemplatesManager: React.FC = () => {
     createTemplate,
     updateTemplate,
     deleteTemplate,
-    setActiveTab
+    setActiveTab,
+    showToast
   } = useApp();
 
   const [activeEditorTemplate, setActiveEditorTemplate] = useState<Template | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedSort, setSelectedSort] = useState<string>('newest');
+
+  // Upload Template Image State
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [uploadedTemplateName, setUploadedTemplateName] = useState('');
+  const [uploadedTemplateAspect, setUploadedTemplateAspect] = useState<AspectRatio>('9:16');
+  const [uploadedTemplateFileUrl, setUploadedTemplateFileUrl] = useState<string | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
 
   // Favorites state persistent during session
   const [favorites, setFavorites] = useState<string[]>(['tpl-reddit-stories']);
@@ -155,6 +164,33 @@ export const TemplatesManager: React.FC = () => {
       return 0;
     });
 
+  const handleSaveUploadedTemplate = () => {
+    if (!uploadedTemplateName.trim()) {
+      showToast('Por favor, defina um nome para o seu template de foto.', 'error');
+      return;
+    }
+    if (!uploadedTemplateFileUrl) {
+      showToast('Por favor, envie uma foto para o seu template.', 'error');
+      return;
+    }
+
+    const newTpl = createTemplate(
+      uploadedTemplateName.trim(),
+      'Template de foto customizado salvo no sistema.',
+      uploadedTemplateAspect,
+      30,
+      uploadedTemplateFileUrl
+    );
+
+    if (newTpl) {
+      showToast('Template de foto salvo com sucesso na fábrica!', 'success');
+      setUploadedTemplateName('');
+      setUploadedTemplateAspect('9:16');
+      setUploadedTemplateFileUrl(null);
+      setIsUploadModalOpen(false);
+    }
+  };
+
   if (activeEditorTemplate) {
     return (
       <TemplateEditor
@@ -236,6 +272,14 @@ export const TemplatesManager: React.FC = () => {
           </div>
 
           <button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="flex items-center gap-1.5 py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-600/15 cursor-pointer"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Enviar Foto de Template</span>
+          </button>
+
+          <button
             onClick={openCreateFlow}
             className="flex items-center gap-1.5 py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-600/15 cursor-pointer"
           >
@@ -261,7 +305,7 @@ export const TemplatesManager: React.FC = () => {
               {/* Premium Card Header / Visual Preview */}
               <div className="relative aspect-[9/16] max-h-[300px] overflow-hidden bg-gray-900">
                 <img
-                  src={(template as any).backgroundImageUrl || getMockThumbnailUrl(template.id)}
+                  src={template.backgroundImageUrl || getMockThumbnailUrl(template.id)}
                   alt={template.name}
                   className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                   referrerPolicy="no-referrer"
@@ -367,6 +411,181 @@ export const TemplatesManager: React.FC = () => {
           setTemplateToDelete(null);
         }}
       />
+
+      {/* Upload Photo Template Modal */}
+      <AnimatePresence>
+        {isUploadModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="w-full max-w-md bg-gray-950 border border-gray-900 rounded-3xl p-6 shadow-2xl relative"
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  setIsUploadModalOpen(false);
+                  setUploadedTemplateName('');
+                  setUploadedTemplateFileUrl(null);
+                }}
+                className="absolute top-5 right-5 text-gray-500 hover:text-gray-300 p-1 rounded-lg hover:bg-gray-900 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-5 border-b border-gray-900/60 pb-4">
+                <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-100">Enviar Foto de Template</h3>
+                  <p className="text-[10px] text-gray-500">Crie uma nova estrutura enviando sua arte estática</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {/* Name field */}
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase mb-1.5">Nome da Foto de Template *</label>
+                  <input
+                    type="text"
+                    value={uploadedTemplateName}
+                    onChange={(e) => setUploadedTemplateName(e.target.value)}
+                    placeholder="Ex: Template de Notícias Futebol"
+                    className="w-full bg-gray-900 border border-gray-850 rounded-xl px-3.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 font-medium"
+                    required
+                  />
+                </div>
+
+                {/* Aspect Ratio choice */}
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase mb-1.5">Formato (Proporção) *</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: '9:16', label: 'Vertical (9:16)', desc: 'TikTok, Shorts, Reels' },
+                      { id: '16:9', label: 'Horizontal (16:9)', desc: 'YouTube Vídeos' },
+                      { id: '1:1', label: 'Quadrado (1:1)', desc: 'Feed Instagram' }
+                    ].map((asp) => (
+                      <button
+                        key={asp.id}
+                        type="button"
+                        onClick={() => setUploadedTemplateAspect(asp.id as AspectRatio)}
+                        className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between h-20 ${
+                          uploadedTemplateAspect === asp.id
+                            ? 'bg-emerald-950/20 border-emerald-500 text-emerald-400'
+                            : 'bg-gray-900 border-gray-850 text-gray-400 hover:border-gray-800 hover:text-gray-300'
+                        }`}
+                      >
+                        <span className="text-[11px] font-bold">{asp.label}</span>
+                        <span className="text-[9px] text-gray-500 leading-tight block">{asp.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Photo upload dropzone */}
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase mb-1.5">Arte / Imagem de Fundo *</label>
+                  
+                  {uploadedTemplateFileUrl ? (
+                    <div className="relative rounded-2xl border border-gray-850 overflow-hidden bg-gray-900 aspect-video flex items-center justify-center group">
+                      <img
+                        src={uploadedTemplateFileUrl}
+                        alt="Preview do Template"
+                        className="h-full w-full object-contain"
+                      />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setUploadedTemplateFileUrl(null)}
+                          className="p-2 bg-red-600/90 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remover</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDraggingFile(true);
+                      }}
+                      onDragLeave={() => setIsDraggingFile(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDraggingFile(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file && file.type.startsWith('image/')) {
+                          const url = URL.createObjectURL(file);
+                          setUploadedTemplateFileUrl(url);
+                        }
+                      }}
+                      className={`border border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center gap-3 cursor-pointer ${
+                        isDraggingFile
+                          ? 'border-emerald-500 bg-emerald-950/10 text-emerald-400'
+                          : 'border-gray-850 bg-gray-900/60 text-gray-500 hover:border-gray-700 hover:bg-gray-900'
+                      }`}
+                      onClick={() => document.getElementById('template-photo-upload')?.click()}
+                    >
+                      <input
+                        id="template-photo-upload"
+                        type="file"
+                        accept="image/png, image/jpeg, image/jpg, image/webp"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const url = URL.createObjectURL(file);
+                            setUploadedTemplateFileUrl(url);
+                          }
+                        }}
+                      />
+                      <div className="p-3 bg-gray-950 rounded-2xl border border-gray-850 transition">
+                        <Upload className="w-5 h-5 text-gray-400" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-gray-300">Arraste a arte aqui ou clique para selecionar</p>
+                        <p className="text-[10px] text-gray-500">Aceita PNG, JPG, JPEG ou WEBP</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3 mt-6 pt-4 border-t border-gray-900/60">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUploadModalOpen(false);
+                    setUploadedTemplateName('');
+                    setUploadedTemplateFileUrl(null);
+                  }}
+                  className="flex-1 py-2.5 px-4 bg-gray-900 hover:bg-gray-850 text-gray-400 hover:text-white rounded-xl text-xs font-bold transition cursor-pointer text-center"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveUploadedTemplate}
+                  disabled={!uploadedTemplateName.trim() || !uploadedTemplateFileUrl}
+                  className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+                    uploadedTemplateName.trim() && uploadedTemplateFileUrl
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      : 'bg-emerald-950/20 text-emerald-500/40 border border-emerald-950/30 cursor-not-allowed'
+                  }`}
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Salvar Foto de Template</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

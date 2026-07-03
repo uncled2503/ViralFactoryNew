@@ -411,7 +411,7 @@ export const LandingPage: React.FC = () => {
       >
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
           <div className="cursor-pointer" onClick={() => navigate('/')}>
-            <LogoFull iconSize={34} textClassName="text-lg" subTextClassName="text-[10px]" />
+            <LogoFull iconSize={54} />
           </div>
 
           {/* Desktop Navigation */}
@@ -1169,7 +1169,7 @@ export const LandingPage: React.FC = () => {
           
           {/* Column 1: Brand */}
           <div className="space-y-4 text-left">
-            <LogoFull iconSize={30} textClassName="text-base" subTextClassName="text-[9px]" />
+            <LogoFull iconSize={48} />
             <p className="text-[11px] text-gray-500 leading-relaxed max-w-xs">
               A fábrica inteligente de vídeos virais verticalizados na nuvem, desenhada para criadores de alta performance.
             </p>

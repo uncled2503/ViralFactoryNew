@@ -3,19 +3,82 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useRouter } from '../../hooks/useRouter';
 import { AdminSidebar, AdminMenuId } from '../admin/AdminSidebar';
 import { AdminHeader } from '../admin/AdminHeader';
 import { AdminDashboard } from '../admin/AdminDashboard';
 import { isAdminRole } from '../../utils/rbac';
-import { ShieldAlert, ArrowLeftRight, FileWarning, HelpCircle } from 'lucide-react';
+import { ShieldAlert, ArrowLeftRight, FileWarning, HelpCircle, Clock } from 'lucide-react';
 
 export const AdminLayout: React.FC = () => {
-  const { user } = useApp();
+  const { user, logout } = useApp();
   const { navigate } = useRouter();
   const [activeMenu, setActiveMenu] = useState<AdminMenuId>('dashboard');
+
+  const [showInactivityWarning, setShowInactivityWarning] = useState(false);
+  const [countdown, setCountdown] = useState(15);
+  const lastActivityRef = useRef<number>(Date.now());
+  const timerRef = useRef<any>(null);
+  const countdownIntervalRef = useRef<any>(null);
+
+  // Inactivity threshold: 120 seconds (2 minutes)
+  const INACTIVITY_TIMEOUT = 120 * 1000; 
+  // Warning triggers 15 seconds before timeout (at 105 seconds of inactivity)
+  const WARNING_TIMEOUT = INACTIVITY_TIMEOUT - 15000;
+
+  useEffect(() => {
+    const updateActivity = () => {
+      lastActivityRef.current = Date.now();
+      if (showInactivityWarning) {
+        setShowInactivityWarning(false);
+        setCountdown(15);
+        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      }
+    };
+
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('mousedown', updateActivity);
+    window.addEventListener('keypress', updateActivity);
+    window.addEventListener('scroll', updateActivity);
+
+    // Monitor inactivity every second
+    timerRef.current = setInterval(() => {
+      const inactiveDuration = Date.now() - lastActivityRef.current;
+
+      if (inactiveDuration >= INACTIVITY_TIMEOUT) {
+        // Log out immediately!
+        clearInterval(timerRef.current);
+        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+        logout();
+      } else if (inactiveDuration >= WARNING_TIMEOUT && !showInactivityWarning) {
+        // Trigger 15-second countdown warning
+        setShowInactivityWarning(true);
+        setCountdown(Math.ceil((INACTIVITY_TIMEOUT - inactiveDuration) / 1000));
+        
+        countdownIntervalRef.current = setInterval(() => {
+          setCountdown(prev => {
+            if (prev <= 1) {
+              clearInterval(countdownIntervalRef.current);
+              logout();
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+    }, 1000);
+
+    return () => {
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('mousedown', updateActivity);
+      window.removeEventListener('keypress', updateActivity);
+      window.removeEventListener('scroll', updateActivity);
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    };
+  }, [logout, showInactivityWarning]);
 
   // Double validation for administrative roles
   if (!user) {
@@ -81,7 +144,7 @@ export const AdminLayout: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans relative">
       {/* Exclusivo Admin Left Sidebar */}
       <AdminSidebar activeMenu={activeMenu} setActiveMenu={setActiveMenu} />
 
@@ -104,6 +167,38 @@ export const AdminLayout: React.FC = () => {
           </span>
         </footer>
       </div>
+
+      {/* Inactivity Warning Popup Modal */}
+      {showInactivityWarning && (
+        <div id="inactivity-warning-modal" className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-sm w-full space-y-6 shadow-2xl text-center relative overflow-hidden">
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl animate-pulse" />
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+              <Clock className="w-8 h-8 animate-pulse text-amber-400" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-white font-bold text-lg">Inatividade Detectada</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Você ficou inativo por algum tempo. Por segurança, sua sessão administrativa expira em:
+              </p>
+              <div className="text-4xl font-black text-amber-400 font-mono py-2">
+                {countdown}s
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                lastActivityRef.current = Date.now();
+                setShowInactivityWarning(false);
+                setCountdown(15);
+                if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+              }}
+              className="w-full py-2.5 bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-lg transition duration-200"
+            >
+              Manter Sessão Ativa
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

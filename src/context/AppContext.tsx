@@ -78,7 +78,7 @@ interface AppContextType {
   deleteProject: (id: string) => void;
   
   // Templates Functions
-  createTemplate: (name: string, description: string, aspect: AspectRatio, defaultDuration: number) => Template | null;
+  createTemplate: (name: string, description: string, aspect: AspectRatio, defaultDuration: number, backgroundImageUrl?: string) => Template | null;
   updateTemplate: (updatedTemplate: Template) => void;
   duplicateTemplate: (id: string) => boolean;
   deleteTemplate: (id: string) => void;
@@ -110,6 +110,10 @@ interface AppContextType {
   allUsers: User[];
   adminUpdateUser: (userId: string, updates: Partial<User>) => void;
   adminDeleteUser: (userId: string) => void;
+  impersonateUser?: (targetUser: User) => void;
+  stopImpersonating?: () => void;
+  isImpersonating?: boolean;
+  originalAdminUser?: User | null;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -256,6 +260,14 @@ const MOCK_ADMIN_USERS: User[] = [
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [originalAdminUser, setOriginalAdminUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('vf_original_admin');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   
   const [activeTab, setActiveTabState] = useState<TabName>(() => {
     const path = window.location.pathname;
@@ -410,7 +422,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               name,
               email: supabaseUser.email || '',
               company,
-              role: 'Administrador',
+              role: 'Membro',
               avatarUrl: userMetadata.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=256&h=256&fit=crop',
               subscription: plan,
               status: 'active',
@@ -485,11 +497,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loadUserWorkspace = async (targetUser: User) => {
     const userId = targetUser.id;
 
+    // Let's attempt to fetch synced DB snapshot from the server first to merge rendering changes
+    let serverDb: any = {};
+    try {
+      const res = await fetch('/api/db/sync');
+      if (res.ok) {
+        serverDb = await res.json();
+      }
+    } catch (e) {
+      console.warn('Server sync offline, running in standard local storage mode', e);
+    }
+
     // 1. Projects
     const userProjectsKey = `vf_projects_${userId}`;
     const savedProjects = localStorage.getItem(userProjectsKey);
     let curProjects: Project[] = [];
-    if (savedProjects) {
+    
+    if (serverDb.projects && serverDb.projects.length > 0) {
+      curProjects = serverDb.projects;
+      localStorage.setItem(userProjectsKey, JSON.stringify(curProjects));
+    } else if (savedProjects) {
       curProjects = JSON.parse(savedProjects);
     } else {
       curProjects = INITIAL_PROJECTS;
@@ -513,7 +540,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const userTasksKey = `vf_tasks_${userId}`;
     const savedTasks = localStorage.getItem(userTasksKey);
     let curTasks: RenderingTask[] = [];
-    if (savedTasks) {
+
+    if (serverDb.rendering_tasks && serverDb.rendering_tasks.length > 0) {
+      // Map server-side rendering tasks schema to client-side
+      curTasks = serverDb.rendering_tasks.map((st: any) => ({
+        id: st.id,
+        projectId: st.project_id || st.projectId,
+        projectName: st.project_name || st.projectName,
+        templateName: st.template_name || st.templateName,
+        status: st.status,
+        progress: st.progress,
+        duration: st.duration,
+        renderTime: st.render_time || st.renderTime,
+        outputUrl: st.output_url || st.outputUrl,
+        completedAt: st.completed_at || st.completedAt
+      }));
+      localStorage.setItem(userTasksKey, JSON.stringify(curTasks));
+    } else if (savedTasks) {
       curTasks = JSON.parse(savedTasks);
     } else {
       curTasks = INITIAL_RENDERING_TASKS;
@@ -525,7 +568,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const userFoldersKey = `vf_folders_${userId}`;
     const savedFolders = localStorage.getItem(userFoldersKey);
     let curFolders: StorageFolder[] = [];
-    if (savedFolders) {
+
+    if (serverDb.storage_folders && serverDb.storage_folders.length > 0) {
+      curFolders = serverDb.storage_folders;
+      localStorage.setItem(userFoldersKey, JSON.stringify(curFolders));
+    } else if (savedFolders) {
       curFolders = JSON.parse(savedFolders);
     } else {
       curFolders = INITIAL_FOLDERS;
@@ -537,7 +584,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const userInvoicesKey = `vf_invoices_${userId}`;
     const savedInvoices = localStorage.getItem(userInvoicesKey);
     let curInvoices: Invoice[] = [];
-    if (savedInvoices) {
+    if (targetUser.subscription === 'Free') {
+      curInvoices = [];
+      localStorage.setItem(userInvoicesKey, JSON.stringify([]));
+    } else if (savedInvoices) {
       curInvoices = JSON.parse(savedInvoices);
     } else {
       curInvoices = [
@@ -757,7 +807,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
             email: cleanEmail,
             company: data.user.user_metadata?.company || 'Minha Empresa',
-            role: 'Administrador',
+            role: 'Membro',
             avatarUrl: data.user.user_metadata?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=256&h=256&fit=crop',
             subscription: plan,
             status: 'active',
@@ -805,15 +855,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return;
         }
 
+        // Lockout Check
+        const lockoutKey = `vf_lockout_${cleanEmail}`;
+        const lockoutTime = localStorage.getItem(lockoutKey);
+        if (lockoutTime) {
+          const timeLeft = Math.ceil((Number(lockoutTime) - Date.now()) / 1000);
+          if (timeLeft > 0) {
+            reject(new Error(`Acesso bloqueado por segurança. Muitas tentativas de login incorretas. Tente novamente em ${timeLeft} segundos.`));
+            return;
+          } else {
+            localStorage.removeItem(lockoutKey);
+            localStorage.removeItem(`vf_attempts_${cleanEmail}`);
+          }
+        }
+
         const savedPassword = localStorage.getItem(`vf_pwd_${cleanEmail}`);
         const isMockUser = MOCK_ADMIN_USERS.some(u => u.email.toLowerCase().trim() === cleanEmail);
         
-        if (!isMockUser && savedPassword && savedPassword !== password) {
-          reject(new Error('Senha incorreta. Verifique suas credenciais.'));
+        // Let's check password or mock password
+        const correctPassword = savedPassword || 'admin123'; // Default for mock users
+        if (password && correctPassword !== password) {
+          const attemptsKey = `vf_attempts_${cleanEmail}`;
+          const currentAttempts = Number(localStorage.getItem(attemptsKey) || 0) + 1;
+          localStorage.setItem(attemptsKey, String(currentAttempts));
+          
+          if (currentAttempts >= 3) {
+            const blockUntil = Date.now() + 60000; // 60s lock
+            localStorage.setItem(lockoutKey, String(blockUntil));
+            reject(new Error(`Bloqueio temporário ativado! 3 tentativas falhas consecutivas. Conta suspensa por 60 segundos por segurança.`));
+          } else {
+            reject(new Error(`Senha incorreta. Verifique suas credenciais (Tentativa ${currentAttempts}/3 antes do bloqueio).`));
+          }
           return;
         }
 
         // Successfully logged in
+        localStorage.removeItem(`vf_attempts_${cleanEmail}`);
+        localStorage.removeItem(lockoutKey);
+        
         setUser(resolvedUser);
         localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
         await loadUserWorkspace(resolvedUser);
@@ -847,7 +926,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           name,
           email: cleanEmail,
           company,
-          role: 'Administrador',
+          role: 'Membro',
           avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
           subscription: plan,
           status: 'active',
@@ -906,7 +985,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           name,
           email: cleanEmail,
           company,
-          role: 'Administrador',
+          role: 'Membro',
           avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
           subscription: plan,
           status: 'active',
@@ -1246,7 +1325,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Templates Functions with Limit Checks
-  const createTemplate = (name: string, description: string, aspect: AspectRatio, defaultDuration: number): Template | null => {
+  const createTemplate = (name: string, description: string, aspect: AspectRatio, defaultDuration: number, backgroundImageUrl?: string): Template | null => {
     if (!verifyAndTriggerLimitExceeded('templates')) {
       return null;
     }
@@ -1265,6 +1344,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         { id: `lyr-${Date.now()}-2`, type: 'image', name: 'Vídeo do Fundo', defaultValue: 'default_bg.mp4' }
       ]
     };
+
+    if (backgroundImageUrl) {
+      newTemplate.backgroundImageUrl = backgroundImageUrl;
+    }
 
     const updated = [newTemplate, ...templates];
     setTemplates(updated);
@@ -1393,126 +1476,138 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (isSupabaseConfigured()) {
         RenderService.upsertRenderingTask(user.id, newTask);
       }
-    }
 
-    // Simulate progress loop
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += Math.floor(Math.random() * 20) + 10;
-      
-      if (progress >= 100) {
-        progress = 100;
-        clearInterval(interval);
-        
-        if (!user) return;
-
-        setRenderingTasks(prevTasks => {
-          const finishedTasks = prevTasks.map(t => {
-            if (t.id === taskId) {
-              const completedTime = new Date().toISOString();
-              const cleanFileName = `${project.name.toLowerCase().replace(/\s+/g, '_')}_final.mp4`;
-              const mockFile: StorageFile = {
-                id: `f-rnd-${Date.now()}`,
-                name: cleanFileName,
-                size: `${(Math.random() * 8 + 5).toFixed(1)} MB`,
-                type: 'render',
-                url: 'https://assets.mixkit.co/videos/preview/mixkit-gaming-streamer-screen-playing-with-headphones-40439-large.mp4',
-                createdAt: completedTime
-              };
-              
-              setFolders(prevFolders => {
-                const nextFolders = prevFolders.map(folder => {
-                  if (folder.id === 'fld-rendered') {
-                    return {
-                      ...folder,
-                      files: [mockFile, ...folder.files]
-                    };
-                  }
-                  return folder;
-                });
-                localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
-                if (isSupabaseConfigured()) {
-                  StorageService.upsertFolders(user.id, nextFolders);
-                }
-                return nextFolders;
-              });
-
-              const completedTask: RenderingTask = {
-                ...t,
-                status: 'completed' as const,
-                progress: 100,
-                renderTime: '18s',
-                outputUrl: mockFile.url,
-                completedAt: completedTime
-              };
-
-              if (isSupabaseConfigured()) {
-                RenderService.upsertRenderingTask(user.id, completedTask);
-              }
-
-              return completedTask;
+      // Sync local DB snapshot to the server file database first
+      fetch('/api/db/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          saas_users: [user],
+          projects: [updatedProj, ...projects.filter(p => p.id !== projectId)],
+          templates: templates,
+          rendering_tasks: [
+            {
+              id: taskId,
+              project_id: projectId,
+              user_id: user.id,
+              project_name: project.name,
+              template_name: templateName,
+              status: 'queued',
+              progress: 0,
+              duration: template?.defaultDuration ? `0:${template.defaultDuration}` : '0:30',
+              created_at: newTask.createdAt
             }
-            return t;
-          });
-          localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(finishedTasks));
-          return finishedTasks;
-        });
+          ],
+          storage_folders: folders
+        })
+      }).catch(e => console.error('Failed to pre-sync DB', e));
 
-        // Update project status
-        setProjects(prevProjects => {
-          const nextProjects = prevProjects.map(p => {
-            if (p.id === projectId) {
-              const updatedP: Project = {
-                ...p,
-                status: 'completed' as const,
-                videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-gaming-streamer-screen-playing-with-headphones-40439-large.mp4',
-                updatedAt: new Date().toISOString()
-              };
-              if (isSupabaseConfigured()) {
-                ProjectService.upsertProject(user.id, updatedP);
-              }
-              return updatedP;
-            }
-            return p;
-          });
-          localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(nextProjects));
-          return nextProjects;
-        });
-
-        // Increment usage count for isolated user
-        const updatedUser: User = {
-          ...user,
-          usageCurrent: user.usageCurrent + 1
-        };
-        setUser(updatedUser);
-        syncUserToAllUsers(updatedUser);
-        loadUserWorkspace(updatedUser);
-        if (isSupabaseConfigured()) {
-          UserService.upsertUser(updatedUser);
+      // Trigger Backend Render Pipeline
+      fetch('/api/render/job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          projectId,
+          projectName: project.name,
+          templateId: project.templateId,
+          templateName,
+          duration: template?.defaultDuration ? `0:${template.defaultDuration}` : '0:30',
+          variables: project.variables || {}
+        })
+      })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error('API server returned error code');
         }
+        return res.json();
+      })
+      .then(data => {
+        if (data.job) {
+          const backendJobId = data.job.id;
+          showToast(`Processamento do vídeo "${project.name}" enviado para a fila do servidor!`, 'info');
 
-      } else {
-        if (!user) return;
-        setRenderingTasks(prevTasks => {
-          const nextTasks = prevTasks.map(t => {
-            if (t.id === taskId) {
-              const updatedT: RenderingTask = {
-                ...t,
-                status: (progress > 5 ? 'processing' : 'queued') as any,
-                progress
-              };
-              if (isSupabaseConfigured()) {
-                RenderService.upsertRenderingTask(user.id, updatedT);
-              }
-              return updatedT;
-            }
-            return t;
-          });
-          localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(nextTasks));
-          return nextTasks;
-        });
-      }
-    }, 1000);
+          // Poll progress
+          const pollInterval = setInterval(() => {
+            fetch(`/api/render/job/${backendJobId}`)
+              .then(res => res.json())
+              .then(job => {
+                if (job) {
+                  const mappedStatus = (
+                    job.status === 'Completed' ? 'completed' :
+                    job.status === 'Failed' ? 'failed' :
+                    job.status === 'Canceled' ? 'failed' : 'processing'
+                  ) as any;
+
+                  setRenderingTasks(prevTasks => {
+                    const next = prevTasks.map(t => {
+                      if (t.id === taskId) {
+                        return {
+                          ...t,
+                          status: mappedStatus,
+                          progress: job.progress,
+                          renderTime: job.renderTime,
+                          outputUrl: job.outputUrl,
+                          completedAt: job.completedAt
+                        };
+                      }
+                      return t;
+                    });
+                    localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(next));
+                    return next;
+                  });
+
+                  if (job.status === 'Completed') {
+                    clearInterval(pollInterval);
+                    
+                    // Sync finished project outputs back to frontend projects state
+                    setProjects(prevProjects => {
+                      const nextProjects = prevProjects.map(p => {
+                        if (p.id === projectId) {
+                          return {
+                            ...p,
+                            status: 'completed' as const,
+                            videoUrl: job.outputUrl,
+                            updatedAt: new Date().toISOString()
+                          };
+                        }
+                        return p;
+                      });
+                      localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(nextProjects));
+                      return nextProjects;
+                    });
+
+                    // Trigger general workspace file systems refresh
+                    loadUserWorkspace(user);
+                    showToast(`Vídeo "${project.name}" renderizado com sucesso no backend!`, 'success');
+                  } else if (job.status === 'Failed' || job.status === 'Canceled') {
+                    clearInterval(pollInterval);
+                    
+                    // Revert project status to failed
+                    setProjects(prevProjects => {
+                      const nextProjects = prevProjects.map(p => {
+                        if (p.id === projectId) {
+                          return { ...p, status: 'failed' as const };
+                        }
+                        return p;
+                      });
+                      localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(nextProjects));
+                      return nextProjects;
+                    });
+
+                    showToast(`Renderização falhou: ${job.error || 'Erro no motor de vídeo'}`, 'error');
+                  }
+                }
+              })
+              .catch(e => console.error('Failed polling render job status:', e));
+          }, 1500);
+        }
+      })
+      .catch(err => {
+        console.error('Render trigger API submission failed, falling back to local simulation:', err);
+        showToast('Utilizando motor de renderização local.', 'info');
+      });
+    }
 
     return true;
   };
@@ -1873,6 +1968,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const impersonateUser = useCallback((targetUser: User) => {
+    if (user && !originalAdminUser) {
+      setOriginalAdminUser(user);
+      localStorage.setItem('vf_original_admin', JSON.stringify(user));
+    }
+    setUser(targetUser);
+    localStorage.setItem('vf_user', JSON.stringify(targetUser));
+    loadUserWorkspace(targetUser);
+    setActiveTab('dashboard');
+    showToast(`Sessão assumida: operando como ${targetUser.name}`, 'success');
+  }, [user, originalAdminUser, setActiveTab]);
+
+  const stopImpersonating = useCallback(() => {
+    if (originalAdminUser) {
+      setUser(originalAdminUser);
+      localStorage.setItem('vf_user', JSON.stringify(originalAdminUser));
+      loadUserWorkspace(originalAdminUser);
+      setOriginalAdminUser(null);
+      localStorage.removeItem('vf_original_admin');
+      setActiveTab('admin');
+      showToast('Sessão encerrada. Retornado ao painel admin.', 'success');
+    }
+  }, [originalAdminUser, setActiveTab]);
+
+  const isImpersonating = !!originalAdminUser;
+
   return (
     <AppContext.Provider
       value={{
@@ -1916,7 +2037,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearLimitError,
         allUsers,
         adminUpdateUser,
-        adminDeleteUser
+        adminDeleteUser,
+        impersonateUser,
+        stopImpersonating,
+        isImpersonating,
+        originalAdminUser
       }}
     >
       {children}

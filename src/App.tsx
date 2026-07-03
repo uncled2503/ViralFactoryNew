@@ -23,7 +23,7 @@ import { ProjectEditor } from './components/ProjectEditor';
 import { LandingPage } from './components/LandingPage';
 
 const AppContent: React.FC = () => {
-  const { user, activeTab, setActiveTab } = useApp();
+  const { user, activeTab, setActiveTab, isImpersonating, stopImpersonating } = useApp();
   const { path, navigate } = useRouter();
 
   // Redirect root path '/' to '/dashboard' once authenticated
@@ -83,25 +83,46 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#030712] text-gray-100 flex">
-      {/* Permanent Premium Left Sidebar */}
-      <Sidebar />
+    <div className="min-h-screen bg-[#030712] text-gray-100 flex flex-col">
+      {isImpersonating && (
+        <div id="impersonation-banner" className="bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 text-white text-xs font-semibold py-2 px-6 flex items-center justify-between sticky top-0 z-[100] shadow-xl border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <span className="bg-white/20 text-white text-[9px] font-mono uppercase tracking-wider font-bold py-0.5 px-2 rounded animate-pulse">
+              Modo Suporte
+            </span>
+            <span>
+              Você está visualizando e editando a conta de: <strong className="text-pink-100">{user?.name}</strong> ({user?.email})
+            </span>
+          </div>
+          <button 
+            onClick={stopImpersonating}
+            className="bg-white hover:bg-pink-50 text-slate-900 text-[10px] font-bold py-1 px-3 rounded-lg shadow-md transition cursor-pointer"
+          >
+            Encerrar e Voltar para Admin
+          </button>
+        </div>
+      )}
 
-      {/* Main Workspace Frame */}
-      <div className="flex-1 flex flex-col min-h-screen pl-64">
-        {/* Sticky Header info bar */}
-        <Header />
+      <div className="flex-1 flex">
+        {/* Permanent Premium Left Sidebar */}
+        <Sidebar />
 
-        {/* Dynamic page content wrapped with elegant padding and max-width bounds */}
-        <main className="flex-1 p-8 max-w-7xl w-full mx-auto relative z-10">
-          {renderActiveTab()}
-        </main>
+        {/* Main Workspace Frame */}
+        <div className="flex-1 flex flex-col min-h-screen pl-64">
+          {/* Sticky Header info bar */}
+          <Header />
 
-        {/* Footer info bar */}
-        <footer className="h-12 border-t border-gray-900/40 flex items-center justify-between px-8 text-[10px] font-mono text-gray-600">
-          <span>Viral Factory © 2026</span>
-          <span>Plataforma de Produção e Edição de Vídeos</span>
-        </footer>
+          {/* Dynamic page content wrapped with elegant padding and max-width bounds */}
+          <main className="flex-1 p-8 max-w-7xl w-full mx-auto relative z-10">
+            {renderActiveTab()}
+          </main>
+
+          {/* Footer info bar */}
+          <footer className="h-12 border-t border-gray-900/40 flex items-center justify-between px-8 text-[10px] font-mono text-gray-600">
+            <span>Viral Factory © 2026</span>
+            <span>Plataforma de Produção e Edição de Vídeos</span>
+          </footer>
+        </div>
       </div>
 
       {/* Global Limit Control Overlay Modal */}

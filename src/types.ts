@@ -74,26 +74,39 @@ export interface Refund {
 
 export type UserRole = 
   | 'SUPER_ADMIN' 
+  | 'OWNER'
   | 'ADMIN' 
-  | 'SUPPORT' 
-  | 'FINANCE' 
-  | 'MODERATOR' 
+  | 'SUPORTE' 
+  | 'FINANCEIRO' 
+  | 'MARKETING' 
+  | 'MODERADOR' 
+  | 'ANALISTA' 
+  | 'DESENVOLVEDOR'
+  | 'SUPPORT' // compatibility
+  | 'FINANCE' // compatibility
+  | 'MODERATOR' // compatibility
   | 'CLIENT_OWNER' 
   | 'CLIENT_MEMBER'
-  | 'SaaS_Owner' // backward compatibility
-  | 'Administrador' // backward compatibility
-  | 'Membro'; // backward compatibility
+  | 'SaaS_Owner' // compatibility
+  | 'Administrador' // compatibility
+  | 'Membro'; // compatibility
 
 export type Permission = 
   | 'MANAGE_USERS' 
-  | 'VIEW_METRICS' 
+  | 'DELETE_USERS'
+  | 'VIEW_METRICS'
+  | 'VIEW_PAYMENTS'
   | 'MANAGE_PAYMENTS' 
   | 'MANAGE_TEMPLATES' 
   | 'MANAGE_SYSTEM' 
   | 'VIEW_LOGS' 
   | 'MANAGE_SUPPORT'
   | 'RENDER_VIDEOS'
-  | 'MANAGE_FILES';
+  | 'MANAGE_FILES'
+  | 'MANAGE_COUPONS'
+  | 'MANAGE_WORKERS'
+  | 'MANAGE_STORAGE'
+  | 'VIEW_AUDIT';
 
 export interface User {
   id: string;
@@ -163,6 +176,7 @@ export interface Template {
   createdAt: string;
   updatedAt: string;
   bgMusicUrl?: string;
+  backgroundImageUrl?: string;
   defaultDuration: number; // in seconds
   scenesCount: number;
   layers: {

@@ -6,6 +6,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { LogoFull } from './Logo';
+import { isAdminRole } from '../utils/rbac';
 import {
   LayoutDashboard,
   Video,
@@ -49,8 +50,8 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="w-64 bg-gray-950/80 border-r border-gray-900 flex flex-col h-screen fixed top-0 left-0 z-20 backdrop-blur-xl">
       {/* Brand logo */}
-      <div className="p-6 border-b border-gray-900/60 flex items-center">
-        <LogoFull iconSize={34} textClassName="text-sm" subTextClassName="text-[10px]" />
+      <div className="p-6 border-b border-gray-900/60 flex items-center justify-start">
+        <LogoFull iconSize={50} />
       </div>
 
       {/* Navigation list */}

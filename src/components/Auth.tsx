@@ -109,7 +109,7 @@ export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
         {/* Brand Header */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-3">
-            <LogoFull iconSize={44} textClassName="text-2xl" subTextClassName="text-xs tracking-[0.2em] mt-0.5" />
+            <LogoFull iconSize={60} />
           </div>
           <p className="text-gray-400 text-sm mt-3">
             {mode === 'login' && 'Bem-vindo de volta! Acesse sua fábrica de vídeos virais.'}
