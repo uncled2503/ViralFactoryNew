@@ -262,27 +262,35 @@ export const LandingPage: React.FC = () => {
   // Testimonials with automatic playing logic
   const testimonials = [
     {
-      name: 'Thiago Castanho',
-      role: 'Fundador da ViralMedia',
-      company: 'Agência de Escala',
+      name: 'Tayse Cardoso',
+      role: 'Criadora de Conteúdo',
+      company: 'Digital Creator',
       quote: 'O Viral Factory revolucionou nossa operação. Conseguimos criar 120 shorts personalizados para nossos clientes em menos de 15 minutos. A qualidade visual é simplesmente premium.',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&h=150&q=80',
+      avatar: '/fotos/taysecardoso.jpg',
       rating: 5
     },
     {
-      name: 'Juliana Neves',
-      role: 'Head de Growth',
-      company: 'SaaS Pulse',
-      quote: 'Antes levávamos dias editando vídeos manualmente para o TikTok e Reels. Hoje, montamos um template no editor e exportamos em lote de forma incrivelmente rápida e padronizada.',
-      avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&h=150&q=80',
-      rating: 5
-    },
-    {
-      name: 'Marcos Silveira',
-      role: 'Criador de Conteúdo',
-      company: 'Canal Alquimia Financeira',
+      name: 'Paulo de Borba Moraes',
+      role: 'Produtor e Gestor',
+      company: 'Moraes Media',
       quote: 'Ter dezenas de vídeos prontos para a semana toda me salvou de um cansaço absurdo. O Viral Factory me dá o suporte ideal para dominar os algoritmos e crescer muito mais rápido.',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&h=150&q=80',
+      avatar: '/fotos/paulodeborbamoraes.jpg',
+      rating: 5
+    },
+    {
+      name: 'Rogerio Dorx',
+      role: 'Head de Growth',
+      company: 'Dorx Digital',
+      quote: 'Antes levávamos dias editando vídeos manualmente para o TikTok e Reels. Hoje, montamos um template no editor e exportamos em lote de forma incrivelmente rápida e padronizada.',
+      avatar: '/fotos/rogeriodorx.jpg',
+      rating: 5
+    },
+    {
+      name: 'Studio Evellynn',
+      role: 'Especialista em Social Media',
+      company: 'Evellynn Agency',
+      quote: 'A facilidade de programar as automações de legendas inteligentes com o Viral Factory decolou minhas visualizações. Consegui triplicar o engajamento sem precisar passar horas editando.',
+      avatar: '/fotos/studio.evellynn.jpg',
       rating: 5
     }
   ];
@@ -411,7 +419,7 @@ export const LandingPage: React.FC = () => {
       >
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
           <div className="cursor-pointer" onClick={() => navigate('/')}>
-            <LogoFull iconSize={54} />
+            <LogoFull iconSize={120} />
           </div>
 
           {/* Desktop Navigation */}
@@ -927,7 +935,7 @@ export const LandingPage: React.FC = () => {
             ].map((row, i) => (
               <div key={i} className="grid grid-cols-12 p-4 items-center hover:bg-gray-900/10 transition">
                 <div className="col-span-4 font-semibold text-gray-300 pl-2">{row.metric}</div>
-                <div className="col-span-4 text-center text-gray-500 line-through decoration-red-500/20">{row.manual}</div>
+                <div className="col-span-4 text-center text-gray-400/80 line-through decoration-red-500/50">{row.manual}</div>
                 <div className="col-span-4 text-center text-indigo-300 font-bold bg-indigo-500/5 py-1.5 rounded-lg border border-indigo-500/10">{row.factory}</div>
               </div>
             ))}
@@ -1169,7 +1177,7 @@ export const LandingPage: React.FC = () => {
           
           {/* Column 1: Brand */}
           <div className="space-y-4 text-left">
-            <LogoFull iconSize={48} />
+            <LogoFull iconSize={90} />
             <p className="text-[11px] text-gray-500 leading-relaxed max-w-xs">
               A fábrica inteligente de vídeos virais verticalizados na nuvem, desenhada para criadores de alta performance.
             </p>

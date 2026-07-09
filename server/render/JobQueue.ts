@@ -27,6 +27,8 @@ export interface RenderJob {
   createdAt: string;
   completedAt?: string;
   variables: any;
+  logs?: string[];
+  debugInfo?: any;
 }
 
 class JobQueueEmitter extends EventEmitter {}

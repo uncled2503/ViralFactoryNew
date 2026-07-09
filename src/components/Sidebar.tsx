@@ -50,8 +50,8 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="w-64 bg-gray-950/80 border-r border-gray-900 flex flex-col h-screen fixed top-0 left-0 z-20 backdrop-blur-xl">
       {/* Brand logo */}
-      <div className="p-6 border-b border-gray-900/60 flex items-center justify-start">
-        <LogoFull iconSize={50} />
+      <div className="p-4 border-b border-gray-900/60 flex items-center justify-center overflow-hidden">
+        <LogoFull iconSize={150} className="w-full justify-center" />
       </div>
 
       {/* Navigation list */}

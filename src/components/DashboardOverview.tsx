@@ -492,17 +492,33 @@ export const DashboardOverview: React.FC = () => {
                       </button>
 
                       {project.status === 'draft' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            triggerRender(project.id);
-                          }}
-                          className="p-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-white transition-all text-[10px] font-bold flex items-center gap-1 cursor-pointer shadow-md shadow-pink-600/20"
-                          title="Gerar Vídeo"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>Gerar</span>
-                        </button>
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerRender(project.id, true);
+                              setActiveTab('renderings');
+                            }}
+                            className="p-1.5 rounded-lg bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white transition-all text-[10px] font-bold flex items-center gap-1 cursor-pointer shadow-md shadow-pink-600/10"
+                            title="Renderizar Sandbox de 3 segundos para teste rápido de layout"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Sandbox</span>
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerRender(project.id);
+                              setActiveTab('renderings');
+                            }}
+                            className="p-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-white transition-all text-[10px] font-bold flex items-center gap-1 cursor-pointer shadow-md shadow-pink-600/20"
+                            title="Gerar Vídeo Completo"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                            <span>Gerar</span>
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

@@ -3,25 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   DollarSign, 
   TrendingUp, 
-  Download, 
   RotateCcw, 
   CheckCircle, 
   XCircle, 
   AlertTriangle, 
   Search, 
-  Filter,
-  FileSpreadsheet,
-  ArrowUpRight,
-  User
+  RefreshCw
 } from 'lucide-react';
-
-interface FinanceTabProps {
-  showToast: (msg: string, type: 'success' | 'error' | 'info') => void;
-}
 
 interface Invoice {
   id: string;
@@ -34,226 +26,202 @@ interface Invoice {
   stripeId: string;
 }
 
-export const FinanceTab: React.FC<FinanceTabProps> = ({ showToast }) => {
-  const [invoices, setInvoices] = useState<Invoice[]>([
-    { id: 'inv-101', customerName: 'Gabriel Moura', customerEmail: 'gabriel@viral.io', plan: 'Pro', amount: 99, status: 'paid', date: '2026-07-01 10:22', stripeId: 'ch_3Mv82YF90s21A' },
-    { id: 'inv-102', customerName: 'Renata Souza', customerEmail: 'renata@vlog.com', plan: 'Business', amount: 199, status: 'paid', date: '2026-06-30 18:45', stripeId: 'ch_3Mv82YF90s21B' },
-    { id: 'inv-103', customerName: 'Marcos Silveira', customerEmail: 'marcos@farma.com.br', plan: 'Starter', amount: 49, status: 'failed', date: '2026-06-29 09:12', stripeId: 'ch_3Mv82YF90s21C' },
-    { id: 'inv-104', customerName: 'Júlia Azevedo', customerEmail: 'julia@agenciagrow.io', plan: 'Pro', amount: 99, status: 'paid', date: '2026-06-28 14:33', stripeId: 'ch_3Mv82YF90s21D' },
-    { id: 'inv-105', customerName: 'Thiago Costa', customerEmail: 'thiago@cortes.com', plan: 'Pro', amount: 99, status: 'refunded', date: '2026-06-27 11:05', stripeId: 'ch_3Mv82YF90s21E' },
-    { id: 'inv-106', customerName: 'Eduarda Melo', customerEmail: 'eduarda@ecom.io', plan: 'Business', amount: 199, status: 'paid', date: '2026-06-26 15:50', stripeId: 'ch_3Mv82YF90s21F' }
-  ]);
-
+export const FinanceTab: React.FC = () => {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
+  const fetchPayments = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/payments');
+      if (res.ok) {
+        const data = await res.json();
+        const invoiceList = Array.isArray(data) ? data : (data.invoices || []);
+        
+        const mappedInvoices = invoiceList.map((inv: any) => ({
+          id: inv.id,
+          customerName: inv.customer_name || inv.customerName || 'Cliente',
+          customerEmail: inv.customer_email || inv.customerEmail || '',
+          plan: inv.plan || 'Starter',
+          amount: Number(inv.amount || 0),
+          status: inv.status || 'paid',
+          date: inv.created_at || inv.date || new Date().toISOString(),
+          stripeId: inv.stripe_id || inv.stripeId || 'stripe-mock-id'
+        }));
+        
+        setInvoices(mappedInvoices);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch real payments data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPayments();
+  }, []);
+
+  const totalRevenue = useMemo(() => {
+    return invoices
+      .filter(inv => inv.status === 'paid')
+      .reduce((acc, inv) => acc + inv.amount, 0);
+  }, [invoices]);
+
+  const calculatedLtv = useMemo(() => {
+    const paidInvoices = invoices.filter(inv => inv.status === 'paid');
+    if (paidInvoices.length === 0) return 0;
+    const uniqueEmails = Array.from(new Set(paidInvoices.map(inv => inv.customerEmail)));
+    return uniqueEmails.length > 0 ? Math.round(totalRevenue / uniqueEmails.length) : 0;
+  }, [invoices, totalRevenue]);
+
   const filteredInvoices = useMemo(() => {
     return invoices.filter(inv => {
-      const matchSearch = inv.customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          inv.customerEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          inv.stripeId.toLowerCase().includes(searchQuery.toLowerCase());
+      const name = inv.customerName || '';
+      const email = inv.customerEmail || '';
+      const stripeId = inv.stripeId || '';
+      const matchSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          stripeId.toLowerCase().includes(searchQuery.toLowerCase());
       const matchStatus = statusFilter === 'all' || inv.status === statusFilter;
       return matchSearch && matchStatus;
     });
   }, [invoices, searchQuery, statusFilter]);
 
-  const handleRefund = (id: string) => {
-    setInvoices(prev => prev.map(inv => {
-      if (inv.id === id) {
-        showToast(`Reembolso emitido com sucesso para ${inv.customerName} (Valor: R$ ${inv.amount}).`, 'success');
-        return { ...inv, status: 'refunded' };
-      }
-      return inv;
-    }));
-  };
-
-  const handleExportCSV = () => {
-    const headers = 'ID,Cliente,Email,Plano,Valor,Status,Data,StripeID\n';
-    const rows = filteredInvoices.map(inv => 
-      `"${inv.id}","${inv.customerName}","${inv.customerEmail}","${inv.plan}",${inv.amount},"${inv.status}","${inv.date}","${inv.stripeId}"`
-    ).join('\n');
-    
-    const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `viral-factory-faturamento-${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('Relatório CSV exportado e baixado com sucesso!', 'success');
-  };
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-4">
+        <RefreshCw className="w-8 h-8 text-pink-500 animate-spin" />
+        <p className="text-xs font-mono text-slate-400">Puxando faturamento real via Stripe...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Financial KPIs */}
+      {/* Top metrics cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        
-        {/* KPI: Recorrência Líquida */}
-        <div className="p-5 bg-slate-900/30 border border-slate-900 rounded-2xl space-y-3">
+        <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-2xl space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">MRR Consolidado</span>
+            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Receita Bruta SaaS</span>
             <DollarSign className="w-4 h-4 text-emerald-400" />
           </div>
           <div>
-            <h3 className="text-xl font-black text-white">R$ 14.850</h3>
-            <p className="text-[10px] text-slate-500 font-mono">Faturamento recorrente do mês corrente</p>
-          </div>
-          <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-semibold font-mono">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>+12% novas conversões Stripe</span>
+            <h3 className="text-2xl font-black text-white tracking-tight">R$ {totalRevenue.toLocaleString('pt-BR')}</h3>
+            <p className="text-[10px] text-slate-500 font-mono">Líquido de taxas Stripe acumuladas</p>
           </div>
         </div>
 
-        {/* KPI: LTV do Usuário */}
-        <div className="p-5 bg-slate-900/30 border border-slate-900 rounded-2xl space-y-3">
+        <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-2xl space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">LTV Consumidor</span>
-            <ArrowUpRight className="w-4 h-4 text-indigo-400" />
+            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Ticket Médio (LTV)</span>
+            <TrendingUp className="w-4 h-4 text-pink-400" />
           </div>
           <div>
-            <h3 className="text-xl font-black text-white">R$ 1.220</h3>
-            <p className="text-[10px] text-slate-500 font-mono">Lifetime Value médio estimado</p>
+            <h3 className="text-2xl font-black text-white tracking-tight">R$ {calculatedLtv.toLocaleString('pt-BR')}</h3>
+            <p className="text-[10px] text-slate-500 font-mono">Valor médio gerado por usuário ativo</p>
           </div>
-          <span className="text-[10px] text-indigo-400 font-mono font-semibold">
-            Período médio de retenção: 8.4 meses
-          </span>
         </div>
 
-        {/* KPI: CAC */}
-        <div className="p-5 bg-slate-900/30 border border-slate-900 rounded-2xl space-y-3">
+        <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-2xl space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">CAC Médio</span>
-            <CheckCircle className="w-4 h-4 text-pink-400" />
+            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Transações Totais</span>
+            <AlertTriangle className="w-4 h-4 text-indigo-400" />
           </div>
           <div>
-            <h3 className="text-xl font-black text-white">R$ 42,50</h3>
-            <p className="text-[10px] text-slate-500 font-mono">Custo de Aquisição de Clientes</p>
+            <h3 className="text-2xl font-black text-white tracking-tight">{invoices.length}</h3>
+            <p className="text-[10px] text-slate-500 font-mono">Sinalizações de chargeback: 0</p>
           </div>
-          <span className="text-[10px] text-emerald-400 font-mono font-semibold">
-            Relação LTV / CAC: 28.7x (Altíssimo ROI)
-          </span>
         </div>
-
       </div>
 
-      {/* Transactions and controls bar */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-        <div>
-          <h3 className="text-sm font-bold text-white">Transações Recentes</h3>
-          <p className="text-xs text-slate-400">Rastreamento de webhook do gateway Stripe em tempo real.</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          {/* Search */}
-          <div className="relative w-full md:w-64">
-            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+      {/* Filter and Table area */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="w-4 h-4 text-slate-600 absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Filtro Stripe ID ou nome..."
+              placeholder="Buscar cliente, email ou ID do Stripe..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-850 rounded-lg py-1.5 pl-9 pr-3 text-[11px] text-white focus:outline-none focus:border-pink-500 placeholder-slate-500"
+              className="w-full bg-slate-900/60 border border-slate-900 p-2 pl-9 text-xs text-white rounded-xl placeholder-slate-600 focus:outline-none focus:border-pink-500"
             />
           </div>
 
-          {/* Status */}
-          <select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
-            className="bg-slate-900 border border-slate-850 text-slate-400 text-[11px] py-1.5 px-3 rounded-lg focus:outline-none cursor-pointer font-semibold"
-          >
-            <option value="all">Todas as Cobranças</option>
-            <option value="paid">Pagas</option>
-            <option value="failed">Falhas</option>
-            <option value="refunded">Reembolsadas</option>
-          </select>
-
-          {/* Export to CSV */}
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-850 text-white rounded-lg text-[11px] font-bold transition cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 text-pink-500" />
-            Exportar CSV
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="bg-slate-900/60 border border-slate-900 p-2 text-xs text-slate-300 rounded-xl focus:outline-none focus:border-pink-500 cursor-pointer w-full sm:w-auto"
+            >
+              <option value="all">Todos os Status</option>
+              <option value="paid">Pagas</option>
+              <option value="failed">Falhas</option>
+              <option value="refunded">Estornadas</option>
+              <option value="pending">Pendentes</option>
+            </select>
+            <button 
+              onClick={fetchPayments}
+              className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* Invoice list table */}
-      <div className="bg-slate-900/30 border border-slate-900 rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-900 bg-slate-950/40 text-slate-500 font-mono font-bold uppercase tracking-wider">
-                <th className="py-3 px-6">ID Fatura</th>
-                <th className="py-3 px-6">Cliente</th>
-                <th className="py-3 px-6">Plano Contratado</th>
-                <th className="py-3 px-6 text-right">Valor Líquido</th>
-                <th className="py-3 px-6">Código de Processo Stripe</th>
-                <th className="py-3 px-6">Data de Liquidação</th>
-                <th className="py-3 px-6">Status</th>
-                <th className="py-3 px-6 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-900/40 font-medium font-mono text-slate-300">
-              {filteredInvoices.map(inv => (
-                <tr key={inv.id} className="hover:bg-slate-900/20 transition text-[11px]">
-                  <td className="py-3.5 px-6 font-bold text-white">{inv.id}</td>
-                  
-                  {/* Customer details with graphic icon */}
-                  <td className="py-3.5 px-6 font-sans">
-                    <span className="font-semibold block text-white">{inv.customerName}</span>
-                    <span className="text-[10px] text-slate-500 block">{inv.customerEmail}</span>
-                  </td>
-
-                  <td className="py-3.5 px-6 font-sans">
-                    <span className="text-slate-200">{inv.plan}</span>
-                  </td>
-
-                  <td className="py-3.5 px-6 text-right font-bold text-white">
-                    R$ {inv.amount.toLocaleString('pt-BR')}
-                  </td>
-
-                  <td className="py-3.5 px-6 text-slate-500 text-[10px]">
-                    {inv.stripeId}
-                  </td>
-
-                  <td className="py-3.5 px-6 text-slate-400 text-[10px]">
-                    {inv.date}
-                  </td>
-
-                  {/* Status column */}
-                  <td className="py-3.5 px-6 font-sans">
-                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                      inv.status === 'paid' 
-                        ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' 
-                        : inv.status === 'refunded'
-                        ? 'bg-amber-500/5 border-amber-500/20 text-amber-400'
-                        : 'bg-red-500/5 border-red-500/20 text-red-400'
-                    }`}>
-                      {inv.status === 'paid' && <CheckCircle className="w-3 h-3 text-emerald-400" />}
-                      {inv.status === 'refunded' && <RotateCcw className="w-3 h-3 text-amber-400" />}
-                      {inv.status === 'failed' && <XCircle className="w-3 h-3 text-red-400" />}
-                      {inv.status === 'paid' ? 'Pago' : inv.status === 'refunded' ? 'Reembolsado' : 'Recusado'}
-                    </span>
-                  </td>
-
-                  {/* Refund trigger */}
-                  <td className="py-3.5 px-6 text-right font-sans">
-                    {inv.status === 'paid' && (
-                      <button
-                        onClick={() => handleRefund(inv.id)}
-                        className="px-2.5 py-1 hover:bg-red-950/15 border border-transparent hover:border-red-500/20 rounded-lg text-[10px] font-bold text-red-400 transition cursor-pointer"
-                      >
-                        Estornar
-                      </button>
-                    )}
-                  </td>
+        <div className="bg-slate-900/30 border border-slate-900 rounded-2xl overflow-hidden">
+          {filteredInvoices.length === 0 ? (
+            <div className="p-12 text-center space-y-2">
+              <DollarSign className="w-10 h-10 text-slate-700 mx-auto" />
+              <p className="text-xs font-semibold text-slate-400 font-sans">Nenhuma transação financeira real encontrada</p>
+              <p className="text-[10px] text-slate-500 font-sans">As vendas reais do Stripe aparecerão instantaneamente aqui.</p>
+            </div>
+          ) : (
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-900 bg-slate-950/40 text-slate-500 font-mono font-bold uppercase tracking-wider">
+                  <th className="py-3 px-6">ID Stripe</th>
+                  <th className="py-3 px-6">Cliente</th>
+                  <th className="py-3 px-6">Plano</th>
+                  <th className="py-3 px-6">Valor</th>
+                  <th className="py-3 px-6">Status</th>
+                  <th className="py-3 px-6">Data</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-900/40 font-medium font-mono text-[11px] text-slate-300">
+                {filteredInvoices.map(inv => (
+                  <tr key={inv.id} className="hover:bg-slate-900/10 transition">
+                    <td className="py-3 px-6 text-slate-400 font-mono select-all">{inv.stripeId}</td>
+                    <td className="py-3 px-6 font-sans">
+                      <p className="font-semibold text-white">{inv.customerName}</p>
+                      <p className="text-[10px] text-slate-500 font-mono">{inv.customerEmail}</p>
+                    </td>
+                    <td className="py-3 px-6 text-slate-400">{inv.plan}</td>
+                    <td className="py-3 px-6 text-white font-bold">R$ {inv.amount}</td>
+                    <td className="py-3 px-6 font-sans">
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        inv.status === 'paid'
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : inv.status === 'failed'
+                          ? 'bg-red-500/10 text-red-400'
+                          : inv.status === 'refunded'
+                          ? 'bg-slate-500/10 text-slate-400'
+                          : 'bg-amber-500/10 text-amber-400'
+                      }`}>
+                        {inv.status === 'paid' && <CheckCircle className="w-3 h-3" />}
+                        {inv.status === 'failed' && <XCircle className="w-3 h-3" />}
+                        {inv.status === 'paid' ? 'Pago' : inv.status === 'failed' ? 'Falhou' : inv.status === 'refunded' ? 'Estornado' : 'Pendente'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-6 text-slate-500 font-mono">{inv.date}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

@@ -44,6 +44,55 @@ export const ProjectEditor: React.FC<ProjectEditorProps> = ({ projectId }) => {
   // Handle saving the visual project JSON back to Supabase / AppContext
   const handleSaveProjectData = (saveObj: { canvas: CanvasSettings; layers: EditorLayer[]; totalDuration: number }) => {
     try {
+      // Generate the completely decoupled standardized JSON representation
+      const templateJson = {
+        width: saveObj.canvas.width || 1080,
+        height: saveObj.canvas.height || 1920,
+        duration: saveObj.totalDuration,
+        layers: saveObj.layers.map(layer => ({
+          id: layer.id,
+          type: layer.type,
+          position: { x: layer.x, y: layer.y },
+          size: { width: layer.width, height: layer.height },
+          rotation: layer.rotation || 0,
+          opacity: layer.opacity !== undefined ? layer.opacity : 100,
+          zIndex: layer.order || 0,
+          timeline: { start: layer.durationStart, end: layer.durationEnd },
+          animations: layer.animationIn || layer.animationOut ? [
+            { type: 'in', name: layer.animationIn || 'none', duration: layer.animationDuration || 0.5 },
+            { type: 'out', name: layer.animationOut || 'none', duration: layer.animationDuration || 0.5 }
+          ] : [],
+          content: layer.text || layer.contentUrl || layer.placeholder || '',
+          styles: {
+            color: layer.color,
+            font: layer.font,
+            size: layer.size,
+            weight: layer.weight,
+            spacing: layer.spacing,
+            align: layer.align,
+            anchor: layer.anchor,
+            shadowEnabled: layer.shadowEnabled,
+            shadowColor: layer.shadowColor,
+            shadowBlur: layer.shadowBlur,
+            shadowOffsetX: layer.shadowOffsetX,
+            shadowOffsetY: layer.shadowOffsetY,
+            glowEnabled: layer.glowEnabled,
+            glowColor: layer.glowColor,
+            glowBlur: layer.glowBlur,
+            strokeEnabled: layer.strokeEnabled,
+            strokeColor: layer.strokeColor,
+            strokeWidth: layer.strokeWidth,
+            radius: layer.radius,
+            padding: layer.padding,
+            margin: layer.margin,
+            shapeType: layer.shapeType,
+            overlayType: layer.overlayType,
+            gradientColorStart: layer.gradientColorStart,
+            gradientColorEnd: layer.gradientColorEnd
+          }
+        }))
+      };
+
       const updatedProj: Project = {
         ...localProject,
         updatedAt: new Date().toISOString(),
@@ -51,6 +100,8 @@ export const ProjectEditor: React.FC<ProjectEditorProps> = ({ projectId }) => {
           ...localProject.variables,
           layers: saveObj.layers,
           canvas: saveObj.canvas,
+          presetId: saveObj.canvas.presetId || localProject.variables.presetId || 'tiktok',
+          templateJson, // Fully decoupled schema-compliant template JSON output
           // Sync primary fields for backwards compatibility with list views
           title: saveObj.layers.find(l => l.type === 'headline')?.text || localProject.variables.title,
           brandColor: saveObj.layers.find(l => l.type === 'progressBar')?.color || localProject.variables.brandColor,

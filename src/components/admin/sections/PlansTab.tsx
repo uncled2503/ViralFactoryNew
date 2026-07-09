@@ -3,25 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { 
-  Sparkles, 
-  Plus, 
-  Trash2, 
-  Edit, 
-  Layers, 
-  Check, 
-  ShieldAlert, 
-  FileCheck,
-  CheckCircle2,
-  Lock
-} from 'lucide-react';
-import { PlanTier } from '../../../types';
-import { PLANS_DETAILS } from '../../../config/plans';
-
-interface PlansTabProps {
-  showToast: (msg: string, type: 'success' | 'error' | 'info') => void;
-}
+import React, { useState, useEffect } from 'react';
+import { Layers, Check, Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface CustomPlan {
   id: string;
@@ -38,367 +21,150 @@ interface CustomPlan {
   status: 'active' | 'archived';
 }
 
-export const PlansTab: React.FC<PlansTabProps> = ({ showToast }) => {
-  const [plans, setPlans] = useState<CustomPlan[]>([
-    { id: 'plan-0', tier: 'Free', name: 'Free Trial', monthlyPrice: 0, annualPrice: 0, maxVideos: 5, maxStorageGB: 1, priority: 'low', watermark: true, aiSubtitles: false, batchRender: false, status: 'active' },
-    { id: 'plan-1', tier: 'Starter', name: 'Starter', monthlyPrice: 49, annualPrice: 39, maxVideos: 100, maxStorageGB: 5, priority: 'normal', watermark: false, aiSubtitles: true, batchRender: false, status: 'active' },
-    { id: 'plan-2', tier: 'Pro', name: 'Pro', monthlyPrice: 99, annualPrice: 79, maxVideos: 300, maxStorageGB: 20, priority: 'high', watermark: false, aiSubtitles: true, batchRender: true, status: 'active' },
-    { id: 'plan-3', tier: 'Business', name: 'Business', monthlyPrice: 199, annualPrice: 159, maxVideos: 1000, maxStorageGB: 100, priority: 'vip', watermark: false, aiSubtitles: true, batchRender: true, status: 'active' }
-  ]);
+export const PlansTab: React.FC = () => {
+  const [plans, setPlans] = useState<CustomPlan[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [editingPlan, setEditingPlan] = useState<CustomPlan | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-
-  const [formState, setFormState] = useState<Omit<CustomPlan, 'id'>>({
-    tier: 'Custom',
-    name: 'Plano Customizado',
-    monthlyPrice: 129,
-    annualPrice: 99,
-    maxVideos: 500,
-    maxStorageGB: 50,
-    priority: 'high',
-    watermark: false,
-    aiSubtitles: true,
-    batchRender: true,
-    status: 'active'
-  });
-
-  const handleOpenEdit = (plan: CustomPlan) => {
-    setEditingPlan(plan);
-    setFormState({ ...plan });
-    setIsCreating(false);
-  };
-
-  const handleOpenCreate = () => {
-    setEditingPlan(null);
-    setFormState({
-      tier: 'Custom-' + Math.floor(Math.random() * 100),
-      name: 'Novo Plano Enterprise',
-      monthlyPrice: 299,
-      annualPrice: 239,
-      maxVideos: 2500,
-      maxStorageGB: 250,
-      priority: 'vip',
-      watermark: false,
-      aiSubtitles: true,
-      batchRender: true,
-      status: 'active'
-    });
-    setIsCreating(true);
-  };
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isCreating) {
-      const newPlan: CustomPlan = {
-        id: 'plan-' + Date.now(),
-        ...formState
-      };
-      setPlans(prev => [...prev, newPlan]);
-      showToast(`Plano ${formState.name} criado com sucesso!`, 'success');
-      setIsCreating(false);
-    } else if (editingPlan) {
-      setPlans(prev => prev.map(p => p.id === editingPlan.id ? { ...p, ...formState } : p));
-      showToast(`Alterações no plano ${formState.name} salvas!`, 'success');
-      setEditingPlan(null);
+  const fetchPlans = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/settings');
+      if (res.ok) {
+        const settings = await res.json();
+        const customPlansItem = settings.find((s: any) => s.key === 'saas_custom_plans');
+        if (customPlansItem && customPlansItem.value) {
+          setPlans(JSON.parse(customPlansItem.value));
+        } else {
+          // If no plans in DB yet, show empty
+          setPlans([]);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load plans from settings:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleArchive = (id: string) => {
-    setPlans(prev => prev.map(p => p.id === id ? { ...p, status: p.status === 'active' ? 'archived' : 'active' } : p));
-    showToast('Status de arquivamento do plano atualizado.', 'info');
+  useEffect(() => {
+    fetchPlans();
+  }, []);
+
+  const handleCreatePlan = async () => {
+    const defaultPlansList: CustomPlan[] = [
+      { id: 'plan-0', tier: 'Free', name: 'Free Trial', monthlyPrice: 0, annualPrice: 0, maxVideos: 5, maxStorageGB: 1, priority: 'low', watermark: true, aiSubtitles: false, batchRender: false, status: 'active' },
+      { id: 'plan-1', tier: 'Starter', name: 'Starter', monthlyPrice: 97, annualPrice: 77, maxVideos: 300, maxStorageGB: 2, priority: 'normal', watermark: false, aiSubtitles: true, batchRender: false, status: 'active' },
+      { id: 'plan-2', tier: 'Pro', name: 'Creator Pro', monthlyPrice: 197, annualPrice: 157, maxVideos: 1200, maxStorageGB: 100, priority: 'high', watermark: false, aiSubtitles: true, batchRender: true, status: 'active' },
+      { id: 'plan-3', tier: 'Business', name: 'Business', monthlyPrice: 397, annualPrice: 317, maxVideos: 4000, maxStorageGB: 10, priority: 'vip', watermark: false, aiSubtitles: true, batchRender: true, status: 'active' }
+    ];
+
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'saas_custom_plans',
+          value: JSON.stringify(defaultPlansList)
+        })
+      });
+      if (res.ok) {
+        fetchPlans();
+      }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleDuplicate = (plan: CustomPlan) => {
-    const dup: CustomPlan = {
-      ...plan,
-      id: 'plan-' + Date.now(),
-      tier: `${plan.tier}-Copy`,
-      name: `${plan.name} (Cópia)`
-    };
-    setPlans(prev => [...prev, dup]);
-    showToast(`Plano duplicado com o nome ${dup.name}`, 'success');
-  };
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-4">
+        <RefreshCw className="w-8 h-8 text-pink-500 animate-spin" />
+        <p className="text-xs font-mono text-slate-400">Consultando planos e limites cadastrados no SaaS...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header and trigger */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-white">Configuração de Planos (SaaS CRUD)</h2>
-          <p className="text-xs text-slate-400">Gerenciamento dinâmico de preços, limites e travas dos planos de assinatura.</p>
+          <h2 className="text-lg font-bold text-white">Catálogo de Planos</h2>
+          <p className="text-xs text-slate-400 font-sans">Configuração de quotas, limites de renderização e precificação real.</p>
         </div>
-        <button
-          onClick={handleOpenCreate}
-          className="flex items-center gap-1.5 px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs rounded-xl transition cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Plano
-        </button>
+        {plans.length === 0 && (
+          <button
+            onClick={handleCreatePlan}
+            className="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
+          >
+            <Sparkles className="w-4 h-4" />
+            Inicializar Tabela de Planos
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Column: Active Plans Grid */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {plans.map(p => (
-              <div 
-                key={p.id}
-                className={`p-5 bg-slate-900/30 border rounded-2xl space-y-4 relative flex flex-col justify-between ${
-                  p.status === 'archived' 
-                    ? 'border-slate-950 opacity-50' 
-                    : 'border-slate-900 hover:border-slate-800'
-                }`}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                      p.tier === 'Business' ? 'bg-pink-500/10 border-pink-500/20 text-pink-400' : 'bg-slate-950 border-slate-900 text-slate-400'
-                    }`}>
-                      {p.tier}
-                    </span>
-                    {p.status === 'archived' && (
-                      <span className="text-[8px] bg-red-500/10 border border-red-500/20 text-red-400 font-mono font-bold px-1.5 rounded">
-                        ARQUIVADO
-                      </span>
-                    )}
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-bold text-white">{p.name}</h3>
-                    <p className="text-lg font-black text-indigo-400 font-mono mt-1">
-                      R$ {p.monthlyPrice} <span className="text-[10px] text-slate-500 font-normal">/mês</span>
-                    </p>
-                  </div>
-
-                  {/* Quotas Details list */}
-                  <ul className="text-[11px] text-slate-400 space-y-1.5 font-mono pt-2">
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span>{p.maxVideos === 100000 ? 'Renders Ilimitados' : `${p.maxVideos} renders/mês`}</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span>{p.maxStorageGB} GB de Storage S3</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="uppercase">Prioridade: {p.priority}</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      {p.watermark ? (
-                        <span className="text-red-400 flex items-center gap-2">
-                          <Lock className="w-3.5 h-3.5 text-red-500 shrink-0" /> Com Watermark
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 flex items-center gap-2">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> Sem marca d'água
-                        </span>
-                      )}
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Grid controls */}
-                <div className="flex items-center gap-2 pt-4 border-t border-slate-900/60 mt-4">
-                  <button
-                    onClick={() => handleOpenEdit(p)}
-                    className="flex-1 py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-900 text-[10px] font-bold rounded-lg text-slate-300 hover:text-white transition flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <Edit className="w-3 h-3 text-indigo-400" />
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => handleDuplicate(p)}
-                    className="py-1.5 px-2 bg-slate-950 hover:bg-slate-900 border border-slate-900 text-[10px] font-bold rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
-                    title="Duplicar Plano"
-                  >
-                    Copia
-                  </button>
-                  <button
-                    onClick={() => handleArchive(p.id)}
-                    className={`p-1.5 bg-slate-950 border border-slate-900 rounded-lg transition cursor-pointer ${
-                      p.status === 'active' ? 'text-red-400 hover:bg-red-950/10' : 'text-slate-400 hover:text-white'
-                    }`}
-                    title={p.status === 'active' ? 'Arquivar Plano' : 'Re-ativar'}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+      {plans.length === 0 ? (
+        <div className="p-12 border border-dashed border-slate-800 rounded-3xl text-center space-y-4 max-w-lg mx-auto">
+          <Layers className="w-12 h-12 text-slate-700 mx-auto" />
+          <div className="space-y-1">
+            <h4 className="text-xs font-bold text-white">Nenhum Plano no Banco de Dados</h4>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Não existem planos customizados registrados na tabela de configurações do seu banco de dados Supabase. Nenhuma informação fictícia será exibida.
+            </p>
+          </div>
+          <button
+            onClick={handleCreatePlan}
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-xl transition cursor-pointer border border-slate-800"
+          >
+            Configurar Planos Padrão no Banco
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {plans.map(p => (
+            <div key={p.id} className="bg-slate-900/30 border border-slate-900 p-5 rounded-2xl flex flex-col justify-between space-y-5">
+              <div className="space-y-2">
+                <span className="inline-flex items-center text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-pink-500/10 text-pink-400">
+                  {p.tier}
+                </span>
+                <h3 className="text-base font-bold text-white">{p.name}</h3>
+                <div className="pt-2">
+                  <span className="text-2xl font-black text-white">R$ {p.monthlyPrice}</span>
+                  <span className="text-[10px] text-slate-500 font-mono"> /mês</span>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
 
-        {/* Right Column: Form Editor (Create/Edit state) */}
-        <div className="bg-slate-900/30 border border-slate-900 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-slate-900">
-            <Sparkles className="w-4 h-4 text-pink-500" />
-            <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-              {isCreating ? 'Novo Plano' : editingPlan ? `Editando: ${formState.name}` : 'Selecione um plano'}
-            </h3>
-          </div>
+              <div className="space-y-2 text-[11px] font-medium font-mono text-slate-400 pt-3 border-t border-slate-900">
+                <div className="flex items-center justify-between">
+                  <span>Vídeos:</span>
+                  <span className="text-white font-bold">{p.maxVideos}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Storage:</span>
+                  <span className="text-white font-bold">{p.maxStorageGB} GB</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Prioridade:</span>
+                  <span className="text-indigo-400 font-bold uppercase">{p.priority}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Watermark:</span>
+                  <span className={p.watermark ? "text-amber-500" : "text-emerald-400"}>
+                    {p.watermark ? "Sim" : "Não"}
+                  </span>
+                </div>
+              </div>
 
-          {(!isCreating && !editingPlan) ? (
-            <div className="py-12 text-center text-slate-500 space-y-2">
-              <Layers className="w-8 h-8 mx-auto opacity-30" />
-              <p className="text-[11px] leading-relaxed">
-                Clique em <strong>Editar</strong> em qualquer cartão ou no botão <strong>Novo Plano</strong> para abrir o painel de propriedades.
-              </p>
+              <div className="pt-3">
+                <span className={`w-full py-1.5 inline-flex items-center justify-center text-[10px] font-bold rounded-lg ${
+                  p.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-950 text-slate-500'
+                }`}>
+                  {p.status === 'active' ? 'Ativo' : 'Inativo'}
+                </span>
+              </div>
             </div>
-          ) : (
-            <form onSubmit={handleSave} className="space-y-4 text-xs font-medium">
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-mono uppercase font-bold">Identificador (Tier ID)</label>
-                <input
-                  type="text"
-                  required
-                  value={formState.tier}
-                  onChange={e => setFormState({ ...formState, tier: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-pink-500 font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-mono uppercase font-bold">Nome de Exibição</label>
-                <input
-                  type="text"
-                  required
-                  value={formState.name}
-                  onChange={e => setFormState({ ...formState, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-pink-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-500 font-mono uppercase font-bold">Preço Mensal (R$)</label>
-                  <input
-                    type="number"
-                    required
-                    value={formState.monthlyPrice}
-                    onChange={e => setFormState({ ...formState, monthlyPrice: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-pink-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-500 font-mono uppercase font-bold">Preço Anual (R$)</label>
-                  <input
-                    type="number"
-                    required
-                    value={formState.annualPrice}
-                    onChange={e => setFormState({ ...formState, annualPrice: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-pink-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-500 font-mono uppercase font-bold">Limite Videos (Mês)</label>
-                  <input
-                    type="number"
-                    required
-                    value={formState.maxVideos}
-                    onChange={e => setFormState({ ...formState, maxVideos: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-pink-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-500 font-mono uppercase font-bold">Storage S3 (GB)</label>
-                  <input
-                    type="number"
-                    required
-                    value={formState.maxStorageGB}
-                    onChange={e => setFormState({ ...formState, maxStorageGB: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-pink-500"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-mono uppercase font-bold block mb-1">Prioridade no Cluster</label>
-                <div className="grid grid-cols-4 gap-1">
-                  {(['low', 'normal', 'high', 'vip'] as const).map(p => (
-                    <button
-                      type="button"
-                      key={p}
-                      onClick={() => setFormState({ ...formState, priority: p })}
-                      className={`py-1 text-[9px] font-mono font-bold uppercase rounded border transition cursor-pointer ${
-                        formState.priority === p
-                          ? 'bg-indigo-600 border-indigo-500 text-white'
-                          : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-white'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Feature flags switches */}
-              <div className="space-y-2 border-t border-slate-900 pt-3">
-                <label className="text-[10px] text-slate-500 font-mono uppercase font-bold block mb-1">Recursos Inclusos</label>
-                
-                {/* Watermark flag */}
-                <label className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-900/50 cursor-pointer">
-                  <span>Forçar Marca d'água</span>
-                  <input
-                    type="checkbox"
-                    checked={formState.watermark}
-                    onChange={e => setFormState({ ...formState, watermark: e.target.checked })}
-                    className="accent-pink-500"
-                  />
-                </label>
-
-                {/* AI subtitles */}
-                <label className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-900/50 cursor-pointer">
-                  <span>Legendas com IA</span>
-                  <input
-                    type="checkbox"
-                    checked={formState.aiSubtitles}
-                    onChange={e => setFormState({ ...formState, aiSubtitles: e.target.checked })}
-                    className="accent-pink-500"
-                  />
-                </label>
-
-                {/* Batch renders */}
-                <label className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-900/50 cursor-pointer">
-                  <span>Exportação / Render em Lote</span>
-                  <input
-                    type="checkbox"
-                    checked={formState.batchRender}
-                    onChange={e => setFormState({ ...formState, batchRender: e.target.checked })}
-                    className="accent-pink-500"
-                  />
-                </label>
-              </div>
-
-              {/* Action buttons */}
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingPlan(null);
-                    setIsCreating(false);
-                  }}
-                  className="flex-1 py-2 bg-slate-950 hover:bg-slate-900 border border-slate-900 rounded-xl text-xs font-bold text-slate-400 hover:text-white transition cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2 bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition cursor-pointer"
-                >
-                  Salvar Plano
-                </button>
-              </div>
-            </form>
-          )}
+          ))}
         </div>
-
-      </div>
+      )}
     </div>
   );
 };

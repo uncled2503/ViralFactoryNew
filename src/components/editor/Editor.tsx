@@ -13,6 +13,8 @@ import { Inspector } from './Inspector';
 import { Timeline } from './Timeline';
 import { useHistory } from './useHistory';
 
+import { useApp } from '../../context/AppContext';
+
 interface EditorProps {
   projectId: string;
   projectName: string;
@@ -35,6 +37,8 @@ export const Editor: React.FC<EditorProps> = ({
   onClose,
   onSaveProjectData,
 }) => {
+  const { triggerRender, setActiveTab, showToast } = useApp();
+
   // 1. Core State Definition
   const [name, setName] = useState(projectName);
   const [totalDuration, setTotalDuration] = useState(30); // 30 seconds default
@@ -324,7 +328,31 @@ export const Editor: React.FC<EditorProps> = ({
   // Render trigger
   const handleRenderProduction = () => {
     triggerAutoSave(layers, canvasSettings, totalDuration);
-    alert(`Renderização em lote iniciada! O JSON de layout foi compilado e enviado para a fila do FFmpeg:\n\n${JSON.stringify({ canvas: canvasSettings, layers, totalDuration }, null, 2)}`);
+    
+    // Trigger actual server-side rendering task!
+    const success = triggerRender(projectId);
+    if (success) {
+      showToast('Renderização iniciada com sucesso! Redirecionando...', 'success');
+      setActiveTab('renderings');
+      onClose();
+    } else {
+      showToast('Falha ao iniciar renderização. Verifique os limites.', 'error');
+    }
+  };
+
+  // Sandbox Render trigger
+  const handleRenderSandbox = () => {
+    triggerAutoSave(layers, canvasSettings, totalDuration);
+    
+    // Trigger actual server-side rendering task in sandbox mode!
+    const success = triggerRender(projectId, true);
+    if (success) {
+      showToast('Sandbox Render (Preview 3s) iniciado com sucesso! Redirecionando...', 'success');
+      setActiveTab('renderings');
+      onClose();
+    } else {
+      showToast('Falha ao iniciar Sandbox Render. Verifique os limites.', 'error');
+    }
   };
 
   // 7. Layer Action Handlers
@@ -418,6 +446,51 @@ export const Editor: React.FC<EditorProps> = ({
     pushStateUpdate(nextLayers, updatedSettings);
   };
 
+  const handlePresetChange = (preset: string) => {
+    let aspect: CanvasAspectRatio = '9:16';
+    let w = 1080;
+    let h = 1920;
+
+    if (preset === 'feed_square') {
+      aspect = '1:1';
+      w = 1080;
+      h = 1080;
+    } else if (preset === 'youtube_16_9') {
+      aspect = '16:9';
+      w = 1920;
+      h = 1080;
+    } else if (preset === 'facebook') {
+      aspect = '16:9';
+      w = 1280;
+      h = 720;
+    }
+
+    const updatedSettings: CanvasSettings = {
+      ...canvasSettings,
+      presetId: preset,
+      aspectRatio: aspect,
+      width: w,
+      height: h,
+    };
+
+    // Responsive adaptation helper: scale layer bounding boxes to fit new dimensions
+    const ratioX = w / canvasSettings.width;
+    const ratioY = h / canvasSettings.height;
+
+    const nextLayers = layers.map((l) => {
+      if (l.locked) return l;
+      return {
+        ...l,
+        x: Math.round(l.x * ratioX),
+        y: Math.round(l.y * ratioY),
+        width: Math.round(l.width * ratioX),
+        height: Math.round(l.height * ratioY),
+      };
+    });
+
+    pushStateUpdate(nextLayers, updatedSettings);
+  };
+
   return (
     <div className="fixed inset-0 bg-[#03050a] flex flex-col z-[100] overflow-hidden select-none text-gray-200 font-sans">
       {/* Upper Global Navigation & Action Toolbar */}
@@ -432,9 +505,12 @@ export const Editor: React.FC<EditorProps> = ({
         onRedo={handleRedo}
         onSave={handleManualSave}
         onRender={handleRenderProduction}
+        onRenderSandbox={handleRenderSandbox}
         onDuplicate={() => handleDuplicateLayer(selectedLayerId || '')}
         onClose={onClose}
         isSaving={isSaving}
+        presetId={canvasSettings.presetId || 'tiktok'}
+        onPresetChange={handlePresetChange}
       />
 
       {/* Center visual layout splitting Panels and Screen canvas */}

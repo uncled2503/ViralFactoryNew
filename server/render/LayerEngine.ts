@@ -1,8 +1,8 @@
-import { CompiledLayout } from './TemplateEngine';
+import { TemplateJSON } from './TemplateEngine';
 
 export interface RenderLayer {
   id: string;
-  type: 'background' | 'video' | 'image' | 'text' | 'progressbar';
+  type: string;
   name: string;
   order: number;
   data: any;
@@ -10,120 +10,55 @@ export interface RenderLayer {
 
 export class LayerEngine {
   /**
-   * Compiles and orders the visual layers from top to bottom
-   * 
-   * Strict Order required:
-   * 1. Background
-   * 2. Video
-   * 3. Logo
-   * 4. Headline
-   * 5. Subheadline
-   * 6. Subtitles (Legenda)
-   * 7. CTA
-   * 8. Watermark (Marca d'água)
-   * 9. Progress Bar
+   * Compiles the visual layers dynamically from the new standardized TemplateJSON schema.
+   * Eliminates the rigid hardcoded layouts and respects the JSON layout specifications entirely.
    */
-  static compileLayers(layout: CompiledLayout): RenderLayer[] {
+  static compileLayers(templateJson: TemplateJSON): RenderLayer[] {
     const layers: RenderLayer[] = [];
-    let orderIndex = 0;
 
-    // 1. Background Layer (Order 0)
-    layers.push({
-      id: 'layer-bg',
-      type: 'background',
-      name: 'Background Canvas',
-      order: orderIndex++,
-      data: layout.background
-    });
-
-    // 2. Main Video Layer (Order 1)
-    if (layout.videoArea) {
+    // Ensure we have a default background layer first if none is specified
+    const hasBg = templateJson.layers.some(l => l.type === 'overlay' || l.type === 'background');
+    if (!hasBg) {
       layers.push({
-        id: 'layer-video',
-        type: 'video',
-        name: 'Video Area Segment',
-        order: orderIndex++,
-        data: layout.videoArea
+        id: 'layer-default-bg',
+        type: 'background',
+        name: 'Default Canvas Background',
+        order: -10,
+        data: {
+          id: 'layer-default-bg',
+          type: 'background',
+          position: { x: 0, y: 0 },
+          size: { width: templateJson.width || 1080, height: templateJson.height || 1920 },
+          rotation: 0,
+          opacity: 100,
+          zIndex: -10,
+          timeline: { start: 0, end: templateJson.duration || 30 },
+          animations: [],
+          content: '',
+          styles: {
+            overlayType: 'solid',
+            color: '#030712'
+          }
+        }
       });
     }
 
-    // 3. Logo Overlay Layer (Order 2)
-    if (layout.logo) {
+    for (const layer of templateJson.layers) {
+      const type = layer.type.toLowerCase();
+
+      // Skip layers that are disabled or not within timeline bounds
+      if (layer.opacity === 0) continue;
+
       layers.push({
-        id: 'layer-logo',
-        type: 'image',
-        name: 'Brand Logo Icon',
-        order: orderIndex++,
-        data: layout.logo
+        id: layer.id,
+        type: type,
+        name: layer.id,
+        order: layer.zIndex !== undefined ? layer.zIndex : 0,
+        data: layer
       });
     }
 
-    // 4. Headline Overlay Layer (Order 3)
-    if (layout.headline && layout.headline.text) {
-      layers.push({
-        id: 'layer-headline',
-        type: 'text',
-        name: 'Primary Headline Text',
-        order: orderIndex++,
-        data: layout.headline
-      });
-    }
-
-    // 5. Subheadline Overlay Layer (Order 4)
-    if (layout.subheadline && layout.subheadline.text) {
-      layers.push({
-        id: 'layer-subheadline',
-        type: 'text',
-        name: 'Secondary Subheadline Text',
-        order: orderIndex++,
-        data: layout.subheadline
-      });
-    }
-
-    // 6. Subtitles (Legenda) Overlay Layer (Order 5)
-    if (layout.subtitles && layout.subtitles.enabled && layout.subtitles.text.length > 0) {
-      layers.push({
-        id: 'layer-subtitles',
-        type: 'text',
-        name: 'Captions / Subtitles Track',
-        order: orderIndex++,
-        data: layout.subtitles
-      });
-    }
-
-    // 7. CTA Overlay Layer (Order 6)
-    if (layout.cta && layout.cta.text) {
-      layers.push({
-        id: 'layer-cta',
-        type: 'text',
-        name: 'Call To Action Element',
-        order: orderIndex++,
-        data: layout.cta
-      });
-    }
-
-    // 8. Watermark Overlay Layer (Order 7)
-    if (layout.watermark) {
-      layers.push({
-        id: 'layer-watermark',
-        type: 'image',
-        name: 'System Watermark Badge',
-        order: orderIndex++,
-        data: layout.watermark
-      });
-    }
-
-    // 9. Progress Bar Layer (Order 8)
-    if (layout.progressBar && layout.progressBar.enabled) {
-      layers.push({
-        id: 'layer-progressbar',
-        type: 'progressbar',
-        name: 'Dynamic Progress Timer Bar',
-        order: orderIndex++,
-        data: layout.progressBar
-      });
-    }
-
+    // Sort layers by z-index order
     return layers.sort((a, b) => a.order - b.order);
   }
 }

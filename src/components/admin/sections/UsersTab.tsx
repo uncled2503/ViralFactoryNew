@@ -278,6 +278,18 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                       >
                         {u.status === 'active' ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
                       </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Tem certeza de que deseja deletar permanentemente o usuário ${u.name}?`)) {
+                            adminDeleteUser(u.id);
+                            showToast(`Usuário ${u.name} deletado com sucesso.`, 'success');
+                          }
+                        }}
+                        className="p-1.5 bg-slate-900 border border-slate-850 hover:border-red-950/40 hover:bg-red-950/10 text-red-500 hover:text-red-400 rounded-lg transition cursor-pointer"
+                        title="Deletar Usuário"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -578,6 +590,28 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                         Enviar Email
                       </button>
                     </form>
+                  </div>
+
+                  {/* Danger Zone */}
+                  <div className="p-4 border border-red-900/40 bg-red-950/5 rounded-2xl space-y-2">
+                    <h4 className="text-xs font-bold text-red-400 flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4 text-red-500" /> Zona de Perigo (Ações Críticas)
+                    </h4>
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      Deletar a conta do usuário apagará permanentemente todos os seus projetos, vídeos renderizados e dados cadastrados. Esta ação é irreversível.
+                    </p>
+                    <button
+                      onClick={() => {
+                        if (confirm(`CRÍTICO: Tem certeza absoluta de que deseja deletar permanentemente o usuário ${selectedUser.name}? Todos os dados do cliente serão apagados de forma irreversível!`)) {
+                          adminDeleteUser(selectedUser.id);
+                          setSelectedUser(null);
+                          showToast(`Usuário ${selectedUser.name} foi deletado permanentemente.`, 'success');
+                        }
+                      }}
+                      className="w-full py-2 bg-red-900 hover:bg-red-800 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                    >
+                      Excluir Conta Permanentemente
+                    </button>
                   </div>
                 </div>
               )}

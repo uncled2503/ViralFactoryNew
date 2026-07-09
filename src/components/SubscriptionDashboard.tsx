@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { PLANS_DETAILS, PLAN_LIMITS_MAP } from '../config/plans';
 import { PlanTier, BillingCycle } from '../types';
@@ -23,7 +23,11 @@ import {
   Clock,
   Zap,
   Film,
-  Award
+  Award,
+  QrCode,
+  Copy,
+  Check,
+  Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -70,20 +74,134 @@ export const SubscriptionDashboard: React.FC = () => {
 
   const productivityMultiplier = user.usageCurrent === 0 ? '0%' : `${user.usageCurrent * 45}%`;
 
+  // RoyPay Integration States
+  const [clientName, setClientName] = useState(user.name || '');
+  const [clientEmail, setClientEmail] = useState(user.email || '');
+  const [clientDocument, setClientDocument] = useState('');
+  const [clientTelefone, setClientTelefone] = useState('');
+  const [pixData, setPixData] = useState<{
+    idTransaction: string;
+    paymentCode: string;
+    paymentCodeBase64: string;
+  } | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'paid'>('pending');
+  const [copied, setCopied] = useState(false);
+  const [simulating, setSimulating] = useState(false);
+
+  // Poll transaction status
+  useEffect(() => {
+    if (!pixData || paymentStatus === 'paid') return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/payments/roypay/status/${pixData.idTransaction}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'paid') {
+            setPaymentStatus('paid');
+            changeSubscription(showCheckout!, billingCycle);
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao consultar status do Pix:', err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [pixData, paymentStatus, showCheckout, billingCycle, changeSubscription]);
+
   const handleSubscribe = (tier: PlanTier) => {
     if (tier === user.subscription) return;
+    setClientName(user.name || '');
+    setClientEmail(user.email || '');
+    setClientDocument('');
+    setClientTelefone('');
+    setPixData(null);
+    setCheckoutError(null);
+    setPaymentStatus('pending');
+    setCopied(false);
+    setSimulating(false);
     setShowCheckout(tier);
   };
 
-  const confirmCheckout = () => {
+  const handleCloseCheckout = () => {
+    setShowCheckout(null);
+    setPixData(null);
+    setCheckoutError(null);
+    setPaymentStatus('pending');
+    setCopied(false);
+    setSimulating(false);
+    setClientDocument('');
+    setClientTelefone('');
+  };
+
+  const handleGeneratePix = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!showCheckout) return;
+
     setProcessingSub(true);
-    
-    setTimeout(() => {
-      changeSubscription(showCheckout, billingCycle);
+    setCheckoutError(null);
+
+    try {
+      const response = await fetch('/api/payments/roypay/cashin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          planTier: showCheckout,
+          billingCycle,
+          clientName,
+          clientEmail,
+          clientDocument,
+          clientTelefone
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Não foi possível gerar o pagamento Pix.');
+      }
+
+      setPixData({
+        idTransaction: data.idTransaction,
+        paymentCode: data.paymentCode,
+        paymentCodeBase64: data.paymentCodeBase64
+      });
+      setPaymentStatus('pending');
+    } catch (err: any) {
+      console.error(err);
+      setCheckoutError(err.message || 'Erro ao comunicar com o servidor.');
+    } finally {
       setProcessingSub(false);
-      setShowCheckout(null);
-    }, 1200);
+    }
+  };
+
+  const handleSimulateWebhook = async () => {
+    if (!pixData) return;
+    setSimulating(true);
+    try {
+      const res = await fetch('/api/payments/roypay/simulate-webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          idTransaction: pixData.idTransaction
+        })
+      });
+      if (res.ok) {
+        setPaymentStatus('paid');
+        changeSubscription(showCheckout!, billingCycle);
+      }
+    } catch (err) {
+      console.warn('Erro ao simular confirmação:', err);
+    } finally {
+      setSimulating(false);
+    }
   };
 
   const getRenewalDateStr = () => {
@@ -232,9 +350,9 @@ export const SubscriptionDashboard: React.FC = () => {
           <p className="text-[9px] font-mono text-gray-500 uppercase tracking-wider">Investimento</p>
           <h2 className="text-lg font-bold text-white mt-1">
             {user.subscription === 'Free' && 'R$ 0,00'}
-            {user.subscription === 'Starter' && 'R$ 49,00'}
-            {user.subscription === 'Pro' && 'R$ 149,00'}
-            {user.subscription === 'Business' && 'R$ 499,00'}
+            {user.subscription === 'Starter' && 'R$ 97,00'}
+            {user.subscription === 'Pro' && 'R$ 197,00'}
+            {user.subscription === 'Business' && 'R$ 397,00'}
             <span className="text-[10px] text-gray-500 font-normal"> /mês</span>
           </h2>
           <p className="text-[10px] text-gray-400 mt-2 font-mono">
@@ -510,7 +628,7 @@ export const SubscriptionDashboard: React.FC = () => {
         )}
       </motion.div>
 
-      {/* STRIPE CHECKOUT MOCK GATEWAY OVERLAY */}
+      {/* ROYPAY PIX GATEWAY OVERLAY */}
       <AnimatePresence>
         {showCheckout && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
@@ -524,16 +642,16 @@ export const SubscriptionDashboard: React.FC = () => {
               <div className="bg-gray-900/40 p-6 border-b border-gray-900 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-indigo-400" />
-                    Stripe Checkout (Mockup)
+                    <QrCode className="w-4 h-4 text-emerald-400" />
+                    Pagamento via Pix
                   </h3>
                   <p className="text-[10px] text-gray-500 mt-1 font-mono">
-                    Ambiente seguro de testes do desenvolvedor.
+                    Gateway de pagamento instantâneo e seguro.
                   </p>
                 </div>
                 <button 
-                  onClick={() => setShowCheckout(null)}
-                  className="text-gray-500 hover:text-white text-xs font-mono border border-gray-900 hover:border-gray-800 bg-gray-950 p-1 px-2.5 rounded-lg cursor-pointer"
+                  onClick={handleCloseCheckout}
+                  className="text-gray-500 hover:text-white text-xs font-mono border border-gray-900 hover:border-gray-800 bg-gray-950 p-1 px-2.5 rounded-lg cursor-pointer animate-transition"
                 >
                   Fechar
                 </button>
@@ -544,98 +662,217 @@ export const SubscriptionDashboard: React.FC = () => {
                 {/* Order Info summary */}
                 <div className="bg-gray-900/40 border border-gray-900 rounded-xl p-4 flex items-center justify-between">
                   <div>
-                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider">UPGRADE PARA</span>
-                    <p className="text-xs font-extrabold text-white">{showCheckout}</p>
+                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold">PRODUTO / UPGRADE</span>
+                    <p className="text-xs font-extrabold text-white">Plano {showCheckout}</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider">TOTAL HOJE</span>
-                    <p className="text-sm font-black text-indigo-400">
+                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider font-bold">TOTAL A PAGAR</span>
+                    <p className="text-sm font-black text-emerald-400">
                       R$ {billingCycle === 'annual' ? (PLANS_DETAILS.find(p => p.tier === showCheckout)?.priceAnnual || 0) * 12 : PLANS_DETAILS.find(p => p.tier === showCheckout)?.priceMonthly || 0},00
                       <span className="text-[10px] text-gray-500 font-mono">/{billingCycle === 'annual' ? 'ano' : 'mês'}</span>
                     </p>
                   </div>
                 </div>
 
-                {/* Stripe-like form fields */}
-                <div className="space-y-3.5">
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-500 uppercase">E-mail de Cobrança</label>
-                    <input
-                      type="text"
-                      disabled
-                      value={user.email}
-                      className="w-full bg-gray-900 border border-gray-850 rounded-lg py-2 px-3 text-xs text-gray-400 font-mono"
-                    />
+                {checkoutError && (
+                  <div className="p-3.5 bg-red-950/20 border border-red-900/50 rounded-xl text-[11px] text-red-400 font-mono leading-relaxed">
+                    <strong>Erro de Integração:</strong> {checkoutError}
                   </div>
+                )}
 
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-500 uppercase">Número do Cartão de Crédito</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="4242 4242 4242 4242"
-                        className="w-full bg-gray-900/60 border border-gray-900 rounded-lg py-2 px-3 pl-9 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                {/* --- STATE 1: PAYMENT SUCCESSFUL --- */}
+                {paymentStatus === 'paid' && (
+                  <div className="space-y-4 py-4 text-center">
+                    <div className="mx-auto w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center text-emerald-400 animate-pulse">
+                      <Check className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-bold text-white">Assinatura Ativada!</h4>
+                      <p className="text-xs text-gray-400 leading-relaxed max-w-sm mx-auto">
+                        A RoyPay API confirmou o recebimento do seu Pix! Sua conta foi atualizada com sucesso para o plano <strong>{showCheckout}</strong>. Aproveite seus novos recursos.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* --- STATE 2: PIX GENERATED, WAITING PAYMENT --- */}
+                {paymentStatus === 'pending' && pixData && (
+                  <div className="space-y-4 text-center">
+                    <div className="bg-white p-3 rounded-2xl inline-block shadow-lg mx-auto border border-gray-100">
+                      <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pixData.paymentCode)}`} 
+                        alt="Pix QR Code" 
+                        className="w-48 h-48 block"
+                        referrerPolicy="no-referrer"
                       />
-                      <div className="absolute left-3 top-2.5 text-gray-500">
-                        <CreditCard className="w-4 h-4" />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-center gap-1.5 text-xs text-emerald-400 font-mono font-bold">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Aguardando pagamento via Pix...</span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 max-w-xs mx-auto">
+                        Escaneie o QR Code acima com o aplicativo do seu banco ou copie o código "Copia e Cola" abaixo.
+                      </p>
+                    </div>
+
+                    {/* Copia e Cola box */}
+                    <div className="space-y-1.5 text-left">
+                      <label className="text-[9px] font-mono text-gray-500 uppercase font-bold tracking-wider">Pix Copia e Cola</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={pixData.paymentCode}
+                          className="flex-1 bg-gray-900 border border-gray-850 rounded-xl py-2 px-3 text-[10px] text-gray-300 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                        />
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(pixData.paymentCode);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          }}
+                          className="bg-gray-900 hover:bg-gray-850 text-white border border-gray-800 rounded-xl px-3 flex items-center justify-center gap-1.5 text-xs font-mono font-bold cursor-pointer transition-all"
+                        >
+                          {copied ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Copiado</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-gray-400" />
+                              <span>Copiar</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
                   </div>
+                )}
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-mono text-gray-500 uppercase">Vencimento</label>
-                      <input
-                        type="text"
-                        placeholder="MM/AA"
-                        className="w-full bg-gray-900/60 border border-gray-900 rounded-lg py-2 px-3 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 text-center"
-                      />
+                {/* --- STATE 3: FILL BILLING FORM (BEFORE PIX GENERATION) --- */}
+                {paymentStatus === 'pending' && !pixData && (
+                  <form onSubmit={handleGeneratePix} className="space-y-4">
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-mono text-gray-500 uppercase font-bold">Nome Completo</label>
+                        <input
+                          type="text"
+                          required
+                          value={clientName}
+                          onChange={(e) => setClientName(e.target.value)}
+                          placeholder="Ex: Maria de Oliveira"
+                          className="w-full bg-gray-900 border border-gray-850 rounded-xl py-2 px-3 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-mono text-gray-500 uppercase font-bold">E-mail de Cobrança</label>
+                        <input
+                          type="email"
+                          required
+                          value={clientEmail}
+                          onChange={(e) => setClientEmail(e.target.value)}
+                          placeholder="Ex: maria@exemplo.com"
+                          className="w-full bg-gray-900 border border-gray-850 rounded-xl py-2 px-3 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+
+                      {/* CPF (Document) & Celular (Phone) */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-gray-500 uppercase font-bold">CPF</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="000.000.000-00"
+                            value={clientDocument}
+                            onChange={(e) => {
+                              const clean = e.target.value.replace(/\D/g, '');
+                              if (clean.length <= 11) {
+                                let formatted = clean;
+                                if (clean.length > 3) formatted = `${clean.slice(0, 3)}.${clean.slice(3)}`;
+                                if (clean.length > 6) formatted = `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6)}`;
+                                if (clean.length > 9) formatted = `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
+                                setClientDocument(formatted);
+                              }
+                            }}
+                            className="w-full bg-gray-900 border border-gray-850 rounded-xl py-2 px-3 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-center font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-gray-500 uppercase font-bold">Telefone/WhatsApp</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="(00) 00000-0000"
+                            value={clientTelefone}
+                            onChange={(e) => {
+                              const clean = e.target.value.replace(/\D/g, '');
+                              if (clean.length <= 11) {
+                                let formatted = clean;
+                                if (clean.length > 2) formatted = `(${clean.slice(0, 2)}) ${clean.slice(2)}`;
+                                if (clean.length > 7) formatted = `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
+                                setClientTelefone(formatted);
+                              }
+                            }}
+                            className="w-full bg-gray-900 border border-gray-850 rounded-xl py-2 px-3 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-center font-mono"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-mono text-gray-500 uppercase">CVC</label>
-                      <input
-                        type="text"
-                        placeholder="123"
-                        className="w-full bg-gray-900/60 border border-gray-900 rounded-lg py-2 px-3 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 text-center"
-                      />
+
+                    <p className="text-[10px] text-gray-500 leading-relaxed bg-indigo-950/15 border border-indigo-950/30 p-3 rounded-xl flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                      <span>
+                        Seus dados pessoais acima são encriptados e processados de forma 100% segura. O pagamento do Pix RoyPay é instantâneo e aprova de imediato.
+                      </span>
+                    </p>
+
+                    {/* Form actions inside form tags */}
+                    <div className="pt-2 flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={handleCloseCheckout}
+                        className="text-xs text-gray-400 hover:text-white px-4 py-2 font-mono cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={processingSub}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 px-5 rounded-xl flex items-center gap-1.5 transition-all shadow-md shadow-emerald-600/10 cursor-pointer disabled:opacity-50"
+                      >
+                        {processingSub ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Gerando Pix...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 animate-pulse" />
+                            <span>Gerar Código Pix</span>
+                          </>
+                        )}
+                      </button>
                     </div>
-                  </div>
+                  </form>
+                )}
+              </div>
+
+              {/* Modal Actions Footer for non-form states */}
+              {(paymentStatus === 'paid' || pixData) && (
+                <div className="p-6 bg-gray-900/20 border-t border-gray-900 flex items-center justify-end gap-3">
+                  <button
+                    onClick={handleCloseCheckout}
+                    className="bg-gray-900 hover:bg-gray-850 text-white border border-gray-800 font-bold text-xs py-2.5 px-5 rounded-xl cursor-pointer font-mono"
+                  >
+                    {paymentStatus === 'paid' ? 'Ir para o Painel' : 'Voltar / Sair'}
+                  </button>
                 </div>
-
-                <p className="text-[10px] text-gray-500 leading-relaxed bg-indigo-950/15 border border-indigo-950/30 p-3 rounded-lg flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                  <span>
-                    Ao prosseguir, seu perfil será instantaneamente promovido para o plano {showCheckout}, reajustando os limites de fatias para testes em tempo real.
-                  </span>
-                </p>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="p-6 bg-gray-900/20 border-t border-gray-900 flex items-center justify-end gap-3">
-                <button
-                  onClick={() => setShowCheckout(null)}
-                  className="text-xs text-gray-400 hover:text-white px-4 py-2 font-mono cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={confirmCheckout}
-                  disabled={processingSub}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2.5 px-5 rounded-xl flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/10 cursor-pointer"
-                >
-                  {processingSub ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Processando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Confirmar Assinatura</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              )}
             </motion.div>
           </div>
         )}

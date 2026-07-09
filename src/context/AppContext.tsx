@@ -84,7 +84,7 @@ interface AppContextType {
   deleteTemplate: (id: string) => void;
   
   // Render System
-  triggerRender: (projectId: string) => boolean;
+  triggerRender: (projectId: string, isSandbox?: boolean) => boolean;
   deleteRenderingTask: (id: string) => void;
   duplicateRenderingTask: (id: string) => void;
   
@@ -114,6 +114,8 @@ interface AppContextType {
   stopImpersonating?: () => void;
   isImpersonating?: boolean;
   originalAdminUser?: User | null;
+  logAdminAction: (action: string, targetUser: string, status?: 'SUCCESS' | 'WARNING' | 'FAILED') => void;
+  adminResetSystem: (cleanMode: 'zero' | 'demo') => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -167,7 +169,7 @@ const MOCK_ADMIN_USERS: User[] = [
       tier: 'Starter',
       status: 'active',
       billingCycle: 'monthly',
-      price: 49,
+      price: 97,
       startDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
       endDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
       cancelAtPeriodEnd: false,
@@ -194,7 +196,7 @@ const MOCK_ADMIN_USERS: User[] = [
       tier: 'Pro',
       status: 'active',
       billingCycle: 'annual',
-      price: 1428, // 119 * 12
+      price: 1884, // 157 * 12
       startDate: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(),
       endDate: new Date(Date.now() + 245 * 24 * 60 * 60 * 1000).toISOString(),
       cancelAtPeriodEnd: false,
@@ -221,7 +223,7 @@ const MOCK_ADMIN_USERS: User[] = [
       tier: 'Business',
       status: 'active',
       billingCycle: 'monthly',
-      price: 499,
+      price: 397,
       startDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       endDate: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
       cancelAtPeriodEnd: false,
@@ -248,7 +250,7 @@ const MOCK_ADMIN_USERS: User[] = [
       tier: 'Starter',
       status: 'suspended',
       billingCycle: 'monthly',
-      price: 49,
+      price: 97,
       startDate: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
       endDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
       cancelAtPeriodEnd: false,
@@ -380,13 +382,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       currentAllUsers = JSON.parse(savedAllUsers);
       setAllUsers(currentAllUsers);
     } else {
-      currentAllUsers = MOCK_ADMIN_USERS;
-      setAllUsers(MOCK_ADMIN_USERS);
-      localStorage.setItem('vf_all_users', JSON.stringify(MOCK_ADMIN_USERS));
+      currentAllUsers = [];
+      setAllUsers([]);
+      localStorage.setItem('vf_all_users', JSON.stringify([]));
     }
 
     // Load active session user
-    const savedUser = localStorage.getItem('vf_user');
+    const savedUser = sessionStorage.getItem('vf_user');
+    // Clear legacy localStorage vf_user to ensure it stops logging in automatically
+    localStorage.removeItem('vf_user');
     if (savedUser) {
       const parsedUser: User = JSON.parse(savedUser);
       // Sync with latest info from users database
@@ -399,7 +403,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loadUserWorkspace(parsedUser);
       }
     }
+  }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    const isAdmin = user.role === 'admin' || user.role === 'owner' || user.role === 'SaaS_Owner';
+    if (isAdmin) {
+      const loadAdminDatasets = async () => {
+        try {
+          const res = await fetch('/api/admin/users');
+          if (res.ok) {
+            const data = await res.json();
+            setAllUsers(data);
+          }
+          const jobsRes = await fetch('/api/admin/jobs');
+          if (jobsRes.ok) {
+            const jobsData = await jobsRes.json();
+            setRenderingTasks(jobsData);
+          }
+        } catch (err) {
+          console.warn('Failed to load admin datasets:', err);
+        }
+      };
+      loadAdminDatasets();
+    }
+  }, [user]);
+
+  useEffect(() => {
     // If Supabase is configured, subscribe to auth state changes to keep sessions in sync
     if (isSupabaseConfigured() && supabaseClient) {
       const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
@@ -458,11 +488,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localStorage.setItem('vf_all_users', JSON.stringify(nextUsersList));
           
           setUser(resolvedUser);
-          localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
+          sessionStorage.setItem('vf_user', JSON.stringify(resolvedUser));
           await loadUserWorkspace(resolvedUser);
-          setActiveTab('dashboard');
+          
+          const currentPath = window.location.pathname;
+          if (currentPath === '/' || currentPath === '/login' || currentPath === '/register' || currentPath === '/recovery') {
+            setActiveTab('dashboard');
+          } else {
+            const pathToTabMap: Record<string, TabName> = {
+              '/dashboard': 'dashboard',
+              '/projects': 'projects',
+              '/templates': 'templates',
+              '/renders': 'renderings',
+              '/renderings': 'renderings',
+              '/files': 'storage',
+              '/storage': 'storage',
+              '/subscription': 'subscription',
+              '/settings': 'help',
+              '/help': 'help',
+              '/settings/profile': 'profile-settings',
+              '/admin': 'admin'
+            };
+            let matchedTab: TabName = 'dashboard';
+            if (currentPath.startsWith('/admin')) {
+              matchedTab = 'admin';
+            } else if (currentPath.startsWith('/project/') || (currentPath.startsWith('/projects/') && currentPath !== '/projects')) {
+              matchedTab = 'projects';
+            } else {
+              matchedTab = pathToTabMap[currentPath] || 'dashboard';
+            }
+            setActiveTabState(matchedTab);
+          }
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
+          sessionStorage.removeItem('vf_user');
           localStorage.removeItem('vf_user');
         }
       });
@@ -553,7 +612,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         duration: st.duration,
         renderTime: st.render_time || st.renderTime,
         outputUrl: st.output_url || st.outputUrl,
-        completedAt: st.completed_at || st.completedAt
+        completedAt: st.completed_at || st.completedAt,
+        logs: st.logs,
+        errorMessage: st.error_message || st.errorMessage || st.error,
+        debugInfo: st.debug_info || st.debugInfo
       }));
       localStorage.setItem(userTasksKey, JSON.stringify(curTasks));
     } else if (savedTasks) {
@@ -595,7 +657,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `inv-${Math.random().toString(36).substr(2, 6)}`,
           subscriptionId: targetUser.subscriptionDetails?.id || 'sub-001',
           userId: userId,
-          amount: targetUser.subscriptionDetails?.price || 49,
+          amount: targetUser.subscriptionDetails?.price || PLANS_DETAILS.find(p => p.tier === targetUser.subscription)?.priceMonthly || 97,
           status: 'paid',
           dueDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
           paidAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -607,7 +669,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `inv-${Math.random().toString(36).substr(2, 6)}`,
           subscriptionId: targetUser.subscriptionDetails?.id || 'sub-001',
           userId: userId,
-          amount: targetUser.subscriptionDetails?.price || 49,
+          amount: targetUser.subscriptionDetails?.price || PLANS_DETAILS.find(p => p.tier === targetUser.subscription)?.priceMonthly || 97,
           status: 'paid',
           dueDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
           paidAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
@@ -651,7 +713,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         storageUsedMB: parseFloat(totalStorageMB.toFixed(2)),
       };
       setUser(updatedUser);
-      localStorage.setItem('vf_user', JSON.stringify(updatedUser));
+      sessionStorage.setItem('vf_user', JSON.stringify(updatedUser));
     };
 
     // First do a fast local load
@@ -795,7 +857,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setAllUsers(updatedUsersList);
           localStorage.setItem('vf_all_users', JSON.stringify(updatedUsersList));
           setUser(resolvedUser);
-          localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
+          sessionStorage.setItem('vf_user', JSON.stringify(resolvedUser));
           await loadUserWorkspace(resolvedUser);
           setActiveTab('dashboard');
           return true;
@@ -822,7 +884,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               tier: plan,
               status: 'active',
               billingCycle: 'monthly',
-              price: 49,
+              price: PLANS_DETAILS.find(p => p.tier === plan)?.priceMonthly || 97,
               startDate: new Date().toISOString(),
               endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
               cancelAtPeriodEnd: false,
@@ -835,7 +897,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setAllUsers(updatedUsersList);
           localStorage.setItem('vf_all_users', JSON.stringify(updatedUsersList));
           setUser(resolvedUser);
-          localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
+          sessionStorage.setItem('vf_user', JSON.stringify(resolvedUser));
           await loadUserWorkspace(resolvedUser);
           setActiveTab('dashboard');
           return true;
@@ -894,7 +956,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.removeItem(lockoutKey);
         
         setUser(resolvedUser);
-        localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
+        sessionStorage.setItem('vf_user', JSON.stringify(resolvedUser));
         await loadUserWorkspace(resolvedUser);
         setActiveTab('dashboard');
         resolve(true);
@@ -957,7 +1019,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setAllUsers(updatedUsersList);
           localStorage.setItem('vf_all_users', JSON.stringify(updatedUsersList));
           setUser(newUser);
-          localStorage.setItem('vf_user', JSON.stringify(newUser));
+          sessionStorage.setItem('vf_user', JSON.stringify(newUser));
           await loadUserWorkspace(newUser);
           setActiveTab('dashboard');
         } else {
@@ -1018,7 +1080,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem('vf_all_users', JSON.stringify(nextUsersList));
 
         setUser(newUser);
-        localStorage.setItem('vf_user', JSON.stringify(newUser));
+        sessionStorage.setItem('vf_user', JSON.stringify(newUser));
         await loadUserWorkspace(newUser);
         setActiveTab('dashboard');
         resolve(true);
@@ -1143,7 +1205,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   name: googleUser.name,
                   email: googleUser.email.toLowerCase().trim(),
                   company: 'Minha Empresa Google',
-                  role: 'Administrador',
+                  role: 'Membro',
                   avatarUrl: googleUser.avatarUrl,
                   subscription: plan,
                   status: 'active',
@@ -1172,7 +1234,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
               
               setUser(resolvedUser);
-              localStorage.setItem('vf_user', JSON.stringify(resolvedUser));
+              sessionStorage.setItem('vf_user', JSON.stringify(resolvedUser));
               await loadUserWorkspace(resolvedUser);
               setActiveTab('dashboard');
               showToast(`Conectado como ${resolvedUser.name}!`, 'success');
@@ -1198,14 +1260,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = () => {
     setUser(null);
+    sessionStorage.removeItem('vf_user');
     localStorage.removeItem('vf_user');
-    setActiveTab('dashboard');
+    window.history.pushState(null, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
   const updateUser = async (updatedUser: User): Promise<boolean> => {
     try {
       setUser(updatedUser);
-      localStorage.setItem('vf_user', JSON.stringify(updatedUser));
+      sessionStorage.setItem('vf_user', JSON.stringify(updatedUser));
       
       const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
       const nextUsersList = [updatedUser, ...savedUsers.filter(u => u.id !== updatedUser.id)];
@@ -1441,7 +1505,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Trigger Render with limit check
-  const triggerRender = (projectId: string): boolean => {
+  const triggerRender = (projectId: string, isSandbox = false): boolean => {
     if (!verifyAndTriggerLimitExceeded('videos')) {
       return false;
     }
@@ -1451,16 +1515,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const template = templates.find(t => t.id === project.templateId);
     const templateName = template ? template.name : 'Template Desconhecido';
+    
+    const displayProjectName = isSandbox ? `[Sandbox 3s] ${project.name}` : project.name;
+    const displayDuration = isSandbox ? '0:03' : (template?.defaultDuration ? `0:${template.defaultDuration}` : '0:30');
 
     const taskId = `rnd-${Math.random().toString(36).substr(2, 9)}`;
     const newTask: RenderingTask = {
       id: taskId,
       projectId,
-      projectName: project.name,
+      projectName: displayProjectName,
       templateName,
       status: 'queued',
       progress: 0,
-      duration: template?.defaultDuration ? `0:${template.defaultDuration}` : '0:30',
+      duration: displayDuration,
       createdAt: new Date().toISOString()
     };
 
@@ -1490,11 +1557,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               id: taskId,
               project_id: projectId,
               user_id: user.id,
-              project_name: project.name,
+              project_name: displayProjectName,
               template_name: templateName,
               status: 'queued',
               progress: 0,
-              duration: template?.defaultDuration ? `0:${template.defaultDuration}` : '0:30',
+              duration: displayDuration,
               created_at: newTask.createdAt
             }
           ],
@@ -1509,11 +1576,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify({
           userId: user.id,
           projectId,
-          projectName: project.name,
+          projectName: displayProjectName,
           templateId: project.templateId,
           templateName,
-          duration: template?.defaultDuration ? `0:${template.defaultDuration}` : '0:30',
-          variables: project.variables || {}
+          duration: displayDuration,
+          variables: {
+            ...(project.variables || {}),
+            isSandbox,
+            duration: isSandbox ? 3 : (template?.defaultDuration || 30)
+          }
         })
       })
       .then(res => {
@@ -1548,7 +1619,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                           progress: job.progress,
                           renderTime: job.renderTime,
                           outputUrl: job.outputUrl,
-                          completedAt: job.completedAt
+                          completedAt: job.completedAt,
+                          logs: job.logs,
+                          errorMessage: job.error || job.errorMessage,
+                          debugInfo: job.debugInfo
                         };
                       }
                       return t;
@@ -1927,42 +2001,80 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     loadUserWorkspace(updatedUser);
   };
 
-  // SaaS Admin: Core management functions
-  const adminUpdateUser = (userId: string, updates: Partial<User>) => {
-    setAllUsers(prev => {
-      const next = prev.map(u => {
-        if (u.id === userId) {
-          const merged = { ...u, ...updates };
-          // If the tier changed, align default limits
-          if (updates.subscription) {
-            merged.usageLimit = PLAN_LIMITS_MAP[updates.subscription].maxVideosPerMonth;
-          }
-          return merged;
-        }
-        return u;
-      });
-      localStorage.setItem('vf_all_users', JSON.stringify(next));
+  // SaaS Admin: Core management functions and audit trail logs
+  const logAdminAction = useCallback((action: string, targetUser: string, status: 'SUCCESS' | 'WARNING' | 'FAILED' = 'SUCCESS') => {
+    try {
+      const savedLogs = localStorage.getItem('vf_audit_logs');
+      const currentLogs = savedLogs ? JSON.parse(savedLogs) : [
+        { id: 'aud-001', adminName: 'Gabriel (SUPER_ADMIN)', action: 'Impersonated User Session', targetUser: 'Bruna Silva (bruna@ecom.com)', timestamp: '2026-07-01 11:42:01', ip: '186.204.14.22', status: 'SUCCESS' },
+        { id: 'aud-002', adminName: 'Gabriel (SUPER_ADMIN)', action: 'Adjusted Storage Quotas (+500MB)', targetUser: 'Lucas Santos (lucas@agency.io)', timestamp: '2026-07-01 11:38:15', ip: '186.204.14.22', status: 'SUCCESS' },
+        { id: 'aud-003', adminName: 'Gabriel (SUPER_ADMIN)', action: 'Changed Subscription Plan to Pro', targetUser: 'Renata Souza (renata@vlog.com)', timestamp: '2026-07-01 11:15:30', ip: '186.204.14.22', status: 'SUCCESS' },
+        { id: 'aud-004', adminName: 'Suporte Dev (DESENVOLVEDOR)', action: 'Rebooted Cluster Node: Delta', targetUser: 'Cluster US-EAST-01', timestamp: '2026-07-01 10:44:12', ip: '191.144.11.2', status: 'SUCCESS' },
+        { id: 'aud-005', adminName: 'Gabriel (SUPER_ADMIN)', action: 'Suspended Account due to abuse', targetUser: 'Hacker User (hack@test.com)', timestamp: '2026-06-30 23:55:00', ip: '186.204.14.22', status: 'SUCCESS' }
+      ];
+      const adminName = originalAdminUser ? `${originalAdminUser.name} (Modo Suporte)` : (user ? `${user.name} (SaaS OWNER)` : 'Gabriel Moura');
+      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const newLog = {
+        id: `aud-${Date.now()}`,
+        adminName,
+        action,
+        targetUser,
+        timestamp,
+        ip: '186.204.14.22',
+        status
+      };
+      const nextLogs = [newLog, ...currentLogs];
+      localStorage.setItem('vf_audit_logs', JSON.stringify(nextLogs));
       
-      // If the current active user is the one modified, sync their workspace as well!
-      if (user && user.id === userId) {
-        const matched = next.find(u => u.id === userId);
-        if (matched) {
-          setUser(matched);
-          loadUserWorkspace(matched);
+      // Notify active listeners
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {
+      console.warn('Failed to log admin action', e);
+    }
+  }, [user, originalAdminUser]);
+
+  const adminUpdateUser = async (userId: string, updates: Partial<User>) => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        const uRes = await fetch('/api/admin/users');
+        if (uRes.ok) {
+          const data = await uRes.json();
+          setAllUsers(data);
+          if (user && user.id === userId) {
+            const matched = data.find((u: User) => u.id === userId);
+            if (matched) {
+              setUser(matched);
+              sessionStorage.setItem('vf_user', JSON.stringify(matched));
+            }
+          }
         }
       }
-      return next;
-    });
+    } catch (err) {
+      console.error('Failed to update user via Express API:', err);
+    }
   };
 
-  const adminDeleteUser = (userId: string) => {
-    setAllUsers(prev => {
-      const next = prev.filter(u => u.id !== userId);
-      localStorage.setItem('vf_all_users', JSON.stringify(next));
-      return next;
-    });
+  const adminDeleteUser = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        const uRes = await fetch('/api/admin/users');
+        if (uRes.ok) {
+          const data = await uRes.json();
+          setAllUsers(data);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete user via Express API:', err);
+    }
 
-    // If active user is deleted, force logout!
     if (user && user.id === userId) {
       logout();
     }
@@ -1973,24 +2085,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setOriginalAdminUser(user);
       localStorage.setItem('vf_original_admin', JSON.stringify(user));
     }
+    logAdminAction('Impersonated User Session', `${targetUser.name} (${targetUser.email})`, 'SUCCESS');
     setUser(targetUser);
-    localStorage.setItem('vf_user', JSON.stringify(targetUser));
+    sessionStorage.setItem('vf_user', JSON.stringify(targetUser));
     loadUserWorkspace(targetUser);
     setActiveTab('dashboard');
     showToast(`Sessão assumida: operando como ${targetUser.name}`, 'success');
-  }, [user, originalAdminUser, setActiveTab]);
+  }, [user, originalAdminUser, setActiveTab, logAdminAction]);
 
   const stopImpersonating = useCallback(() => {
     if (originalAdminUser) {
+      logAdminAction('Stopped Impersonating User Session', `${user?.name || ''}`, 'SUCCESS');
       setUser(originalAdminUser);
-      localStorage.setItem('vf_user', JSON.stringify(originalAdminUser));
+      sessionStorage.setItem('vf_user', JSON.stringify(originalAdminUser));
       loadUserWorkspace(originalAdminUser);
       setOriginalAdminUser(null);
       localStorage.removeItem('vf_original_admin');
       setActiveTab('admin');
       showToast('Sessão encerrada. Retornado ao painel admin.', 'success');
     }
-  }, [originalAdminUser, setActiveTab]);
+  }, [originalAdminUser, user, setActiveTab, logAdminAction]);
+
+  const adminResetSystem = useCallback((cleanMode: 'zero' | 'demo') => {
+    if (cleanMode === 'zero') {
+      const currentAdmin = allUsers.find(u => u.id === 'usr-001') || {
+        id: 'usr-001',
+        name: 'Gabriel Moura',
+        email: 'mouragabriel2011@gmail.com',
+        company: 'Viral S.A.',
+        role: 'SaaS_Owner',
+        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
+        subscription: 'Free',
+        status: 'active',
+        usageCurrent: 0,
+        usageLimit: 5,
+        storageUsedMB: 0,
+        templatesUsed: 0,
+        projectsActive: 0,
+        subscriptionDetails: {
+          id: 'sub-001',
+          userId: 'usr-001',
+          tier: 'Free',
+          status: 'active',
+          billingCycle: 'monthly',
+          price: 0,
+          startDate: new Date().toISOString(),
+          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          cancelAtPeriodEnd: false,
+          autoRenew: true
+        }
+      };
+
+      const freshUsers = [currentAdmin];
+      setAllUsers(freshUsers);
+      localStorage.setItem('vf_all_users', JSON.stringify(freshUsers));
+      setUser(currentAdmin);
+      sessionStorage.setItem('vf_user', JSON.stringify(currentAdmin));
+      
+      localStorage.setItem('vf_plans', JSON.stringify([]));
+      localStorage.setItem('vf_coupons', JSON.stringify([]));
+      localStorage.setItem('vf_tickets', JSON.stringify([]));
+      localStorage.setItem('vf_smtp_queue', JSON.stringify([]));
+      localStorage.setItem('vf_invoices', JSON.stringify([]));
+      
+      const emptyAuditLogs = [
+        {
+          id: `aud-${Date.now()}`,
+          adminName: 'Gabriel Moura (SaaS OWNER)',
+          action: 'System Database Purge (Zerar Tudo)',
+          targetUser: 'All tables emptied except Owner Account',
+          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+          ip: '127.0.0.1',
+          status: 'SUCCESS' as const
+        }
+      ];
+      localStorage.setItem('vf_audit_logs', JSON.stringify(emptyAuditLogs));
+      
+      localStorage.setItem('vf_storage_cacheSize', '0');
+      localStorage.setItem('vf_storage_orphanCount', '0');
+      localStorage.setItem('vf_storage_directories', JSON.stringify([]));
+
+      showToast('Banco de dados limpo com sucesso! Todos os dados de mockup foram deletados.', 'success');
+    } else {
+      localStorage.removeItem('vf_all_users');
+      localStorage.removeItem('vf_plans');
+      localStorage.removeItem('vf_coupons');
+      localStorage.removeItem('vf_tickets');
+      localStorage.removeItem('vf_smtp_queue');
+      localStorage.removeItem('vf_invoices');
+      localStorage.removeItem('vf_audit_logs');
+      localStorage.removeItem('vf_storage_cacheSize');
+      localStorage.removeItem('vf_storage_orphanCount');
+      localStorage.removeItem('vf_storage_directories');
+      
+      showToast('Padrões de demonstração e teste restaurados! Recarregando...', 'success');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    }
+    window.dispatchEvent(new Event('storage'));
+  }, [allUsers]);
 
   const isImpersonating = !!originalAdminUser;
 
@@ -2041,7 +2235,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         impersonateUser,
         stopImpersonating,
         isImpersonating,
-        originalAdminUser
+        originalAdminUser,
+        logAdminAction,
+        adminResetSystem
       }}
     >
       {children}

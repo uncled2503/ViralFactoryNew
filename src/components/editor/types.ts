@@ -14,6 +14,7 @@ export interface CanvasSettings {
   guidesEnabled: boolean;
   snapEnabled: boolean;
   safeAreaEnabled: boolean;
+  presetId?: string;
 }
 
 export type EditorLayerType =

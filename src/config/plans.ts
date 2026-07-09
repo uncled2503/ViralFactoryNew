@@ -29,9 +29,9 @@ export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
     hasTeamManagement: false,
   },
   Starter: {
-    maxVideosPerMonth: 100,
+    maxVideosPerMonth: 300,
     maxTemplates: 5,
-    maxProjects: 5,
+    maxProjects: 3,
     maxStorageMB: 2048, // 2 GB
     renderPriority: 'normal',
     hasAutoSubtitles: false,
@@ -41,7 +41,7 @@ export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
     hasTeamManagement: false,
   },
   Pro: {
-    maxVideosPerMonth: 2000,
+    maxVideosPerMonth: 1200,
     maxTemplates: 99999, // unlimited representation
     maxProjects: 99999, // unlimited representation
     maxStorageMB: 102400, // 100 GB
@@ -53,10 +53,10 @@ export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
     hasTeamManagement: false,
   },
   Business: {
-    maxVideosPerMonth: 10000, // Fair use representation
+    maxVideosPerMonth: 4000, // Fair use representation
     maxTemplates: 99999,
     maxProjects: 99999,
-    maxStorageMB: 1024000, // 1 TB
+    maxStorageMB: 10240, // 10 GB
     renderPriority: 'maximum',
     hasAutoSubtitles: true,
     hasMultiFormatExport: true,
@@ -90,53 +90,50 @@ export const PLANS_DETAILS: PlanConfig[] = [
   {
     tier: 'Starter',
     name: 'Starter',
-    priceMonthly: 49,
-    priceAnnual: 39, // R$39/month billed annually
-    description: 'Ideal para criadores iniciantes experimentando vídeos curtos.',
+    priceMonthly: 97,
+    priceAnnual: 77, // R$77/month billed annually
+    description: 'Ideal para criadores iniciantes que querem validar seus primeiros canais de escala.',
     limits: PLAN_LIMITS_MAP.Starter,
     features: [
-      'Até 100 vídeos por mês',
-      'Até 5 templates de vídeo',
-      'Até 5 projetos ativos',
-      'Até 2 GB de armazenamento',
-      'Renderização em prioridade normal',
-      'Suporte via e-mail corporativo',
+      'Até 300 renders de vídeo/mês',
+      '3 Projetos ativos simultâneos',
+      'Templates prontos essenciais',
+      'Suporte prioritário por e-mail',
+      'Fila de exportação padrão',
+      'Cancele a qualquer momento',
     ],
   },
   {
     tier: 'Pro',
     name: 'Creator Pro',
-    priceMonthly: 149,
-    priceAnnual: 119, // R$119/month billed annually
-    description: 'Acelerador de escala perfeito para produtores de conteúdo ativos.',
+    priceMonthly: 197,
+    priceAnnual: 157, // R$157/month billed annually
+    description: 'O plano perfeito para profissionais que buscam escala massiva e automação robusta.',
     limits: PLAN_LIMITS_MAP.Pro,
     features: [
-      'Até 2.000 vídeos por mês',
-      'Templates ilimitados',
-      'Projetos ativos ilimitados',
-      'Até 100 GB de armazenamento',
-      'Legendas automáticas inteligentes por IA',
-      'Fila de renderização prioritária',
-      'Exportação em múltiplos formatos',
-      'Templates privados e exclusivos',
+      'Até 1.200 renders de vídeo/mês',
+      'Projetos e pastas ilimitados',
+      'Todos os Templates Premium',
+      'Prioridade máxima na fila de renders',
+      'Upload de vídeos de gameplay personalizados',
+      'Edição avançada de variáveis de texto',
+      'Acesso prioritário a novas ferramentas',
     ],
   },
   {
     tier: 'Business',
-    name: 'Business Enterprise',
-    priceMonthly: 499,
-    priceAnnual: 399, // R$399/month billed annually
-    description: 'Infraestrutura robusta de alta performance para marcas e agências.',
+    name: 'Business',
+    priceMonthly: 397,
+    priceAnnual: 317, // R$317/month billed annually
+    description: 'Para agências e equipes grandes que produzem conteúdo em ritmo constante e de alta performance.',
     limits: PLAN_LIMITS_MAP.Business,
     features: [
-      'Limite estendido de vídeos (uso justo)',
-      'Templates ilimitados',
-      'Projetos ilimitados',
-      '1 TB de armazenamento dedicado',
-      'Fila de processamento ultrarápido com prioridade máxima',
-      'API preparada para automação e integração externa',
-      'Painel de equipe avançado (estrutura pronta)',
-      'Logs e histórico completo de renderizações',
+      'Até 4.000 renders de vídeo/mês',
+      'Espaço de armazenamento extra de 10GB',
+      'Até 5 usuários/colaboradores',
+      'Modelos e templates sob medida',
+      'Acompanhamento estratégico por especialistas',
+      'SLA de entrega garantido de renderização',
     ],
   },
 ];

@@ -1,11 +1,34 @@
 import { Template, Project } from '../../src/types';
 
+export interface TemplateJSON {
+  width: number;
+  height: number;
+  duration: number;
+  layers: TemplateLayerJSON[];
+  presetId?: string;
+}
+
+export interface TemplateLayerJSON {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  rotation: number;
+  opacity: number;
+  zIndex: number;
+  timeline: { start: number; end: number };
+  animations: any[];
+  content: string;
+  styles: Record<string, any>;
+}
+
+// Retained for backward-compatibility with legacy layers
 export interface CompiledLayout {
   aspect: '9:16' | '16:9' | '1:1';
-  duration: number; // in seconds
+  duration: number;
   background: {
     type: 'color' | 'image' | 'video';
-    value: string; // Hex color, Image URL, or Video URL
+    value: string;
     opacity: number;
   };
   videoArea: {
@@ -74,94 +97,192 @@ export interface CompiledLayout {
 
 export class TemplateEngine {
   /**
-   * Reads a template saved in database and resolves it against active project details
+   * Helper to fetch or generate the standardized TemplateJSON from project/template details.
+   * Promotes fully decoupled template JSON execution in the Render Engine.
    */
-  static compile(template: Template, project: Project): CompiledLayout {
-    const vars: Record<string, any> = (project.variables || {}) as Record<string, any>;
-
-    // 1. Resolve Background Type & URL
-    let bgType: 'color' | 'image' | 'video' = 'color';
-    let bgValue = vars.brandColor || '#030712'; // default dark gray/black
-
-    if (vars.backgroundVideoUrl || template.bgMusicUrl) {
-      bgType = vars.backgroundVideoUrl ? 'video' : 'color';
-      bgValue = vars.backgroundVideoUrl || bgValue;
-    } else if (vars.backgroundImageUrl || template.backgroundImageUrl) {
-      bgType = 'image';
-      bgValue = vars.backgroundImageUrl || template.backgroundImageUrl || '';
+  static getTemplateJson(template: any, project: any): TemplateJSON {
+    const vars = project?.variables || {};
+    
+    // 1. If we already have the pre-compiled templateJson saved inside project variables
+    if (vars.templateJson) {
+      return typeof vars.templateJson === 'string' 
+        ? JSON.parse(vars.templateJson) 
+        : vars.templateJson;
     }
 
-    // 2. Build default visual zones for 9:16 layout
+    // 2. Fallback: Parse canvas and layers directly from editor variables
+    if (vars.canvas && vars.layers) {
+      return {
+        width: vars.canvas.width || 1080,
+        height: vars.canvas.height || 1920,
+        duration: project.totalDuration || template?.defaultDuration || 30,
+        layers: vars.layers.map((layer: any) => ({
+          id: layer.id,
+          type: layer.type,
+          position: { x: layer.x, y: layer.y },
+          size: { width: layer.width, height: layer.height },
+          rotation: layer.rotation || 0,
+          opacity: layer.opacity !== undefined ? layer.opacity : 100,
+          zIndex: layer.order || 0,
+          timeline: { start: layer.durationStart || 0, end: layer.durationEnd || 30 },
+          animations: layer.animationIn || layer.animationOut ? [
+            { type: 'in', name: layer.animationIn || 'none', duration: layer.animationDuration || 0.5 },
+            { type: 'out', name: layer.animationOut || 'none', duration: layer.animationDuration || 0.5 }
+          ] : [],
+          content: layer.text || layer.contentUrl || layer.placeholder || '',
+          styles: {
+            color: layer.color,
+            font: layer.font,
+            size: layer.size,
+            weight: layer.weight,
+            spacing: layer.spacing,
+            align: layer.align,
+            anchor: layer.anchor,
+            shadowEnabled: layer.shadowEnabled,
+            shadowColor: layer.shadowColor,
+            shadowBlur: layer.shadowBlur,
+            shadowOffsetX: layer.shadowOffsetX,
+            shadowOffsetY: layer.shadowOffsetY,
+            glowEnabled: layer.glowEnabled,
+            glowColor: layer.glowColor,
+            glowBlur: layer.glowBlur,
+            strokeEnabled: layer.strokeEnabled,
+            strokeColor: layer.strokeColor,
+            strokeWidth: layer.strokeWidth,
+            radius: layer.radius,
+            padding: layer.padding,
+            margin: layer.margin,
+            shapeType: layer.shapeType,
+            overlayType: layer.overlayType,
+            gradientColorStart: layer.gradientColorStart,
+            gradientColorEnd: layer.gradientColorEnd
+          }
+        }))
+      };
+    }
+
+    // 3. Absolute Fallback: Generate template layers using old metadata
+    const duration = template?.defaultDuration || 30;
     return {
-      aspect: project.aspect || template.aspect || '9:16',
-      duration: template.defaultDuration || 30,
-      background: {
-        type: bgType,
-        value: bgValue,
-        opacity: vars.backgroundImageUrl ? 0.4 : 1.0 // dimmer background if video overlay is main
-      },
-      videoArea: {
-        x: 0,
-        y: 460, // Centered vertically in 1080x1920 layout
-        width: 1080,
-        height: 1000,
-        videoUrl: vars.backgroundVideoUrl || '',
-        fit: 'cover',
-        trim: vars.trim || { start: 0, duration: template.defaultDuration || 30 }
-      },
-      headline: {
-        text: vars.title || vars.headline || 'HEADLINE PRINCIPAL',
-        font: vars.fontName || 'Inter',
-        color: vars.brandColor || '#FFFFFF',
-        size: 54,
-        x: 540, // Centered horizontally
-        y: 200  // Upper header region
-      },
-      subheadline: {
-        text: (vars.subtitles && vars.subtitles[0]) || vars.subheadline || 'Subheadline de apoio informativa',
-        font: vars.fontName || 'Inter',
-        color: '#E2E8F0',
-        size: 38,
-        x: 540,
-        y: 320
-      },
-      cta: {
-        text: vars.cta || 'Siga para mais novidades!',
-        font: vars.fontName || 'Inter',
-        color: '#FF007F', // vibrant neon pink
-        size: 42,
-        x: 540,
-        y: 1700 // Lower footer region
-      },
-      logo: vars.logoUrl ? {
-        url: vars.logoUrl,
-        x: 490, // Centered (size 100 offset)
-        y: 80,
-        size: 100,
-        opacity: 1.0
-      } : undefined,
-      subtitles: {
-        enabled: true,
-        text: vars.subtitles || ['Legenda do vídeo renderizado'],
-        font: vars.fontName || 'Inter',
-        color: '#FFFF00', // Yellow captions highlight
-        size: 44,
-        y: 1500 // Overlay subtitles below video zone
-      },
-      watermark: {
-        url: '/src/assets/images/logo_symbol_new_1782894227400.jpg', // uses new brand logo symbol
-        x: 920,
-        y: 80,
-        size: 80,
-        opacity: 0.5
-      },
-      progressBar: {
-        enabled: true,
-        color: '#6366F1', // Indigo brand
-        bgColor: '#1F2937',
-        height: 10,
-        y: 1910 // Bottom boundary
-      }
+      width: 1080,
+      height: 1920,
+      duration: duration,
+      layers: [
+        {
+          id: 'layer-base-bg',
+          type: 'overlay',
+          position: { x: 0, y: 0 },
+          size: { width: 1080, height: 1920 },
+          rotation: 0,
+          opacity: 100,
+          zIndex: 0,
+          timeline: { start: 0, end: duration },
+          animations: [],
+          content: '',
+          styles: {
+            overlayType: 'solid',
+            color: vars.brandColor || '#030712'
+          }
+        },
+        {
+          id: 'layer-video',
+          type: 'video',
+          position: { x: 0, y: 460 },
+          size: { width: 1080, height: 1000 },
+          rotation: 0,
+          opacity: 100,
+          zIndex: 1,
+          timeline: { start: 0, end: duration },
+          animations: [],
+          content: vars.backgroundVideoUrl || '',
+          styles: {}
+        },
+        {
+          id: 'layer-headline',
+          type: 'headline',
+          position: { x: 90, y: 180 },
+          size: { width: 900, height: 200 },
+          rotation: 0,
+          opacity: 100,
+          zIndex: 2,
+          timeline: { start: 0, end: duration },
+          animations: [],
+          content: vars.title || vars.headline || 'HEADLINE PRINCIPAL',
+          styles: {
+            font: vars.fontName || 'Inter',
+            color: '#FFFFFF',
+            size: 54
+          }
+        },
+        {
+          id: 'layer-subtitle',
+          type: 'subtitle',
+          position: { x: 90, y: 1400 },
+          size: { width: 900, height: 200 },
+          rotation: 0,
+          opacity: 100,
+          zIndex: 3,
+          timeline: { start: 0, end: duration },
+          animations: [],
+          content: (vars.subtitles && vars.subtitles[0]) || vars.subheadline || 'Subheadline informativa',
+          styles: {
+            font: vars.fontName || 'Inter',
+            color: '#E2E8F0',
+            size: 38
+          }
+        },
+        {
+          id: 'layer-progress-bar',
+          type: 'progressBar',
+          position: { x: 90, y: 1840 },
+          size: { width: 900, height: 12 },
+          rotation: 0,
+          opacity: 100,
+          zIndex: 4,
+          timeline: { start: 0, end: duration },
+          animations: [],
+          content: '',
+          styles: {
+            color: vars.brandColor || '#6366F1'
+          }
+        }
+      ]
     };
+  }
+
+  /**
+   * Reads a template saved in database and resolves it against active project details
+   */
+  static compile(templateJson: TemplateJSON, variables: Record<string, any>): TemplateJSON {
+    // Deep clone the template JSON
+    const compiled = JSON.parse(JSON.stringify(templateJson)) as TemplateJSON;
+
+    // Resolve merge tags/placeholders inside layer content on the backend
+    for (const layer of compiled.layers) {
+      if (typeof layer.content === 'string' && layer.content) {
+        let text = layer.content;
+        
+        if (text.includes('{{HEADLINE}}') || text.includes('{{headline}}')) {
+          text = text.replace(/\{\{headline\}\}/gi, variables.headline || variables.title || 'HEADLINE PRINCIPAL');
+        }
+        if (text.includes('{{TITLE}}') || text.includes('{{title}}')) {
+          text = text.replace(/\{\{title\}\}/gi, variables.title || variables.headline || 'HEADLINE PRINCIPAL');
+        }
+        if (text.includes('{{VIDEO}}') || text.includes('{{video}}')) {
+          text = text.replace(/\{\{video\}\}/gi, variables.backgroundVideoUrl || variables.videoUrl || '');
+        }
+        if (text.includes('{{CTA}}') || text.includes('{{cta}}')) {
+          text = text.replace(/\{\{cta\}\}/gi, variables.cta || 'Siga para mais novidades!');
+        }
+        if (text.includes('{{SUBTITLE}}') || text.includes('{{subtitle}}')) {
+          const sub = (variables.subtitles && variables.subtitles[0]) || variables.subheadline || '';
+          text = text.replace(/\{\{subtitle\}\}/gi, sub);
+        }
+        
+        layer.content = text;
+      }
+    }
+
+    return compiled;
   }
 }

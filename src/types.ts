@@ -187,6 +187,19 @@ export interface Template {
   }[];
 }
 
+export interface RenderDebugInfo {
+  command?: string;
+  executionTimeMs?: number;
+  stdout?: string;
+  stderr?: string;
+  encodingTimeMs?: number;
+  fileSize?: number;
+  bitrate?: string;
+  resolution?: string;
+  codec?: string;
+  fps?: number;
+}
+
 export interface RenderingTask {
   id: string;
   projectId: string;
@@ -199,6 +212,9 @@ export interface RenderingTask {
   outputUrl?: string;
   createdAt: string;
   completedAt?: string;
+  logs?: string[];
+  errorMessage?: string;
+  debugInfo?: RenderDebugInfo;
 }
 
 export interface StorageFile {

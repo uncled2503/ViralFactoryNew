@@ -9,6 +9,8 @@ import { TextEngine } from './TextEngine';
 import { ExportEngine } from './ExportEngine';
 import { OutputManager } from './OutputManager';
 
+import { PipelineManager } from './PipelineManager';
+
 // Initialize server-side Supabase if config is provided
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
@@ -23,119 +25,7 @@ export class RenderEngine {
    * Main entrypoint to process an active rendering Job
    */
   static async processJob(jobId: string): Promise<RenderJob> {
-    const job = JobQueue.getJob(jobId);
-    if (!job) {
-      throw new Error(`Job ${jobId} not found`);
-    }
-
-    const startTime = Date.now();
-    console.log(`[RenderEngine] Starting job ${jobId} for user ${job.userId}`);
-
-    try {
-      // Step 1: PREPARING (Download assets, initialize storage)
-      JobQueue.updateProgress(jobId, 'Preparing', 10);
-      await this.saveDbStatus(jobId, 'Preparing', 10);
-
-      // Resolve database project and template instances
-      const projectData = await this.fetchProject(job.projectId, job.userId);
-      const templateData = await this.fetchTemplate(job.templateId, job.userId);
-
-      if (!projectData || !templateData) {
-        throw new Error('Required project or template data is missing from the database');
-      }
-
-      // 2. TEMPLATE ENGINE (Compile variables and layouts)
-      console.log('[RenderEngine] Resolving layout constraints via TemplateEngine');
-      const compiledLayout = TemplateEngine.compile(templateData, projectData);
-
-      // 3. TEXT ENGINE (Replace merge tags in headlines and subtitles)
-      console.log('[RenderEngine] Processing dynamic text substitutions via TextEngine');
-      if (compiledLayout.headline) {
-        compiledLayout.headline.text = TextEngine.parse(compiledLayout.headline.text, job.variables);
-      }
-      if (compiledLayout.subheadline) {
-        compiledLayout.subheadline.text = TextEngine.parse(compiledLayout.subheadline.text, job.variables);
-      }
-      if (compiledLayout.cta) {
-        compiledLayout.cta.text = TextEngine.parse(compiledLayout.cta.text, job.variables);
-      }
-      if (compiledLayout.subtitles && compiledLayout.subtitles.text) {
-        compiledLayout.subtitles.text = compiledLayout.subtitles.text.map(t => 
-          TextEngine.parse(t, job.variables)
-        );
-      }
-
-      // 4. LAYER ENGINE (Arrange stack order: BG -> Video -> Logo -> Subtitles -> CTA -> Progress Bar)
-      console.log('[RenderEngine] Layering render composite stack via LayerEngine');
-      const renderLayers = LayerEngine.compileLayers(compiledLayout);
-
-      // 5. EXPORT ENGINE (Assemble video layout and invoke stream compiler)
-      JobQueue.updateProgress(jobId, 'Rendering', 25);
-      await this.saveDbStatus(jobId, 'processing', 25);
-
-      const fileName = `${job.projectName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${Date.now()}.mp4`;
-      const tempOutputPath = StorageManager.getTempPath(fileName);
-
-      console.log('[RenderEngine] Spawning rendering process');
-      
-      // Execute render compilation and listen for frame updates
-      await ExportEngine.render(renderLayers, tempOutputPath, async (percent) => {
-        const renderStatus: JobStatus = percent < 50 ? 'Rendering' : 'Encoding';
-        const dbStatus = 'processing';
-        JobQueue.updateProgress(jobId, renderStatus, percent);
-        await this.saveDbStatus(jobId, dbStatus, percent);
-      });
-
-      // 6. SAVING AND POST-PROCESSING (Upload final file, generate thumbnails)
-      JobQueue.updateProgress(jobId, 'Saving', 90);
-      await this.saveDbStatus(jobId, 'processing', 90);
-
-      const permanentVideoUrl = StorageManager.saveToStorage(tempOutputPath, 'rendered', fileName);
-      const publicVideoPath = StorageManager.getStoragePath('rendered', fileName);
-
-      // Extract high resolution frame thumbnail
-      const thumbFileName = fileName.replace('.mp4', '.jpg');
-      const tempThumbPath = StorageManager.getTempPath(thumbFileName);
-      const publicThumbPath = StorageManager.getStoragePath('rendered', thumbFileName);
-      
-      await OutputManager.generateThumbnail(publicVideoPath, tempThumbPath);
-      const permanentThumbUrl = StorageManager.saveToStorage(tempThumbPath, 'rendered', thumbFileName);
-
-      const renderDurationSeconds = Math.round((Date.now() - startTime) / 1000);
-      const renderTimeStr = `${renderDurationSeconds}s`;
-
-      const completedJobUpdates = {
-        status: 'Completed' as const,
-        progress: 100,
-        renderTime: renderTimeStr,
-        outputUrl: permanentVideoUrl,
-        thumbnailUrl: permanentThumbUrl,
-        completedAt: new Date().toISOString()
-      };
-
-      // Update in-memory JobQueue state
-      JobQueue.updateJob(jobId, completedJobUpdates);
-
-      // Save complete status to databases
-      await this.saveDbStatus(jobId, 'completed', 100, permanentVideoUrl, renderTimeStr);
-      await this.registerRenderedFile(job.userId, job.projectId, job.projectName, permanentVideoUrl);
-
-      console.log(`[RenderEngine] Job ${jobId} rendered successfully in ${renderTimeStr}`);
-      return JobQueue.getJob(jobId)!;
-
-    } catch (err: any) {
-      console.error(`[RenderEngine] Rendering job ${jobId} failed:`, err);
-      const failedJobUpdates = {
-        status: 'Failed' as const,
-        progress: 0,
-        error: err.message || 'Erro inesperado no pipeline de renderização'
-      };
-
-      JobQueue.updateJob(jobId, failedJobUpdates);
-      await this.saveDbStatus(jobId, 'failed', 0, undefined, undefined, err.message);
-      
-      throw err;
-    }
+    return PipelineManager.run(jobId);
   }
 
   /**
@@ -193,13 +83,15 @@ export class RenderEngine {
   /**
    * Writes job progress changes directly to Supabase or JSON file database
    */
-  private static async saveDbStatus(
+  public static async saveDbStatus(
     jobId: string,
     status: string,
     progress: number,
     videoUrl?: string,
     renderTime?: string,
-    errorMsg?: string
+    errorMsg?: string,
+    logs?: string[],
+    debugInfo?: any
   ) {
     const timeNow = new Date().toISOString();
 
@@ -213,7 +105,9 @@ export class RenderEngine {
             output_url: videoUrl,
             render_time: renderTime,
             completed_at: status === 'completed' ? timeNow : undefined,
-            error_message: errorMsg
+            error_message: errorMsg,
+            logs: logs,
+            debug_info: debugInfo
           })
           .eq('id', jobId);
 
@@ -257,7 +151,9 @@ export class RenderEngine {
         output_url: videoUrl,
         created_at: job?.createdAt,
         completed_at: status === 'completed' ? timeNow : undefined,
-        error_message: errorMsg
+        error_message: errorMsg,
+        logs: logs || job?.logs,
+        debug_info: debugInfo || job?.debugInfo
       };
 
       if (taskIndex !== -1) {

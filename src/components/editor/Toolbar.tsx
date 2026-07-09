@@ -22,9 +22,12 @@ interface ToolbarProps {
   onRedo: () => void;
   onSave: () => void;
   onRender: () => void;
+  onRenderSandbox: () => void;
   onDuplicate: () => void;
   onClose: () => void;
   isSaving: boolean;
+  presetId?: string;
+  onPresetChange?: (presetId: string) => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -38,9 +41,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onRedo,
   onSave,
   onRender,
+  onRenderSandbox,
   onDuplicate,
   onClose,
   isSaving,
+  presetId = 'tiktok',
+  onPresetChange,
 }) => {
   return (
     <div className="h-14 border-b border-gray-900 bg-gray-950 flex items-center justify-between px-4 z-50 select-none">
@@ -144,6 +150,35 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="Duplicar Projeto"
         >
           <Copy className="w-4 h-4" />
+        </button>
+
+        {/* Export Preset Selection Dropdown */}
+        <div className="flex items-center gap-1.5 bg-gray-900/60 border border-gray-900 px-2.5 py-1 rounded-xl">
+          <Settings className="w-3.5 h-3.5 text-indigo-400" />
+          <select
+            value={presetId}
+            onChange={(e) => onPresetChange?.(e.target.value)}
+            className="bg-transparent border-none text-[10px] font-bold text-gray-300 focus:outline-none cursor-pointer uppercase font-mono py-0.5"
+            title="Escolher Preset de Exportação (FFmpeg)"
+          >
+            <option value="tiktok" className="bg-gray-950 text-gray-300">TikTok (9:16, 30fps)</option>
+            <option value="reels" className="bg-gray-950 text-gray-300">Reels (9:16, 30fps)</option>
+            <option value="shorts" className="bg-gray-950 text-gray-300">Shorts (9:16, 60fps)</option>
+            <option value="stories" className="bg-gray-950 text-gray-300">Stories (9:16, 30fps)</option>
+            <option value="feed_square" className="bg-gray-950 text-gray-300">Feed 1:1 (1:1, 30fps)</option>
+            <option value="youtube_16_9" className="bg-gray-950 text-gray-300">YouTube 16:9 (16:9, 60fps)</option>
+            <option value="facebook" className="bg-gray-950 text-gray-300">Facebook (16:9, 30fps)</option>
+          </select>
+        </div>
+
+        {/* Action Button: SANDBOX PREVIEW */}
+        <button
+          onClick={onRenderSandbox}
+          className="py-1.5 px-3 bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center gap-1.5 shadow-lg cursor-pointer transform hover:scale-[1.02] active:scale-[0.98]"
+          title="Permitir renderizar apenas 3 segundos do projeto para validação de layout rápida"
+        >
+          <Sparkles className="w-3.5 h-3.5 animate-pulse text-pink-200" />
+          <span>Sandbox (3s)</span>
         </button>
 
         {/* Action Button: RENDER MASS PRODUCTION */}
