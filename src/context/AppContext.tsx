@@ -16,6 +16,7 @@ import {
   AspectRatio,
   StorageFile,
   PlanTier,
+  PlanLimits,
   BillingCycle,
   UserSubscription,
   Invoice,
@@ -148,114 +149,6 @@ const MOCK_ADMIN_USERS: User[] = [
       cancelAtPeriodEnd: false,
       autoRenew: true
     }
-  },
-  {
-    id: 'usr-002',
-    name: 'Bruna Silva',
-    email: 'bruna@ecom.com',
-    company: 'Dropshipping Brasil',
-    role: 'Administrador',
-    avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&h=256&fit=crop',
-    subscription: 'Starter',
-    status: 'active',
-    usageCurrent: 87,
-    usageLimit: 100,
-    storageUsedMB: 1224, // 1.2 GB
-    templatesUsed: 3,
-    projectsActive: 4,
-    subscriptionDetails: {
-      id: 'sub-002',
-      userId: 'usr-002',
-      tier: 'Starter',
-      status: 'active',
-      billingCycle: 'monthly',
-      price: 97,
-      startDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-      endDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
-      cancelAtPeriodEnd: false,
-      autoRenew: true
-    }
-  },
-  {
-    id: 'usr-003',
-    name: 'Lucas Santos',
-    email: 'lucas@agency.io',
-    company: 'Selo Criativo',
-    role: 'Administrador',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=256&h=256&fit=crop',
-    subscription: 'Pro',
-    status: 'active',
-    usageCurrent: 1240,
-    usageLimit: 2000,
-    storageUsedMB: 48500, // 48.5 GB
-    templatesUsed: 12,
-    projectsActive: 18,
-    subscriptionDetails: {
-      id: 'sub-003',
-      userId: 'usr-003',
-      tier: 'Pro',
-      status: 'active',
-      billingCycle: 'annual',
-      price: 1884, // 157 * 12
-      startDate: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(),
-      endDate: new Date(Date.now() + 245 * 24 * 60 * 60 * 1000).toISOString(),
-      cancelAtPeriodEnd: false,
-      autoRenew: true
-    }
-  },
-  {
-    id: 'usr-004',
-    name: 'Mariana Costa',
-    email: 'mariana@tech.com',
-    company: 'TechGrowth Media',
-    role: 'Administrador',
-    avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?q=80&w=256&h=256&fit=crop',
-    subscription: 'Business',
-    status: 'active',
-    usageCurrent: 3840,
-    usageLimit: 10000,
-    storageUsedMB: 380400, // 380.4 GB
-    templatesUsed: 38,
-    projectsActive: 52,
-    subscriptionDetails: {
-      id: 'sub-004',
-      userId: 'usr-004',
-      tier: 'Business',
-      status: 'active',
-      billingCycle: 'monthly',
-      price: 397,
-      startDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      endDate: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
-      cancelAtPeriodEnd: false,
-      autoRenew: true
-    }
-  },
-  {
-    id: 'usr-005',
-    name: 'Tiago Souza',
-    email: 'tiago@spam.com',
-    company: 'LeadGen Inc',
-    role: 'Membro',
-    avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=256&h=256&fit=crop',
-    subscription: 'Starter',
-    status: 'suspended', // Suspended account!
-    usageCurrent: 14,
-    usageLimit: 100,
-    storageUsedMB: 154,
-    templatesUsed: 1,
-    projectsActive: 1,
-    subscriptionDetails: {
-      id: 'sub-005',
-      userId: 'usr-005',
-      tier: 'Starter',
-      status: 'suspended',
-      billingCycle: 'monthly',
-      price: 97,
-      startDate: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
-      endDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-      cancelAtPeriodEnd: false,
-      autoRenew: false
-    }
   }
 ];
 
@@ -380,11 +273,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let currentAllUsers: User[] = [];
     if (savedAllUsers) {
       currentAllUsers = JSON.parse(savedAllUsers);
+      
+      // Auto-seed mock users if they aren't in the list
+      let changed = false;
+      MOCK_ADMIN_USERS.forEach(mockUser => {
+        if (!currentAllUsers.some(u => u.id === mockUser.id || u.email.toLowerCase() === mockUser.email.toLowerCase())) {
+          currentAllUsers.push(mockUser);
+          changed = true;
+        }
+      });
+      if (changed) {
+        localStorage.setItem('vf_all_users', JSON.stringify(currentAllUsers));
+      }
       setAllUsers(currentAllUsers);
     } else {
-      currentAllUsers = [];
-      setAllUsers([]);
-      localStorage.setItem('vf_all_users', JSON.stringify([]));
+      currentAllUsers = [...MOCK_ADMIN_USERS];
+      setAllUsers(currentAllUsers);
+      localStorage.setItem('vf_all_users', JSON.stringify(currentAllUsers));
     }
 
     // Load active session user
@@ -695,13 +600,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       });
 
-      const limitsConfig = PLAN_LIMITS_MAP[loadedUser.subscription];
+      let limitsConfig: PlanLimits = { ...PLAN_LIMITS_MAP[loadedUser.subscription] };
+      if (loadedUser.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com') {
+        limitsConfig = {
+          maxVideosPerMonth: 999999,
+          maxTemplates: 999999,
+          maxProjects: 999999,
+          maxStorageMB: 9999999,
+          renderPriority: 'maximum',
+          hasAutoSubtitles: true,
+          hasMultiFormatExport: true,
+          hasPrivateTemplates: true,
+          hasApiAccess: true,
+          hasTeamManagement: true,
+        };
+      }
       const isolatedStats: SystemStats = {
         totalVideosRendered: loadedUser.usageCurrent,
         totalRenderingMinutes: loadedUser.usageCurrent * 2, // 2 minutes per rendering
         activeTemplates: loadedTemplates.length,
         activeProjects: loadedProjects.length,
-        storageUsed: `${totalStorageMB.toFixed(1)} MB / ${(limitsConfig.maxStorageMB).toLocaleString('pt-BR')} MB`,
+        storageUsed: loadedUser.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com' 
+          ? `${totalStorageMB.toFixed(1)} MB / Ilimitado`
+          : `${totalStorageMB.toFixed(1)} MB / ${(limitsConfig.maxStorageMB).toLocaleString('pt-BR')} MB`,
         renderSuccessRate: 100
       };
       setStats(isolatedStats);
@@ -759,6 +680,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     upcomingSizeMB = 0
   ): boolean => {
     if (!user) return false;
+
+    // Special bypass: if the user is the SaaS Owner, they have absolutely infinite limits
+    if (user.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com') {
+      return true;
+    }
 
     // If user is suspended, block EVERYTHING
     if (user.status === 'suspended') {

@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { PLANS_DETAILS, PLAN_LIMITS_MAP } from '../config/plans';
-import { PlanTier, BillingCycle } from '../types';
+import { PlanTier, BillingCycle, PlanLimits } from '../types';
 import { 
   CreditCard, 
   CheckCircle2, 
@@ -50,7 +50,19 @@ export const SubscriptionDashboard: React.FC = () => {
   if (!user) return null;
 
   const currentPlan = PLANS_DETAILS.find(p => p.tier === user.subscription) || PLANS_DETAILS[0];
-  const limits = PLAN_LIMITS_MAP[user.subscription];
+  const isOwner = user.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com';
+  const limits: PlanLimits = isOwner ? {
+    maxVideosPerMonth: 999999,
+    maxTemplates: 999999,
+    maxProjects: 999999,
+    maxStorageMB: 9999999,
+    renderPriority: 'maximum',
+    hasAutoSubtitles: true,
+    hasMultiFormatExport: true,
+    hasPrivateTemplates: true,
+    hasApiAccess: true,
+    hasTeamManagement: true,
+  } : PLAN_LIMITS_MAP[user.subscription];
 
   // Calculations for display
   const totalStorageMB = user.storageUsedMB || 0;

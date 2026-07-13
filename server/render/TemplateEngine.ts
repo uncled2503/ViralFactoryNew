@@ -105,9 +105,30 @@ export class TemplateEngine {
     
     // 1. If we already have the pre-compiled templateJson saved inside project variables
     if (vars.templateJson) {
-      return typeof vars.templateJson === 'string' 
+      const parsed = typeof vars.templateJson === 'string' 
         ? JSON.parse(vars.templateJson) 
         : vars.templateJson;
+
+      if (vars.videoZone && parsed.layers) {
+        parsed.layers = parsed.layers.map((layer: any) => {
+          if (layer.type === 'video' || layer.id === 'layer-video') {
+            return {
+              ...layer,
+              position: { x: vars.videoZone.x, y: vars.videoZone.y },
+              size: { width: vars.videoZone.width, height: vars.videoZone.height },
+              rotation: vars.videoZone.rotation !== undefined ? vars.videoZone.rotation : (layer.rotation || 0),
+              opacity: vars.videoZone.opacity !== undefined ? vars.videoZone.opacity : (layer.opacity !== undefined ? layer.opacity : 100),
+              zIndex: vars.videoZone.zIndex !== undefined ? vars.videoZone.zIndex : (layer.zIndex || 1),
+              styles: {
+                ...layer.styles,
+                fit: vars.videoZone.scaleMode || 'cover'
+              }
+            };
+          }
+          return layer;
+        });
+      }
+      return parsed;
     }
 
     // 2. Fallback: Parse canvas and layers directly from editor variables
@@ -116,53 +137,74 @@ export class TemplateEngine {
         width: vars.canvas.width || 1080,
         height: vars.canvas.height || 1920,
         duration: project.totalDuration || template?.defaultDuration || 30,
-        layers: vars.layers.map((layer: any) => ({
-          id: layer.id,
-          type: layer.type,
-          position: { x: layer.x, y: layer.y },
-          size: { width: layer.width, height: layer.height },
-          rotation: layer.rotation || 0,
-          opacity: layer.opacity !== undefined ? layer.opacity : 100,
-          zIndex: layer.order || 0,
-          timeline: { start: layer.durationStart || 0, end: layer.durationEnd || 30 },
-          animations: layer.animationIn || layer.animationOut ? [
-            { type: 'in', name: layer.animationIn || 'none', duration: layer.animationDuration || 0.5 },
-            { type: 'out', name: layer.animationOut || 'none', duration: layer.animationDuration || 0.5 }
-          ] : [],
-          content: layer.text || layer.contentUrl || layer.placeholder || '',
-          styles: {
-            color: layer.color,
-            font: layer.font,
-            size: layer.size,
-            weight: layer.weight,
-            spacing: layer.spacing,
-            align: layer.align,
-            anchor: layer.anchor,
-            shadowEnabled: layer.shadowEnabled,
-            shadowColor: layer.shadowColor,
-            shadowBlur: layer.shadowBlur,
-            shadowOffsetX: layer.shadowOffsetX,
-            shadowOffsetY: layer.shadowOffsetY,
-            glowEnabled: layer.glowEnabled,
-            glowColor: layer.glowColor,
-            glowBlur: layer.glowBlur,
-            strokeEnabled: layer.strokeEnabled,
-            strokeColor: layer.strokeColor,
-            strokeWidth: layer.strokeWidth,
-            radius: layer.radius,
-            padding: layer.padding,
-            margin: layer.margin,
-            shapeType: layer.shapeType,
-            overlayType: layer.overlayType,
-            gradientColorStart: layer.gradientColorStart,
-            gradientColorEnd: layer.gradientColorEnd
-          }
-        }))
+        layers: vars.layers.map((layer: any) => {
+          const isVideo = layer.type === 'video' || layer.id === 'layer-video';
+          return {
+            id: layer.id,
+            type: layer.type,
+            position: (isVideo && vars.videoZone) 
+              ? { x: vars.videoZone.x, y: vars.videoZone.y } 
+              : { x: layer.x, y: layer.y },
+            size: (isVideo && vars.videoZone) 
+              ? { width: vars.videoZone.width, height: vars.videoZone.height } 
+              : { width: layer.width, height: layer.height },
+            rotation: (isVideo && vars.videoZone && vars.videoZone.rotation !== undefined)
+              ? vars.videoZone.rotation
+              : (layer.rotation || 0),
+            opacity: (isVideo && vars.videoZone && vars.videoZone.opacity !== undefined)
+              ? vars.videoZone.opacity
+              : (layer.opacity !== undefined ? layer.opacity : 100),
+            zIndex: (isVideo && vars.videoZone && vars.videoZone.zIndex !== undefined)
+              ? vars.videoZone.zIndex
+              : (layer.order || 0),
+            timeline: { start: layer.durationStart || 0, end: layer.durationEnd || 30 },
+            animations: layer.animationIn || layer.animationOut ? [
+              { type: 'in', name: layer.animationIn || 'none', duration: layer.animationDuration || 0.5 },
+              { type: 'out', name: layer.animationOut || 'none', duration: layer.animationDuration || 0.5 }
+            ] : [],
+            content: layer.text || layer.contentUrl || layer.placeholder || '',
+            styles: {
+              color: layer.color,
+              font: layer.font,
+              size: layer.size,
+              weight: layer.weight,
+              spacing: layer.spacing,
+              align: layer.align,
+              anchor: layer.anchor,
+              shadowEnabled: layer.shadowEnabled,
+              shadowColor: layer.shadowColor,
+              shadowBlur: layer.shadowBlur,
+              shadowOffsetX: layer.shadowOffsetX,
+              shadowOffsetY: layer.shadowOffsetY,
+              glowEnabled: layer.glowEnabled,
+              glowColor: layer.glowColor,
+              glowBlur: layer.glowBlur,
+              strokeEnabled: layer.strokeEnabled,
+              strokeColor: layer.strokeColor,
+              strokeWidth: layer.strokeWidth,
+              radius: layer.radius,
+              padding: layer.padding,
+              margin: layer.margin,
+              shapeType: layer.shapeType,
+              overlayType: layer.overlayType,
+              gradientColorStart: layer.gradientColorStart,
+              gradientColorEnd: layer.gradientColorEnd,
+              fit: (isVideo && vars.videoZone) ? (vars.videoZone.scaleMode || 'cover') : layer.fit
+            }
+          };
+        })
       };
     }
 
     // 3. Absolute Fallback: Generate template layers using old metadata
     const duration = template?.defaultDuration || 30;
+    const videoPosition = vars.videoZone ? { x: vars.videoZone.x, y: vars.videoZone.y } : { x: 0, y: 460 };
+    const videoSize = vars.videoZone ? { width: vars.videoZone.width, height: vars.videoZone.height } : { width: 1080, height: 1000 };
+    const videoRotation = (vars.videoZone && vars.videoZone.rotation !== undefined) ? vars.videoZone.rotation : 0;
+    const videoOpacity = (vars.videoZone && vars.videoZone.opacity !== undefined) ? vars.videoZone.opacity : 100;
+    const videoZIndex = (vars.videoZone && vars.videoZone.zIndex !== undefined) ? vars.videoZone.zIndex : 1;
+    const videoFit = (vars.videoZone && vars.videoZone.scaleMode) ? vars.videoZone.scaleMode : 'cover';
+
     return {
       width: 1080,
       height: 1920,
@@ -187,15 +229,17 @@ export class TemplateEngine {
         {
           id: 'layer-video',
           type: 'video',
-          position: { x: 0, y: 460 },
-          size: { width: 1080, height: 1000 },
-          rotation: 0,
-          opacity: 100,
-          zIndex: 1,
+          position: videoPosition,
+          size: videoSize,
+          rotation: videoRotation,
+          opacity: videoOpacity,
+          zIndex: videoZIndex,
           timeline: { start: 0, end: duration },
           animations: [],
           content: vars.backgroundVideoUrl || '',
-          styles: {}
+          styles: {
+            fit: videoFit
+          }
         },
         {
           id: 'layer-headline',

@@ -21,142 +21,24 @@ function ensureMockDb() {
           avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
           subscription_tier: 'Pro',
           status: 'active',
-          usage_current: 12,
+          usage_current: 0,
           usage_limit: 100,
-          storage_used_mb: 240,
-          templates_used: 1,
-          projects_active: 2,
-          created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'usr-002',
-          name: 'Bruna Silva',
-          email: 'bruna@ecom.com',
-          company: 'Dropshipping Brasil',
-          role: 'admin',
-          avatar_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&h=256&fit=crop',
-          subscription_tier: 'Starter',
-          status: 'active',
-          usage_current: 87,
-          usage_limit: 100,
-          storage_used_mb: 1224,
-          templates_used: 3,
-          projects_active: 4,
-          created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'usr-003',
-          name: 'Lucas Santos',
-          email: 'lucas@agency.io',
-          company: 'Selo Criativo',
-          role: 'admin',
-          avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=256&h=256&fit=crop',
-          subscription_tier: 'Pro',
-          status: 'active',
-          usage_current: 1240,
-          usage_limit: 2000,
-          storage_used_mb: 48500,
-          templates_used: 12,
-          projects_active: 18,
-          created_at: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'usr-004',
-          name: 'Mariana Costa',
-          email: 'mariana@tech.com',
-          company: 'TechGrowth Media',
-          role: 'admin',
-          avatar_url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?q=80&w=256&h=256&fit=crop',
-          subscription_tier: 'Business',
-          status: 'active',
-          usage_current: 3840,
-          usage_limit: 10000,
-          storage_used_mb: 380400,
-          templates_used: 38,
-          projects_active: 52,
-          created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'usr-005',
-          name: 'Tiago Souza',
-          email: 'tiago@spam.com',
-          company: 'LeadGen Inc',
-          role: 'user',
-          avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=256&h=256&fit=crop',
-          subscription_tier: 'Starter',
-          status: 'suspended',
-          usage_current: 14,
-          usage_limit: 100,
-          storage_used_mb: 154,
-          templates_used: 1,
-          projects_active: 1,
-          created_at: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'usr-006',
-          name: 'Gabriel de Souza Fonseca',
-          email: 'kaorihikarichan@gmail.com',
-          company: 'Kaori Studios',
-          role: 'admin',
-          avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=256&h=256&fit=crop',
-          subscription_tier: 'Starter',
-          status: 'active',
-          usage_current: 5,
-          usage_limit: 100,
-          storage_used_mb: 45,
-          templates_used: 1,
-          projects_active: 2,
-          created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'usr-007',
-          name: 'Bellycompany',
-          email: 'bellycompany@gmail.com',
-          company: 'Belly Corp',
-          role: 'admin',
-          avatar_url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?q=80&w=256&h=256&fit=crop',
-          subscription_tier: 'Starter',
-          status: 'active',
-          usage_current: 12,
-          usage_limit: 100,
-          storage_used_mb: 180,
-          templates_used: 2,
-          projects_active: 3,
-          created_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
+          storage_used_mb: 0,
+          templates_used: 0,
+          projects_active: 0,
+          created_at: new Date().toISOString()
         }
       ],
-      jobs: [
-        { id: 'job-001', project_name: 'Campanha de Vendas de Verão', template_name: 'Dynamic E-commerce Reel', status: 'queued', progress: 0, duration: '0:15', created_at: new Date().toISOString() },
-        { id: 'job-002', project_name: 'Anúncio de Imóvel Alto Padrão', template_name: 'Real Estate Modern Showcase', status: 'processing', progress: 42, duration: '0:30', render_time: '1m 12s', created_at: new Date().toISOString() },
-        { id: 'job-003', project_name: 'Video de Boas-vindas', template_name: 'SaaS Walkthrough Neon', status: 'completed', progress: 100, duration: '0:45', render_time: '2m 35s', created_at: new Date(Date.now() - 3600000).toISOString() }
-      ],
-      workers: [
-        { id: '1', hostname: 'worker-us-east-1', os: 'Linux (Ubuntu 22.04)', cpu_usage: 12, ram_usage: 45, jobs_active: 0, status: 'idle', version: '1.2.4', created_at: new Date().toISOString() },
-        { id: '2', hostname: 'worker-us-west-2', os: 'Linux (Ubuntu 22.04)', cpu_usage: 85, ram_usage: 78, jobs_active: 1, status: 'busy', version: '1.2.4', created_at: new Date().toISOString() },
-        { id: '3', hostname: 'worker-eu-central-1', os: 'Windows Server 2022', cpu_usage: 0, ram_usage: 15, jobs_active: 0, status: 'idle', version: '1.2.3', created_at: new Date().toISOString() }
-      ],
-      invoices: [
-        { id: 'inv-101', customer_name: 'Gabriel Moura', customer_email: 'mouragabriel2011@gmail.com', plan: 'Pro', amount: 49.00, status: 'paid', stripe_id: 'ch_3Mz90BFF...', created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() },
-        { id: 'inv-102', customer_name: 'Bruna Silva', customer_email: 'bruna@ecom.com', plan: 'Starter', amount: 19.00, status: 'paid', stripe_id: 'ch_3Mz91CFF...', created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() },
-        { id: 'inv-103', customer_name: 'Lucas Santos', customer_email: 'lucas@agency.io', plan: 'Pro', amount: 49.00, status: 'paid', stripe_id: 'ch_3Mz92DFF...', created_at: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString() },
-        { id: 'inv-104', customer_name: 'Mariana Costa', customer_email: 'mariana@tech.com', plan: 'Business', amount: 149.00, status: 'paid', stripe_id: 'ch_3Mz93EFF...', created_at: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString() }
-      ],
-      support_tickets: [
-        { id: 'ticket-1', customer_name: 'Gabriel Moura', customer_email: 'mouragabriel2011@gmail.com', subject: 'Dúvida sobre renderização de alta definição', message: 'Gostaria de saber se o plano Pro já inclui renders ilimitados em 4K ou se é restrito a 1080p.', status: 'open', created_at: new Date().toISOString() },
-        { id: 'ticket-2', customer_name: 'Tiago Souza', customer_email: 'tiago@spam.com', subject: 'Problema no faturamento do cartão', message: 'Minha assinatura foi cobrada duas vezes este mês. Podem verificar e fazer o estorno?', status: 'open', created_at: new Date(Date.now() - 86400000).toISOString() }
-      ],
-      audit_logs: [
-        { id: 'log-1', admin_name: 'SaaS Admin', action: 'UPDATE_SETTING_stripe_live', target_user: 'SYSTEM', ip: '127.0.0.1', status: 'SUCCESS', timestamp: new Date().toISOString() },
-        { id: 'log-2', admin_name: 'SaaS Admin', action: 'SUSPEND_USER_tiago@spam.com', target_user: 'Tiago Souza', ip: '127.0.0.1', status: 'SUCCESS', timestamp: new Date(Date.now() - 3600000).toISOString() }
-      ],
-      coupons: [
-        { id: 'cp-1', code: 'VIRAL50', discount_type: 'percentage', discount_value: 50.00, active: true, expires_at: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(), created_at: new Date().toISOString() },
-        { id: 'cp-2', code: 'STARTERFREE', discount_type: 'percentage', discount_value: 100.00, active: true, expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), created_at: new Date().toISOString() }
-      ],
+      jobs: [],
+      workers: [],
+      invoices: [],
+      support_tickets: [],
+      audit_logs: [],
+      coupons: [],
       settings: [
         { id: 's-1', key: 'saas_name', value: 'Viral Factory', description: 'Nome da plataforma SaaS' },
         { id: 's-2', key: 'saas_email', value: 'support@viralfactory.com', description: 'E-mail oficial' },
-        { id: 's-3', key: 'stripe_secret_key', value: 'sk_test_51Mz90BFF...', description: 'Chave secreta do Stripe' },
+        { id: 's-3', key: 'stripe_secret_key', value: '', description: 'Chave secreta do Stripe' },
         { id: 's-4', key: 'feature_flags', value: JSON.stringify({ aiSubtitles: true, batchRenders: false, stripeLive: false, offlineFallbackAuth: true, telemetryLogs: false }), description: 'FeatureFlags dinâmicas' }
       ]
     };
@@ -607,10 +489,10 @@ export class AdminRepository {
       }
     }
 
-    // Default mock storage fallback if tables are missing or empty
+    // Default empty storage fallback if tables are missing or empty
     return {
-      totalSizeMB: 1450.8,
-      filesCount: 154
+      totalSizeMB: 0,
+      filesCount: 0
     };
   }
 }

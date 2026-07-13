@@ -4,7 +4,7 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { StorageManager } from './server/render/Storage';
 import { JobQueue } from './server/render/JobQueue';
-import { RenderWorker } from './server/render/Worker';
+import { WorkerWebSocketServer } from './server/render/WorkerWebSocketServer';
 import { adminRouter } from './server/routes/admin';
 
 async function startServer() {
@@ -13,10 +13,6 @@ async function startServer() {
 
   // Initialize Storage Folders on boot
   StorageManager.init();
-
-  // Initialize and start background worker
-  const worker = new RenderWorker();
-  worker.start();
 
   // Express parser middlewares
   app.use(express.json());
@@ -46,7 +42,42 @@ async function startServer() {
 
   // Healthcheck endpoint
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', worker: worker.getStatus() });
+    res.json({ status: 'ok', workers: WorkerWebSocketServer.getWorkers() });
+  });
+
+  // Get active connected workers status for monitoring dashboard
+  app.get('/api/render/workers', (req, res) => {
+    res.json(WorkerWebSocketServer.getWorkers());
+  });
+
+  // Binary PUT upload endpoint for external workers to upload files to Storage
+  // Accepts a raw binary stream to maximize speed and remove heavy dependencies
+  app.put('/api/render/upload/:folder/:filename', (req, res) => {
+    const { folder, filename } = req.params;
+    if (folder !== 'rendered' && folder !== 'uploads' && folder !== 'templates') {
+      res.status(400).json({ error: 'Invalid destination storage folder' });
+      return;
+    }
+
+    const targetPath = StorageManager.getStoragePath(folder as any, filename);
+    const parentDir = path.dirname(targetPath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    const writeStream = fs.createWriteStream(targetPath);
+    req.pipe(writeStream);
+
+    writeStream.on('finish', () => {
+      const publicUrl = StorageManager.getPublicUrl(folder as any, filename);
+      console.log(`[Upload API] Remote worker uploaded file successfully to: ${publicUrl}`);
+      res.json({ success: true, url: publicUrl });
+    });
+
+    writeStream.on('error', (err: any) => {
+      console.error('[Upload API] Error writing uploaded file:', err);
+      res.status(500).json({ error: 'Failed to write uploaded file on SaaS storage.' });
+    });
   });
 
   // Create a Render Job
@@ -560,9 +591,11 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[ViralFactory Backend] Server listening at http://localhost:${PORT}`);
   });
+
+  WorkerWebSocketServer.init(server);
 }
 
 startServer().catch(err => {

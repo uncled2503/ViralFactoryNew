@@ -1,0 +1,22 @@
+{
+  "name": "viral-factory-render-worker",
+  "version": "1.0.0",
+  "description": "Independent remote Render Worker for Viral Factory SaaS",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/ws": "^8.5.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
+  }
+}
