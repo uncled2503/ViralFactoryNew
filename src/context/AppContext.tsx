@@ -70,7 +70,7 @@ interface AppContextType {
   register: (name: string, email: string, company: string, password?: string) => Promise<boolean>;
   loginWithGoogle: () => Promise<void>;
   recoverPassword: (email: string) => Promise<string>;
-  logout: () => void;
+  logout: () => void | Promise<void>;
   updateUser: (updatedUser: User) => Promise<boolean>;
   
   // Projects Functions
@@ -121,36 +121,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Core Mock Users for Admin Dashboard Initial State
-const MOCK_ADMIN_USERS: User[] = [
-  {
-    id: 'usr-001',
-    name: 'Gabriel Moura',
-    email: 'mouragabriel2011@gmail.com',
-    company: 'Viral S.A.',
-    role: 'SaaS_Owner', // Main user can access SaaS Admin!
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
-    subscription: 'Free',
-    status: 'active',
-    usageCurrent: 0,
-    usageLimit: 5,
-    storageUsedMB: 0,
-    templatesUsed: 0,
-    projectsActive: 0,
-    subscriptionDetails: {
-      id: 'sub-001',
-      userId: 'usr-001',
-      tier: 'Free',
-      status: 'active',
-      billingCycle: 'monthly',
-      price: 0,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      cancelAtPeriodEnd: false,
-      autoRenew: true
-    }
-  }
-];
+// Core Mock Users removed to enforce Supabase-only authentication
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -273,23 +244,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let currentAllUsers: User[] = [];
     if (savedAllUsers) {
       currentAllUsers = JSON.parse(savedAllUsers);
-      
-      // Auto-seed mock users if they aren't in the list
-      let changed = false;
-      MOCK_ADMIN_USERS.forEach(mockUser => {
-        if (!currentAllUsers.some(u => u.id === mockUser.id || u.email.toLowerCase() === mockUser.email.toLowerCase())) {
-          currentAllUsers.push(mockUser);
-          changed = true;
-        }
-      });
-      if (changed) {
-        localStorage.setItem('vf_all_users', JSON.stringify(currentAllUsers));
-      }
       setAllUsers(currentAllUsers);
     } else {
-      currentAllUsers = [...MOCK_ADMIN_USERS];
-      setAllUsers(currentAllUsers);
-      localStorage.setItem('vf_all_users', JSON.stringify(currentAllUsers));
+      setAllUsers([]);
+      localStorage.setItem('vf_all_users', JSON.stringify([]));
     }
 
     // Load active session user
@@ -831,63 +789,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return false;
     }
-
-    // Local Storage Real Fallback Auth Flow
-    return new Promise((resolve, reject) => {
-      setTimeout(async () => {
-        const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
-        const resolvedUser = savedUsers.find(u => u.email.toLowerCase().trim() === cleanEmail);
-        
-        if (!resolvedUser) {
-          reject(new Error('Este e-mail não está cadastrado. Crie uma conta para continuar.'));
-          return;
-        }
-
-        // Lockout Check
-        const lockoutKey = `vf_lockout_${cleanEmail}`;
-        const lockoutTime = localStorage.getItem(lockoutKey);
-        if (lockoutTime) {
-          const timeLeft = Math.ceil((Number(lockoutTime) - Date.now()) / 1000);
-          if (timeLeft > 0) {
-            reject(new Error(`Acesso bloqueado por segurança. Muitas tentativas de login incorretas. Tente novamente em ${timeLeft} segundos.`));
-            return;
-          } else {
-            localStorage.removeItem(lockoutKey);
-            localStorage.removeItem(`vf_attempts_${cleanEmail}`);
-          }
-        }
-
-        const savedPassword = localStorage.getItem(`vf_pwd_${cleanEmail}`);
-        const isMockUser = MOCK_ADMIN_USERS.some(u => u.email.toLowerCase().trim() === cleanEmail);
-        
-        // Let's check password or mock password
-        const correctPassword = savedPassword || 'admin123'; // Default for mock users
-        if (password && correctPassword !== password) {
-          const attemptsKey = `vf_attempts_${cleanEmail}`;
-          const currentAttempts = Number(localStorage.getItem(attemptsKey) || 0) + 1;
-          localStorage.setItem(attemptsKey, String(currentAttempts));
-          
-          if (currentAttempts >= 3) {
-            const blockUntil = Date.now() + 60000; // 60s lock
-            localStorage.setItem(lockoutKey, String(blockUntil));
-            reject(new Error(`Bloqueio temporário ativado! 3 tentativas falhas consecutivas. Conta suspensa por 60 segundos por segurança.`));
-          } else {
-            reject(new Error(`Senha incorreta. Verifique suas credenciais (Tentativa ${currentAttempts}/3 antes do bloqueio).`));
-          }
-          return;
-        }
-
-        // Successfully logged in
-        localStorage.removeItem(`vf_attempts_${cleanEmail}`);
-        localStorage.removeItem(lockoutKey);
-        
-        setUser(resolvedUser);
-        sessionStorage.setItem('vf_user', JSON.stringify(resolvedUser));
-        await loadUserWorkspace(resolvedUser);
-        setActiveTab('dashboard');
-        resolve(true);
-      }, 500);
-    });
+    throw new Error('Supabase não configurado. Por favor, adicione chaves de API válidas no arquivo .env.');
   };
 
   const register = async (name: string, email: string, company: string, password?: string): Promise<boolean> => {
@@ -955,63 +857,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return false;
     }
-
-    // Local Storage Real Fallback Auth Flow
-    return new Promise((resolve, reject) => {
-      setTimeout(async () => {
-        const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
-        const existingUser = savedUsers.find(u => u.email.toLowerCase().trim() === cleanEmail);
-        
-        if (existingUser) {
-          reject(new Error('Este e-mail já está cadastrado. Faça login para continuar.'));
-          return;
-        }
-
-        const plan: PlanTier = 'Free';
-        const newUser: User = {
-          id: `usr-${Math.random().toString(36).substr(2, 9)}`,
-          name,
-          email: cleanEmail,
-          company,
-          role: 'Membro',
-          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
-          subscription: plan,
-          status: 'active',
-          usageCurrent: 0,
-          usageLimit: 5,
-          storageUsedMB: 0,
-          templatesUsed: 0,
-          projectsActive: 0,
-          subscriptionDetails: {
-            id: `sub-${Math.random().toString(36).substr(2, 9)}`,
-            userId: `usr-${Math.random().toString(36).substr(2, 9)}`,
-            tier: plan,
-            status: 'active',
-            billingCycle: 'monthly',
-            price: 0,
-            startDate: new Date().toISOString(),
-            endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            cancelAtPeriodEnd: false,
-            autoRenew: true
-          }
-        };
-
-        // Save password
-        if (password) {
-          localStorage.setItem(`vf_pwd_${cleanEmail}`, password);
-        }
-
-        const nextUsersList = [...savedUsers, newUser];
-        setAllUsers(nextUsersList);
-        localStorage.setItem('vf_all_users', JSON.stringify(nextUsersList));
-
-        setUser(newUser);
-        sessionStorage.setItem('vf_user', JSON.stringify(newUser));
-        await loadUserWorkspace(newUser);
-        setActiveTab('dashboard');
-        resolve(true);
-      }, 500);
-    });
+    throw new Error('Supabase não configurado. Por favor, adicione chaves de API válidas no arquivo .env.');
   };
 
   const loginWithGoogle = async (): Promise<void> => {
@@ -1026,168 +872,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw new Error(error.message);
       }
     } else {
-      // Simulate OAuth Popup Flow for offline testing so it is beautiful and fully testable!
-      return new Promise<void>((resolve, reject) => {
-        showToast('Iniciando conexão segura com a Conta Google...', 'info');
-        
-        // Open a gorgeous mock popup
-        const width = 500;
-        const height = 600;
-        const left = window.screen.width / 2 - width / 2;
-        const top = window.screen.height / 2 - height / 2;
-        
-        const popup = window.open(
-          '',
-          'google_oauth_popup',
-          `width=${width},height=${height},left=${left},top=${top}`
-        );
-        
-        if (popup) {
-          popup.document.write(`
-            <html>
-              <head>
-                <title>Fazer login com o Google</title>
-                <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-                <style>
-                  body { background-color: #030712; color: #f3f4f6; font-family: ui-sans-serif, system-ui; }
-                </style>
-              </head>
-              <body class="flex flex-col items-center justify-center h-screen px-6 text-center">
-                <div class="mb-6">
-                  <svg class="w-12 h-12 mx-auto text-indigo-500" viewBox="0 0 24 24">
-                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                  </svg>
-                </div>
-                <h2 class="text-sm font-bold mb-1 text-gray-100">Selecionar Conta Google</h2>
-                <p class="text-[11px] text-gray-400 mb-6">para continuar no Viral Factory</p>
-                
-                <div class="w-full space-y-3">
-                  <button id="select-btn" class="w-full p-4 bg-gray-900 hover:bg-gray-850 rounded-xl border border-gray-800 flex items-center gap-3 text-left transition">
-                    <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=64&h=64&fit=crop" class="w-8 h-8 rounded-full border border-indigo-500/30"/>
-                    <div>
-                      <div class="text-xs font-bold text-gray-200">Gabriel Moura</div>
-                      <div class="text-[10px] text-gray-500">mouragabriel2011@gmail.com</div>
-                    </div>
-                  </button>
-                  
-                  <button id="other-btn" class="w-full p-3 bg-gray-950 hover:bg-gray-900 rounded-xl border border-gray-900 text-xs font-semibold text-gray-400 transition">
-                    Usar outra conta
-                  </button>
-                </div>
-                
-                <p class="text-[9px] text-gray-600 mt-8">
-                  Para fins de teste sem chaves de API, este popup simula o comportamento real do Google OAuth. Configure as credenciais no .env para integrar as contas de produção.
-                </p>
-                
-                <script>
-                  document.getElementById('select-btn').addEventListener('click', () => {
-                    window.opener.postMessage({
-                      type: 'MOCK_GOOGLE_AUTH_SUCCESS',
-                      user: {
-                        name: 'Gabriel Moura',
-                        email: 'mouragabriel2011@gmail.com',
-                        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop'
-                      }
-                    }, '*');
-                    window.close();
-                  });
-                  
-                  document.getElementById('other-btn').addEventListener('click', () => {
-                    const email = prompt('Digite o e-mail da sua conta Google:');
-                    if (email) {
-                      const name = email.split('@')[0].replace('.', ' ');
-                      const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
-                      window.opener.postMessage({
-                        type: 'MOCK_GOOGLE_AUTH_SUCCESS',
-                        user: {
-                          name: formattedName,
-                          email: email,
-                          avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=256&h=256&fit=crop'
-                        }
-                      }, '*');
-                    }
-                    window.close();
-                  });
-                </script>
-              </body>
-            </html>
-          `);
-          
-          const handlePopupMessage = async (event: MessageEvent) => {
-            if (event.data?.type === 'MOCK_GOOGLE_AUTH_SUCCESS') {
-              window.removeEventListener('message', handlePopupMessage);
-              const googleUser = event.data.user;
-              
-              const savedUsers: User[] = JSON.parse(localStorage.getItem('vf_all_users') || '[]');
-              let resolvedUser = savedUsers.find(u => u.email.toLowerCase().trim() === googleUser.email.toLowerCase().trim());
-              
-              if (!resolvedUser) {
-                const plan: PlanTier = 'Free';
-                resolvedUser = {
-                  id: `usr-ggl-${Math.random().toString(36).substr(2, 9)}`,
-                  name: googleUser.name,
-                  email: googleUser.email.toLowerCase().trim(),
-                  company: 'Minha Empresa Google',
-                  role: 'Membro',
-                  avatarUrl: googleUser.avatarUrl,
-                  subscription: plan,
-                  status: 'active',
-                  usageCurrent: 0,
-                  usageLimit: 5,
-                  storageUsedMB: 0,
-                  templatesUsed: 0,
-                  projectsActive: 0,
-                  subscriptionDetails: {
-                    id: `sub-${Math.random().toString(36).substr(2, 9)}`,
-                    userId: `usr-${Math.random().toString(36).substr(2, 9)}`,
-                    tier: plan,
-                    status: 'active',
-                    billingCycle: 'monthly',
-                    price: 0,
-                    startDate: new Date().toISOString(),
-                    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-                    cancelAtPeriodEnd: false,
-                    autoRenew: true
-                  }
-                };
-                
-                const nextUsersList = [...savedUsers, resolvedUser];
-                setAllUsers(nextUsersList);
-                localStorage.setItem('vf_all_users', JSON.stringify(nextUsersList));
-              }
-              
-              setUser(resolvedUser);
-              sessionStorage.setItem('vf_user', JSON.stringify(resolvedUser));
-              await loadUserWorkspace(resolvedUser);
-              setActiveTab('dashboard');
-              showToast(`Conectado como ${resolvedUser.name}!`, 'success');
-              resolve();
-            }
-          };
-          window.addEventListener('message', handlePopupMessage);
-        } else {
-          reject(new Error('Bloqueador de popup ativo. Por favor, libere popups para efetuar login com o Google.'));
-        }
-      });
+      throw new Error('Login com Google requer Supabase configurado.');
     }
   };
 
 
   const recoverPassword = async (email: string): Promise<string> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(`Instruções de redefinição de assinatura e senha enviadas para: ${email}`);
-      }, 400);
-    });
+    if (isSupabaseConfigured() && supabaseClient) {
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/recovery`,
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      return `Link de redefinição enviado para: ${email}`;
+    }
+    throw new Error('Supabase não configurado para recuperação de senha.');
   };
 
-  const logout = () => {
+  const logout = async () => {
     setUser(null);
     sessionStorage.removeItem('vf_user');
     localStorage.removeItem('vf_user');
+    
+    if (isSupabaseConfigured() && supabaseClient) {
+      try {
+        await supabaseClient.auth.signOut();
+      } catch (err) {
+        console.error('Erro ao deslogar do Supabase:', err);
+      }
+    }
+
     window.history.pushState(null, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
@@ -1655,7 +1370,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       name: fileName,
       size: fileSize,
       type: fileType,
-      url: '#',
+      url: `/storage/${folderId === 'fld-uploads' || folderId === 'uploads' ? 'uploads' : folderId === 'fld-templates' || folderId === 'templates' ? 'templates' : 'rendered'}/${fileName}`,
       createdAt: new Date().toISOString()
     };
 

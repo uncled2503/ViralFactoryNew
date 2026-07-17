@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: viralfactory-storage-pv
+  labels:
+    type: local
+    app: viralfactory
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany # Allows simultaneous mounting by Coordinator and multiple Workers for high throughput
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: "/tmp/viralfactory/storage" # For standard on-premise or local Kubernetes. In production clouds, replace this with NFS, EFS, GCS FUSE, or Azure Files.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: viralfactory-storage-pvc
+  namespace: viralfactory
+  labels:
+    app: viralfactory
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi

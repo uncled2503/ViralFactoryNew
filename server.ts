@@ -1,35 +1,59 @@
-import * as dotenv from "dotenv";
+import express from 'express';
+import path from 'path';
+import fs from 'fs';
+import compression from 'compression';
+import { createServer as createViteServer } from 'vite';
+import { StorageManager } from './server/render/Storage';
+import { JobQueue } from './server/render/JobQueue';
+import { WorkerWebSocketServer } from './server/render/WorkerWebSocketServer';
+import { adminRouter } from './server/routes/admin';
+import { publicApiLimiter, adminApiLimiter } from './server/middlewares/rateLimiter';
+import { JobTimeoutMonitor } from './server/render/JobTimeoutMonitor';
+import { RedisService } from './server/services/RedisService';
+import { SupabaseStorageService } from './server/services/SupabaseStorageService';
+import { ExportPresetManager } from './server/render/ExportPresetManager';
+import { SupabaseDbService } from './server/database/SupabaseDbService';
+import { LocalDbMutex } from './server/database/LocalDbMutex';
 
-const result = dotenv.config();
-
-console.log("DOTENV:", result);
-console.log("CWD:", process.cwd());
-console.log("SUPABASE_URL =", process.env.SUPABASE_URL);
-console.log("VITE_SUPABASE_URL =", process.env.VITE_SUPABASE_URL);
-console.log("ENV FILE =", result.parsed);
-
-import express from "express";
-import path from "path";
-import fs from "fs";
-import { createServer as createViteServer } from "vite";
-import { StorageManager } from "./server/render/Storage";
-import { JobQueue } from "./server/render/JobQueue";
-import { RenderWorker } from "./server/render/Worker";
-import { adminRouter } from "./server/routes/admin";
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Compress all responses with Gzip/Brotli
+  app.use(compression());
+
+  // Initialize Supabase Database persistence and run auto-migration on boot
+  await SupabaseDbService.init();
+
+  // Initialize Redis Service on boot
+  RedisService.init();
+
   // Initialize Storage Folders on boot
   StorageManager.init();
 
-  // Initialize and start background worker
-  const worker = new RenderWorker();
-  worker.start();
+  // Initialize Supabase Storage on boot
+  SupabaseStorageService.init();
 
   // Express parser middlewares
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  // Redirect storage access to Supabase signed URLs if Supabase is configured
+  app.get('/storage/:folder/:filename', async (req, res, next) => {
+    const { folder, filename } = req.params;
+    try {
+      if (SupabaseStorageService.isConfigured()) {
+        const signedUrl = await SupabaseStorageService.getDownloadSignedUrl(folder, filename);
+        if (signedUrl && signedUrl.startsWith('http')) {
+          res.redirect(302, signedUrl);
+          return;
+        }
+      }
+    } catch (err: any) {
+      console.error(`[Storage Redirect] Supabase Signed Download URL failed for ${folder}/${filename}:`, err.message);
+    }
+    next();
+  });
 
   // Expose local storage static directory publicly so that user can view/download rendered files
   const storageStaticPath = path.join(process.cwd(), 'public', 'storage');
@@ -38,15 +62,45 @@ async function startServer() {
   }
   app.use('/storage', express.static(storageStaticPath));
 
+  // Expose root 'fotos' directory publicly so that user-uploaded photos are served
+  const fotosStaticPath = path.join(process.cwd(), 'fotos');
+  if (fs.existsSync(fotosStaticPath)) {
+    app.use('/fotos', express.static(fotosStaticPath));
+  }
+
+  // Expose 'exemplopaginas' directory publicly
+  const exemplopaginasPath = path.join(process.cwd(), 'public', 'exemplopaginas');
+  if (fs.existsSync(exemplopaginasPath)) {
+    app.use('/exemplopaginas', express.static(exemplopaginasPath));
+  } else {
+    const rootExemplopaginas = path.join(process.cwd(), 'exemplopaginas');
+    if (fs.existsSync(rootExemplopaginas)) {
+      app.use('/exemplopaginas', express.static(rootExemplopaginas));
+    }
+  }
+
+  // Expose 'images' directory publicly
+  const imagesPath = path.join(process.cwd(), 'public', 'images');
+  if (fs.existsSync(imagesPath)) {
+    app.use('/images', express.static(imagesPath));
+  }
+
   // --- API ROUTING ENDPOINTS ---
   
   // Admin Panel API Routes
-  app.use('/api/admin', adminRouter);
+  app.use('/api/admin', adminApiLimiter, adminRouter);
+  
+  // Public Rate Limiter for other endpoints
+  app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/admin')) {
+      return next();
+    }
+    publicApiLimiter(req, res, next);
+  });
   
   // Get all available export presets
   app.get('/api/render/presets', (req, res) => {
     try {
-      const { ExportPresetManager } = require('./server/render/ExportPresetManager');
       res.json(ExportPresetManager.getAllPresets());
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to fetch export presets' });
@@ -54,8 +108,252 @@ async function startServer() {
   });
 
   // Healthcheck endpoint
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', worker: worker.getStatus() });
+  app.get('/api/health', async (req, res) => {
+    res.json({
+      status: 'ok',
+      workers: await WorkerWebSocketServer.getWorkers(),
+      redis: RedisService.healthCheck()
+    });
+  });
+
+  // Get active connected workers status for monitoring dashboard
+  app.get('/api/render/workers', async (req, res) => {
+    res.json(await WorkerWebSocketServer.getWorkers());
+  });
+
+  // GET /api/render/signed-upload-url
+  app.get('/api/render/signed-upload-url', async (req, res) => {
+    const { folder, filename, contentType } = req.query;
+
+    if (!folder || !filename) {
+      res.status(400).json({ error: 'Parâmetros "folder" e "filename" são obrigatórios.' });
+      return;
+    }
+
+    const destFolder = folder as string;
+    const destFilename = filename as string;
+
+    if (destFolder !== 'rendered' && destFolder !== 'uploads' && destFolder !== 'templates') {
+      res.status(400).json({ error: 'Destino inválido. Pastas permitidas: rendered, uploads, templates.' });
+      return;
+    }
+
+    try {
+      const uploadUrl = await SupabaseStorageService.getUploadSignedUrl(
+        destFolder,
+        destFilename,
+        (contentType as string) || 'application/octet-stream'
+      );
+
+      res.json({
+        success: true,
+        uploadUrl,
+        publicUrl: `/storage/${destFolder}/${destFilename}`,
+        isSupabase: SupabaseStorageService.isConfigured()
+      });
+    } catch (err: any) {
+      console.error('[Signed Upload API] Error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/render/signed-download-url
+  app.get('/api/render/signed-download-url', async (req, res) => {
+    const { folder, filename } = req.query;
+
+    if (!folder || !filename) {
+      res.status(400).json({ error: 'Parâmetros "folder" e "filename" são obrigatórios.' });
+      return;
+    }
+
+    try {
+      const downloadUrl = await SupabaseStorageService.getDownloadSignedUrl(folder as string, filename as string);
+
+      res.json({
+        success: true,
+        downloadUrl
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Binary PUT upload endpoint for external workers to upload files to Storage
+  // Accepts a raw binary stream to maximize speed and remove heavy dependencies
+  app.put('/api/render/upload/:folder/:filename', (req, res) => {
+    const { folder, filename } = req.params;
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const ip = (Array.isArray(rawIp) ? rawIp[0] : (rawIp as string)).replace(/^::ffff:/, '');
+
+    if (folder !== 'rendered' && folder !== 'uploads' && folder !== 'templates') {
+      const logData = {
+        event: 'MALICIOUS_ATTEMPT',
+        type: 'INVALID_FOLDER',
+        ip,
+        url: req.originalUrl,
+        folder,
+        timestamp: new Date().toISOString()
+      };
+      console.warn(JSON.stringify(logData));
+      res.status(400).json({ error: 'Invalid destination storage folder' });
+      return;
+    }
+
+    // 1. Path Traversal Protection
+    const hasTraversal = /[\/\\]|%\d[a-fA-F0-9]|\.\./.test(filename) || filename.includes('..');
+    const resolvedBase = path.resolve(StorageManager.getStoragePath(folder as any, '')).replace(/[\\\/]$/, '');
+    const resolvedTarget = path.resolve(resolvedBase, filename);
+
+    if (hasTraversal || !resolvedTarget.startsWith(resolvedBase)) {
+      const logData = {
+        event: 'MALICIOUS_ATTEMPT',
+        type: 'PATH_TRAVERSAL',
+        ip,
+        url: req.originalUrl,
+        filename,
+        folder,
+        timestamp: new Date().toISOString()
+      };
+      console.warn(JSON.stringify(logData));
+      res.status(400).json({ error: 'Path traversal attempt detected and blocked.' });
+      return;
+    }
+
+    // 2. Strict validation of allowed extensions
+    const ext = path.extname(filename).toLowerCase();
+    const allowedExtsEnv = process.env.ALLOWED_UPLOAD_EXTENSIONS || '.mp4,.mov,.png,.jpg,.jpeg,.gif,.webp,.json,.mp3,.wav,.aac';
+    const allowedExtensions = allowedExtsEnv.split(',').map(e => e.trim().toLowerCase());
+
+    if (!allowedExtensions.includes(ext) || !ext) {
+      const logData = {
+        event: 'MALICIOUS_ATTEMPT',
+        type: 'INVALID_EXTENSION',
+        ip,
+        url: req.originalUrl,
+        filename,
+        extension: ext,
+        timestamp: new Date().toISOString()
+      };
+      console.warn(JSON.stringify(logData));
+      res.status(400).json({ error: `File extension ${ext} is not allowed.` });
+      return;
+    }
+
+    // 3. MIME Type Validation
+    const contentType = req.headers['content-type'] || '';
+    const mimeMap: Record<string, string[]> = {
+      '.mp4': ['video/mp4'],
+      '.mov': ['video/quicktime'],
+      '.mkv': ['video/x-matroska', 'video/mkv'],
+      '.avi': ['video/x-msvideo', 'video/avi'],
+      '.png': ['image/png'],
+      '.jpg': ['image/jpeg', 'image/jpg'],
+      '.jpeg': ['image/jpeg', 'image/jpg'],
+      '.gif': ['image/gif'],
+      '.webp': ['image/webp'],
+      '.json': ['application/json', 'text/plain'],
+      '.mp3': ['audio/mpeg', 'audio/mp3'],
+      '.wav': ['audio/wav', 'audio/x-wav'],
+      '.aac': ['audio/aac', 'audio/x-aac']
+    };
+    const expectedMimeTypes = mimeMap[ext] || [];
+    if (expectedMimeTypes.length > 0 && contentType) {
+      const isMimeValid = expectedMimeTypes.some(type => contentType.toLowerCase().startsWith(type));
+      if (!isMimeValid) {
+        const logData = {
+          event: 'MALICIOUS_ATTEMPT',
+          type: 'MIME_TYPE_MISMATCH',
+          ip,
+          url: req.originalUrl,
+          filename,
+          contentType,
+          expected: expectedMimeTypes,
+          timestamp: new Date().toISOString()
+        };
+        console.warn(JSON.stringify(logData));
+        res.status(400).json({ error: 'MIME Type mismatch or invalid for this file extension.' });
+        return;
+      }
+    }
+
+    // 4. Maximum upload size validation
+    const maxSizeBytes = parseInt(process.env.MAX_UPLOAD_SIZE_BYTES || String(100 * 1024 * 1024), 10); // default 100MB
+    const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+    if (contentLength > maxSizeBytes) {
+      const logData = {
+        event: 'MALICIOUS_ATTEMPT',
+        type: 'FILE_SIZE_EXCEEDED_HEADER',
+        ip,
+        url: req.originalUrl,
+        filename,
+        contentLength,
+        maxSizeBytes,
+        timestamp: new Date().toISOString()
+      };
+      console.warn(JSON.stringify(logData));
+      res.status(413).json({ error: 'File size exceeds maximum upload limit.' });
+      return;
+    }
+
+    // 5. Complete sanitization of filename
+    const baseName = path.basename(filename, ext);
+    const sanitizedBase = baseName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const sanitizedFilename = `${sanitizedBase}${ext}`;
+
+    const targetPath = StorageManager.getStoragePath(folder as any, sanitizedFilename);
+    const parentDir = path.dirname(targetPath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    let bytesReceived = 0;
+    const writeStream = fs.createWriteStream(targetPath);
+    let limitExceeded = false;
+
+    req.on('data', (chunk) => {
+      bytesReceived += chunk.length;
+      if (bytesReceived > maxSizeBytes) {
+        limitExceeded = true;
+        const logData = {
+          event: 'MALICIOUS_ATTEMPT',
+          type: 'FILE_SIZE_EXCEEDED_STREAM',
+          ip,
+          url: req.originalUrl,
+          filename,
+          bytesReceived,
+          maxSizeBytes,
+          timestamp: new Date().toISOString()
+        };
+        console.warn(JSON.stringify(logData));
+        req.destroy();
+        writeStream.destroy(new Error('File limit exceeded during transfer'));
+      }
+    });
+
+    req.pipe(writeStream);
+
+    writeStream.on('finish', () => {
+      if (limitExceeded) {
+        fs.unlink(targetPath, () => {});
+        if (!res.headersSent) {
+          res.status(413).json({ error: 'File size limit exceeded during upload.' });
+        }
+        return;
+      }
+      const publicUrl = StorageManager.getPublicUrl(folder as any, sanitizedFilename);
+      console.log(`[Upload API] Remote worker uploaded file successfully to: ${publicUrl}`);
+      res.json({ success: true, url: publicUrl });
+    });
+
+    writeStream.on('error', (err: any) => {
+      fs.unlink(targetPath, () => {});
+      console.error('[Upload API] Error writing uploaded file:', err);
+      if (!res.headersSent) {
+        res.status(limitExceeded ? 413 : 500).json({ 
+          error: limitExceeded ? 'File size limit exceeded.' : 'Failed to write uploaded file on SaaS storage.' 
+        });
+      }
+    });
   });
 
   // Create a Render Job
@@ -259,45 +557,71 @@ async function startServer() {
     res.json({ success: true, message: 'Job cancellation requested' });
   });
 
-  // Sync server JSON file database to client localStorage states when requested
-  app.get('/api/db/sync', (req, res) => {
-    const dbPath = path.join(process.cwd(), 'public', 'storage', 'db.json');
-    if (fs.existsSync(dbPath)) {
-      try {
-        const fileData = fs.readFileSync(dbPath, 'utf8');
-        res.json(JSON.parse(fileData));
-      } catch (e) {
-        res.json({});
-      }
-    } else {
-      res.json({});
+  // Sync server database from/to client localStorage states when requested
+  app.get('/api/db/sync', async (req, res) => {
+    try {
+      const dbData = await LocalDbMutex.loadDb();
+      res.json(dbData);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/db/sync', (req, res) => {
-    const dbPath = path.join(process.cwd(), 'public', 'storage', 'db.json');
+  app.post('/api/db/sync', async (req, res) => {
     try {
-      fs.writeFileSync(dbPath, JSON.stringify(req.body, null, 2));
+      await LocalDbMutex.runLocked((dbData) => {
+        Object.assign(dbData, req.body);
+      });
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  // --- RoyPay API Integration Endpoints ---
-  const TRANSACTIONS_FILE = path.join(process.cwd(), 'public', 'storage', 'roypay_transactions.json');
+  // --- RoyPay API Integration Endpoints (Database-Backed) ---
 
-  const initTransactionsFile = () => {
-    const parent = path.dirname(TRANSACTIONS_FILE);
-    if (!fs.existsSync(parent)) {
-      fs.mkdirSync(parent, { recursive: true });
+  async function getRoyPayTransactions(): Promise<any> {
+    const dbData = await LocalDbMutex.loadDb();
+    if (!dbData.roypay_transactions) {
+      const { supabaseAdmin } = await import('./server/database/supabaseClient');
+      if (supabaseAdmin) {
+        try {
+          const { data } = await supabaseAdmin
+            .from('configuration')
+            .select('key_value')
+            .eq('key_name', 'roypay_transactions')
+            .maybeSingle();
+          if (data && data.key_value) {
+            dbData.roypay_transactions = typeof data.key_value === 'string' 
+              ? JSON.parse(data.key_value) 
+              : data.key_value;
+          }
+        } catch (err) {
+          console.error('[RoyPay Storage] Failed to load transactions:', err);
+        }
+      }
     }
-    if (!fs.existsSync(TRANSACTIONS_FILE)) {
-      fs.writeFileSync(TRANSACTIONS_FILE, JSON.stringify({}), 'utf8');
-    }
-  };
+    return dbData.roypay_transactions || {};
+  }
 
-  initTransactionsFile();
+  async function saveRoyPayTransactions(txData: any): Promise<void> {
+    const dbData = await LocalDbMutex.loadDb();
+    dbData.roypay_transactions = txData;
+    const { supabaseAdmin } = await import('./server/database/supabaseClient');
+    if (supabaseAdmin) {
+      try {
+        await supabaseAdmin
+          .from('configuration')
+          .upsert({
+            key_name: 'roypay_transactions',
+            key_value: JSON.stringify(txData),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'key_name' });
+      } catch (err) {
+        console.error('[RoyPay Storage] Failed to save transactions:', err);
+      }
+    }
+  }
 
   // 1. POST /api/payments/roypay/cashin
   app.post('/api/payments/roypay/cashin', async (req, res) => {
@@ -371,8 +695,7 @@ async function startServer() {
 
       const idTransaction = royPayData.idTransaction;
       
-      initTransactionsFile();
-      const txData = JSON.parse(fs.readFileSync(TRANSACTIONS_FILE, 'utf8'));
+      const txData = await getRoyPayTransactions();
       txData[idTransaction] = {
         userId,
         planTier,
@@ -385,7 +708,7 @@ async function startServer() {
         },
         createdAt: new Date().toISOString()
       };
-      fs.writeFileSync(TRANSACTIONS_FILE, JSON.stringify(txData, null, 2), 'utf8');
+      await saveRoyPayTransactions(txData);
 
       res.status(200).json({
         status: 'success',
@@ -401,11 +724,10 @@ async function startServer() {
   });
 
   // 2. GET /api/payments/roypay/status/:idTransaction
-  app.get('/api/payments/roypay/status/:idTransaction', (req, res) => {
+  app.get('/api/payments/roypay/status/:idTransaction', async (req, res) => {
     try {
       const { idTransaction } = req.params;
-      initTransactionsFile();
-      const txData = JSON.parse(fs.readFileSync(TRANSACTIONS_FILE, 'utf8'));
+      const txData = await getRoyPayTransactions();
       const tx = txData[idTransaction];
 
       if (!tx) {
@@ -425,7 +747,7 @@ async function startServer() {
   });
 
   // 3. POST /api/payments/roypay/webhook
-  app.post('/api/payments/roypay/webhook', (req, res) => {
+  app.post('/api/payments/roypay/webhook', async (req, res) => {
     try {
       console.log('[RoyPay Webhook] Received webhook payload:', req.body);
       const { idTransaction, status } = req.body;
@@ -435,12 +757,11 @@ async function startServer() {
         return;
       }
 
-      initTransactionsFile();
-      const txData = JSON.parse(fs.readFileSync(TRANSACTIONS_FILE, 'utf8'));
+      const txData = await getRoyPayTransactions();
       const tx = txData[idTransaction];
 
       if (!tx) {
-        console.warn(`[RoyPay Webhook] Transaction ${idTransaction} not found locally.`);
+        console.warn(`[RoyPay Webhook] Transaction ${idTransaction} not found.`);
         res.status(200).json(200);
         return;
       }
@@ -449,78 +770,10 @@ async function startServer() {
         tx.status = 'paid';
         tx.paidAt = new Date().toISOString();
         txData[idTransaction] = tx;
-        fs.writeFileSync(TRANSACTIONS_FILE, JSON.stringify(txData, null, 2), 'utf8');
+        await saveRoyPayTransactions(txData);
         console.log(`[RoyPay Webhook] Transaction ${idTransaction} set to paid successfully!`);
 
-        const dbPath = path.join(process.cwd(), 'public', 'storage', 'db.json');
-        if (fs.existsSync(dbPath)) {
-          try {
-            const dbData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-            if (!dbData.invoices) dbData.invoices = [];
-            
-            dbData.invoices.push({
-              id: `inv-rp-${Math.random().toString(36).substr(2, 6)}`,
-              customer_name: tx.client?.name || 'Cliente RoyPay',
-              customer_email: tx.client?.email || '',
-              plan: tx.planTier,
-              amount: tx.amount,
-              status: 'paid',
-              created_at: new Date().toISOString(),
-              stripe_id: `roypay-${idTransaction}`
-            });
-
-            if (dbData.users) {
-              const userIdx = dbData.users.findIndex((u: any) => u.id === tx.userId);
-              if (userIdx !== -1) {
-                dbData.users[userIdx].subscription = tx.planTier;
-                dbData.users[userIdx].usage_limit = tx.planTier === 'Starter' ? 100 : tx.planTier === 'Pro' ? 2000 : 10000;
-              }
-            }
-
-            fs.writeFileSync(dbPath, JSON.stringify(dbData, null, 2), 'utf8');
-            console.log('[RoyPay Webhook] Updated server db.json invoices and users successfully!');
-          } catch (dbErr) {
-            console.error('[RoyPay Webhook] Failed to update server db.json:', dbErr);
-          }
-        }
-      }
-
-      res.status(200).json(200);
-    } catch (err: any) {
-      console.error('[RoyPay Webhook] Webhook handler error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // 4. POST /api/payments/roypay/simulate-webhook
-  app.post('/api/payments/roypay/simulate-webhook', (req, res) => {
-    try {
-      const { idTransaction } = req.body;
-      if (!idTransaction) {
-        res.status(400).json({ error: 'idTransaction é obrigatório para simulação.' });
-        return;
-      }
-
-      console.log(`[RoyPay Simulator] Simulating paid webhook for transaction: ${idTransaction}`);
-
-      initTransactionsFile();
-      const txData = JSON.parse(fs.readFileSync(TRANSACTIONS_FILE, 'utf8'));
-      const tx = txData[idTransaction];
-
-      if (!tx) {
-        res.status(404).json({ error: 'Transação não encontrada para simulação.' });
-        return;
-      }
-
-      tx.status = 'paid';
-      tx.paidAt = new Date().toISOString();
-      txData[idTransaction] = tx;
-      fs.writeFileSync(TRANSACTIONS_FILE, JSON.stringify(txData, null, 2), 'utf8');
-
-      const dbPath = path.join(process.cwd(), 'public', 'storage', 'db.json');
-      if (fs.existsSync(dbPath)) {
-        try {
-          const dbData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        await LocalDbMutex.runLocked((dbData) => {
           if (!dbData.invoices) dbData.invoices = [];
           
           dbData.invoices.push({
@@ -534,19 +787,68 @@ async function startServer() {
             stripe_id: `roypay-${idTransaction}`
           });
 
-          if (dbData.users) {
-            const userIdx = dbData.users.findIndex((u: any) => u.id === tx.userId);
-            if (userIdx !== -1) {
-              dbData.users[userIdx].subscription = tx.planTier;
-              dbData.users[userIdx].usage_limit = tx.planTier === 'Starter' ? 100 : tx.planTier === 'Pro' ? 2000 : 10000;
-            }
+          const users = dbData.saas_users || dbData.users || [];
+          const userIdx = users.findIndex((u: any) => u.id === tx.userId);
+          if (userIdx !== -1) {
+            users[userIdx].subscription = tx.planTier;
+            users[userIdx].usageLimit = tx.planTier === 'Starter' ? 100 : tx.planTier === 'Pro' ? 2000 : 10000;
           }
-
-          fs.writeFileSync(dbPath, JSON.stringify(dbData, null, 2), 'utf8');
-        } catch (dbErr) {
-          console.error('[RoyPay Simulator] Failed to update server db.json:', dbErr);
-        }
+        });
+        console.log('[RoyPay Webhook] Updated database invoices and users successfully!');
       }
+
+      res.status(200).json(200);
+    } catch (err: any) {
+      console.error('[RoyPay Webhook] Webhook handler error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 4. POST /api/payments/roypay/simulate-webhook
+  app.post('/api/payments/roypay/simulate-webhook', async (req, res) => {
+    try {
+      const { idTransaction } = req.body;
+      if (!idTransaction) {
+        res.status(400).json({ error: 'idTransaction é obrigatório para simulação.' });
+        return;
+      }
+
+      console.log(`[RoyPay Simulator] Simulating paid webhook for transaction: ${idTransaction}`);
+
+      const txData = await getRoyPayTransactions();
+      const tx = txData[idTransaction];
+
+      if (!tx) {
+        res.status(404).json({ error: 'Transação não encontrada para simulação.' });
+        return;
+      }
+
+      tx.status = 'paid';
+      tx.paidAt = new Date().toISOString();
+      txData[idTransaction] = tx;
+      await saveRoyPayTransactions(txData);
+
+      await LocalDbMutex.runLocked((dbData) => {
+        if (!dbData.invoices) dbData.invoices = [];
+        
+        dbData.invoices.push({
+          id: `inv-rp-${Math.random().toString(36).substr(2, 6)}`,
+          customer_name: tx.client?.name || 'Cliente RoyPay',
+          customer_email: tx.client?.email || '',
+          plan: tx.planTier,
+          amount: tx.amount,
+          status: 'paid',
+          created_at: new Date().toISOString(),
+          stripe_id: `roypay-${idTransaction}`
+        });
+
+        const users = dbData.saas_users || dbData.users || [];
+        const userIdx = users.findIndex((u: any) => u.id === tx.userId);
+        if (userIdx !== -1) {
+          users[userIdx].subscription = tx.planTier;
+          users[userIdx].usageLimit = tx.planTier === 'Starter' ? 100 : tx.planTier === 'Pro' ? 2000 : 10000;
+        }
+      });
 
       res.status(200).json({ success: true, message: 'Webhook simulado com sucesso.' });
     } catch (err: any) {
@@ -569,9 +871,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[ViralFactory Backend] Server listening at http://localhost:${PORT}`);
   });
+
+  WorkerWebSocketServer.init(server);
+  JobTimeoutMonitor.start();
 }
 
 startServer().catch(err => {

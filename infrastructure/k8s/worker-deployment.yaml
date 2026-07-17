@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-deployment
+  namespace: viralfactory
+  labels:
+    app: render-worker
+    tier: worker
+spec:
+  replicas: 3 # Start with 3 worker instances (dynamically scaled by the Horizontal Pod Autoscaler)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1 # Allows fast swapping of encoding pods
+  selector:
+    matchLabels:
+      app: render-worker
+  template:
+    metadata:
+      labels:
+        app: render-worker
+    spec:
+      containers:
+        - name: render-worker
+          image: viralfactory-render-worker:latest # Tag with your container registry
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "500m"     # Rendering videos is CPU intensive
+              memory: "512Mi" # Frame buffering requires solid base memory
+            limits:
+              cpu: "2000m"    # Multi-core FFmpeg parallelism bounds
+              memory: "2Gi"   # Preventing Out-Of-Memory (OOM) crashes under heavy load
+          # Environment variables mapped from ConfigMap and Secrets
+          envFrom:
+            - configMapRef:
+                name: viralfactory-config
+            - secretRef:
+                name: viralfactory-secrets
+          # Runtime Liveness probe via Process and FFmpeg verification
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "ffmpeg -version && pgrep -f 'node dist/index.js'"
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness check ensuring worker initialization and ffmpeg availability
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "ffmpeg -version && pgrep -f 'node dist/index.js'"
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 2

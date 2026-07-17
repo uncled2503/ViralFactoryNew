@@ -144,7 +144,7 @@ export class FFmpegGraphBuilder {
           ];
 
           const videoSegment = `[${inputIndex}:v]${vidFilters.join(',')}${scaledLabel}`;
-          const overlaySegment = `${ctx.currentLabel}${scaledLabel}overlay=x='${compiledAnims.x}':y='${compiledAnims.y}':enable='between(t,${start},${end})'${overlayLabel}`;
+          const overlaySegment = `${ctx.currentLabel}${scaledLabel}overlay=x='${compiledAnims.x}':y='${compiledAnims.y}':enable='between(t\\,${start}\\,${end})'${overlayLabel}`;
 
           filterSegments.push(videoSegment, overlaySegment);
           ctx.currentLabel = overlayLabel;
@@ -183,7 +183,7 @@ export class FFmpegGraphBuilder {
           ];
 
           const imageSegment = `[${inputIndex}:v]${imgFilters.join(',')}${scaledLabel}`;
-          const overlaySegment = `${ctx.currentLabel}${scaledLabel}overlay=x='${compiledAnims.x}':y='${compiledAnims.y}':enable='between(t,${start},${end})'${overlayLabel}`;
+          const overlaySegment = `${ctx.currentLabel}${scaledLabel}overlay=x='${compiledAnims.x}':y='${compiledAnims.y}':enable='between(t\\,${start}\\,${end})'${overlayLabel}`;
 
           filterSegments.push(imageSegment, overlaySegment);
           ctx.currentLabel = overlayLabel;
@@ -192,7 +192,7 @@ export class FFmpegGraphBuilder {
         type === 'text' ||
         type === 'headline' ||
         type === 'subheadline' ||
-        type === 'subtitle' ||
+        (type === 'subtitle' && !layer.data?.subtitles && !layer.data?.items && !layer.data?.subtitleFile) ||
         type === 'cta'
       ) {
         const text = layer.data?.content ?? layer.data?.text ?? '';
@@ -204,7 +204,8 @@ export class FFmpegGraphBuilder {
           .replace(/\\/g, '\\\\')
           .replace(/'/g, "'\\\\\\''")
           .replace(/:/g, '\\:')
-          .replace(/%/g, '\\%');
+          .replace(/%/g, '\\%')
+          .replace(/,/g, '\\,');
 
         let xPos = compiledAnims.x;
         if (align === 'center' || xPos === '0' || xPos === '') {
@@ -220,7 +221,7 @@ export class FFmpegGraphBuilder {
         const strokeColor = layer.data?.styles?.strokeColor ?? layer.data?.strokeColor ?? 'black';
         const strokeWidth = layer.data?.styles?.strokeWidth ?? layer.data?.strokeWidth ?? 2;
 
-        let drawtextFilter = `drawtext=text='${escapedText}':fontcolor=${color}:fontsize=${size}:x='${xPos}':y='${compiledAnims.y}':alpha='${compiledAnims.alpha}':enable='between(t,${start},${end})'`;
+        let drawtextFilter = `drawtext=text='${escapedText}':fontcolor=${color}:fontsize=${size}:x='${xPos}':y='${compiledAnims.y}':alpha='${compiledAnims.alpha}':enable='between(t\\,${start}\\,${end})'`;
 
         if (shadowEnabled) {
           drawtextFilter += `:shadowcolor=${shadowColor}:shadowx=${shadowOffsetX}:shadowy=${shadowOffsetY}`;
@@ -240,8 +241,8 @@ export class FFmpegGraphBuilder {
         const pbHeight = h || 10;
         const pbLabel = `[pb_${layer.id}]`;
 
-        const bgBox = `drawbox=y='${compiledAnims.y}':color=${bgColor}:width=iw:height=${pbHeight}:t=fill:enable='between(t,${start},${end})'`;
-        const activeBox = `drawbox=y='${compiledAnims.y}':color=${color}:width=iw*clip((t-${start})/${layerDuration},0,1):height=${pbHeight}:t=fill:enable='between(t,${start},${end})'`;
+        const bgBox = `drawbox=y='${compiledAnims.y}':color=${bgColor}:width=iw:height=${pbHeight}:t=fill:enable='between(t\\,${start}\\,${end})'`;
+        const activeBox = `drawbox=y='${compiledAnims.y}':color=${color}:width=iw*clip((t-${start})/${layerDuration}\\,0\\,1):height=${pbHeight}:t=fill:enable='between(t\\,${start}\\,${end})'`;
 
         const progressSegment = `${ctx.currentLabel}${bgBox},${activeBox}${pbLabel}`;
 
@@ -253,7 +254,7 @@ export class FFmpegGraphBuilder {
         const shapeLabel = `[shape_${layer.id}]`;
 
         if (shapeType === 'rectangle') {
-          const shapeSegment = `${ctx.currentLabel}drawbox=x='${compiledAnims.x}':y='${compiledAnims.y}':w='${compiledAnims.scaleW}':h='${compiledAnims.scaleH}':color=${color}:t=fill:enable='between(t,${start},${end})'${shapeLabel}`;
+          const shapeSegment = `${ctx.currentLabel}drawbox=x='${compiledAnims.x}':y='${compiledAnims.y}':w='${compiledAnims.scaleW}':h='${compiledAnims.scaleH}':color=${color}:t=fill:enable='between(t\\,${start}\\,${end})'${shapeLabel}`;
           filterSegments.push(shapeSegment);
           ctx.currentLabel = shapeLabel;
         }

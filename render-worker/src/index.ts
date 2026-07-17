@@ -26,17 +26,54 @@ console.log(`   SaaS WS:     ${WS_URL}`);
 console.log(`   FFmpeg Path: ${FFMPEG_PATH}`);
 console.log('=====================================================');
 
+// Worker Telemetry Metrics
+const metrics = {
+  startTime: Date.now(),
+  reconnections: 0,
+  failures: 0,
+  completedRenders: 0
+};
+
 let ws: WebSocket | null = null;
 let isBusy = false;
 let currentJobId: string | null = null;
 let currentFFmpegProcess: ChildProcess | null = null;
 let heartbeatInterval: NodeJS.Timeout | null = null;
 let reconnectTimeout: NodeJS.Timeout | null = null;
+let pingInterval: NodeJS.Timeout | null = null;
 
-// Ensure temp_assets output dirs exist
+let isAlive = true;
+let reconnectAttempts = 0;
+
+// Ensure temp_assets output dirs exist, clean up any previous runs leftover files
 const tempAssetsRoot = path.resolve(process.cwd(), 'temp_assets');
-if (!fs.existsSync(tempAssetsRoot)) {
-  fs.mkdirSync(tempAssetsRoot, { recursive: true });
+if (fs.existsSync(tempAssetsRoot)) {
+  try {
+    fs.rmSync(tempAssetsRoot, { recursive: true, force: true });
+    console.log('[Cleanup] Cleaned up temp_assets root on startup.');
+  } catch (err: any) {
+    console.error('[Cleanup] Failed to clean up temp_assets on startup:', err.message);
+  }
+}
+fs.mkdirSync(tempAssetsRoot, { recursive: true });
+
+/**
+ * Structured log emitter for monitoring/auditing/telemetry
+ */
+function logStructured(event: string, details: any) {
+  const logData = {
+    timestamp: new Date().toISOString(),
+    workerId: WORKER_ID,
+    event,
+    ...details,
+    metrics: {
+      uptimeSeconds: Math.round((Date.now() - metrics.startTime) / 1000),
+      reconnections: metrics.reconnections,
+      failures: metrics.failures,
+      completedRenders: metrics.completedRenders
+    }
+  };
+  console.log(JSON.stringify(logData));
 }
 
 /**
@@ -52,7 +89,6 @@ function getSystemStats() {
   const usedMemMb = Math.round(usedMemBytes / (1024 * 1024));
   const ramUsagePercent = Math.round((usedMemBytes / totalMemBytes) * 100);
 
-  // Simple load calculation
   const loadAverage = os.loadavg();
   const cpuUsagePercent = loadAverage[0] ? Math.round((loadAverage[0] / os.cpus().length) * 100) : 5;
 
@@ -73,26 +109,44 @@ function getSystemStats() {
  * Connects to the SaaS WebSocket Coordinator and sets up handlers
  */
 function connect() {
-  if (reconnectTimeout) clearTimeout(reconnectTimeout);
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
 
+  logStructured('CONNECTION_CONNECTING', { wsUrl: WS_URL });
   console.log(`[WebSocket] Connecting to SaaS WebSocket coordinator at: ${WS_URL}...`);
   ws = new WebSocket(WS_URL);
 
   ws.on('open', () => {
+    reconnectAttempts = 0; // reset backoff upon successful connection
+    metrics.reconnections++;
+    isAlive = true;
+
+    logStructured('CONNECTION_OPEN', { details: 'Connected to coordinator successfully.' });
     console.log('✔ [WebSocket] Connected to SaaS WebSocket coordinator successfully!');
     
-    // Register worker with correct properties expected by Server
+    // Register worker with correct properties including busy state for automated recovery
     const stats = getSystemStats();
     sendEvent('register', {
       id: WORKER_ID,
-      hostname: os.hostname(),
-      os: `${stats.osPlatform} ${stats.osRelease}`,
-      totalRam: Math.round(stats.ramTotalMb / 1024), // Report in GB
-      version: '1.0.0'
+      cores: stats.cpuCores,
+      ram: Math.round(stats.ramTotalMb / 1024), // GB
+      gpu: stats.cpuModel,
+      os: `${stats.osPlatform === 'win32' ? 'Windows' : stats.osPlatform === 'darwin' ? 'macOS' : 'Linux'} (${os.release()})`,
+      ffmpeg: FFMPEG_PATH,
+      version: '1.0.0',
+      status: isBusy ? 'busy' : 'idle',
+      currentJobId: currentJobId || undefined
     });
 
-    // Start heartbeat
+    // Start heartbeat & liveness check
     startHeartbeat();
+    startLivenessCheck();
+  });
+
+  ws.on('pong', () => {
+    isAlive = true;
   });
 
   ws.on('message', async (rawData: WebSocket.RawData) => {
@@ -101,48 +155,72 @@ function connect() {
       console.log(`[WebSocket] Received Event Type: "${data.type}"`);
       
       if (data.type === 'start_job') {
-        const { jobId, layers, preset, duration } = data.payload;
-        await executeJob(jobId, layers, preset, duration);
+        const { jobId, layers, preset, duration, uploadUrls } = data.payload;
+        await executeJob(jobId, layers, preset, duration, uploadUrls);
       } else if (data.type === 'abort_job') {
         const { jobId } = data.payload;
         if (currentJobId === jobId) {
-          abortCurrentJob();
+          abortCurrentJob('User requested cancellation.');
         }
       }
     } catch (err: any) {
+      logStructured('MESSAGE_PARSE_ERROR', { error: err.message });
       console.error('[WebSocket] Error parsing received message:', err);
     }
   });
 
   ws.on('close', (code, reason) => {
+    logStructured('CONNECTION_CLOSE', { code, reason: reason?.toString() || 'None' });
     console.warn(`✖ [WebSocket] Disconnected from SaaS. Code: ${code}. Reason: ${reason || 'None'}`);
     stopHeartbeat();
+    stopLivenessCheck();
     scheduleReconnect();
   });
 
   ws.on('error', (err) => {
+    logStructured('CONNECTION_ERROR', { error: err.message });
     console.error('✖ [WebSocket] Connection error:', err.message);
   });
 }
 
+/**
+ * Implements exponential backoff scheduler for reconnect attempts
+ */
 function scheduleReconnect() {
   if (reconnectTimeout) return;
-  console.log('[WebSocket] Reconnecting in 5 seconds...');
+
+  reconnectAttempts++;
+  
+  // 1st attempt: 2s, 2nd: 4s, 3rd: 8s, 4th: 16s, maximum: 60s
+  let delay = 60000;
+  if (reconnectAttempts === 1) delay = 2000;
+  else if (reconnectAttempts === 2) delay = 4000;
+  else if (reconnectAttempts === 3) delay = 8000;
+  else if (reconnectAttempts === 4) delay = 16000;
+
+  logStructured('RECONNECT_SCHEDULED', { delayMs: delay, attempt: reconnectAttempts });
+  console.log(`[WebSocket] Scheduling reconnection attempt #${reconnectAttempts} in ${delay / 1000}s...`);
+
   reconnectTimeout = setTimeout(() => {
+    reconnectTimeout = null;
     connect();
-  }, 5000);
+  }, delay);
 }
 
+/**
+ * Starts resilient heartbeat loop reporting live telemetry
+ */
 function startHeartbeat() {
   stopHeartbeat();
-  // Send heartbeat every 10 seconds to keep connection alive and report live metrics
   heartbeatInterval = setInterval(() => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       const stats = getSystemStats();
       sendEvent('heartbeat', {
         cpuUsage: stats.cpuUsagePercent,
-        ramUsage: stats.ramUsagePercent
+        ramUsage: stats.ramUsagePercent,
+        currentJobs: currentJobId ? [currentJobId] : []
       });
+      logStructured('HEARTBEAT', { cpuUsage: stats.cpuUsagePercent, ramUsage: stats.ramUsagePercent });
     }
   }, 10000);
 }
@@ -154,19 +232,56 @@ function stopHeartbeat() {
   }
 }
 
+/**
+ * Active frozen connection detection using WebSocket ping/pong
+ */
+function startLivenessCheck() {
+  if (pingInterval) clearInterval(pingInterval);
+  isAlive = true;
+  pingInterval = setInterval(() => {
+    if (!isAlive) {
+      logStructured('FROZEN_CONNECTION_DETECTED', { details: 'No pong response received within interval. Terminating socket.' });
+      console.warn('✖ [WebSocket] Liveness check failed. Connection frozen. Forcing disconnect...');
+      ws?.terminate();
+      return;
+    }
+    isAlive = false;
+    try {
+      ws?.ping();
+    } catch (err: any) {
+      console.error('[WebSocket] Failed sending ping frame:', err.message);
+    }
+  }, 15000);
+}
+
+// Stops active ping checks
+function stopLivenessCheck() {
+  if (pingInterval) {
+    clearInterval(pingInterval);
+    pingInterval = null;
+  }
+}
+
 function sendEvent(type: string, payload: any) {
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type, payload }));
+    try {
+      ws.send(JSON.stringify({ type, payload }));
+    } catch (err: any) {
+      console.error('[WebSocket] Failed to send event payload:', err.message);
+    }
   }
 }
 
 /**
- * Aborts the current job in progress
+ * Aborts the current job in progress safely
  */
-function abortCurrentJob() {
+function abortCurrentJob(reason: string) {
   if (currentFFmpegProcess) {
-    console.warn(`[Abort] User requested termination. Killing active FFmpeg process...`);
-    currentFFmpegProcess.kill('SIGKILL');
+    logStructured('JOB_ABORTING', { jobId: currentJobId, reason });
+    console.warn(`[Abort] Safely terminating FFmpeg process for Job ${currentJobId}. Reason: ${reason}`);
+    try {
+      currentFFmpegProcess.kill('SIGKILL');
+    } catch (e) {}
     currentFFmpegProcess = null;
   }
 }
@@ -178,7 +293,8 @@ async function executeJob(
   jobId: string, 
   layers: RenderLayer[], 
   preset: ExportPreset, 
-  duration: number
+  duration: number,
+  uploadUrls?: { video: string; thumbnail: string; preview: string }
 ) {
   if (isBusy) {
     console.warn(`[Job Queue] Worker is already busy! Rejecting start_job for Job ${jobId}`);
@@ -189,6 +305,32 @@ async function executeJob(
   currentJobId = jobId;
   const logs: string[] = [];
 
+  let lastProgressSentTime = 0;
+  let lastProgressSentValue = -1;
+  let lastProgressSentStatus = '';
+
+  const sendProgressThrottled = (status: string, progress: number, logsToInclude?: string[], force = false) => {
+    const now = Date.now();
+    const isLogUpdate = progress === -1;
+    const statusChanged = status !== lastProgressSentStatus;
+    const progressJump = progress - lastProgressSentValue >= 1;
+    const timeElapsed = now - lastProgressSentTime >= 500;
+
+    if (force || isLogUpdate || statusChanged || progressJump || timeElapsed) {
+      sendEvent('job_progress', {
+        jobId,
+        status,
+        progress,
+        ...(logsToInclude ? { logs: logsToInclude } : {})
+      });
+      lastProgressSentTime = now;
+      if (progress >= 0) {
+        lastProgressSentValue = progress;
+      }
+      lastProgressSentStatus = status;
+    }
+  };
+
   const addLog = (stage: string, message: string, isError = false) => {
     const timeStr = new Date().toLocaleTimeString('pt-BR');
     const prefix = isError ? '[ERRO]' : '[INFO]';
@@ -197,14 +339,10 @@ async function executeJob(
     console.log(`[Job ${jobId}] ${logLine}`);
     
     // Send real-time log updates back to backend
-    sendEvent('job_progress', {
-      jobId,
-      status: 'Rendering',
-      progress: -1, // -1 signals that this is a log update
-      logs: [logLine]
-    });
+    sendProgressThrottled('Rendering', -1, [logLine]);
   };
 
+  logStructured('JOB_START', { jobId, layersCount: layers.length, preset: preset?.id, duration });
   addLog('Worker Init', `Worker ${WORKER_ID} claimed Job ${jobId}. Beginning pipeline...`);
 
   const jobTempDir = path.resolve(tempAssetsRoot, jobId);
@@ -212,12 +350,20 @@ async function executeJob(
   const localOutputThumbPath = path.join(jobTempDir, `completed_thumb.jpg`);
   const localOutputPreviewPath = path.join(jobTempDir, `completed_preview.mp4`);
 
+  let ffmpegTimeout: NodeJS.Timeout | null = null;
+
   try {
+    // Ensure unique clean job-specific folder
+    if (fs.existsSync(jobTempDir)) {
+      fs.rmSync(jobTempDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(jobTempDir, { recursive: true });
+
     // -------------------------------------------------------------
     // PHASE 1: DOWNLOAD ASSETS
     // -------------------------------------------------------------
     addLog('Downloading Assets', 'Downloading remote media assets locally...');
-    sendEvent('job_progress', { jobId, status: 'Preparing', progress: 15, logs });
+    sendProgressThrottled('Preparing', 15, undefined, true);
 
     const resolvedAssets = await AssetDownloader.downloadAssets({
       jobId,
@@ -226,7 +372,7 @@ async function executeJob(
     });
 
     addLog('Downloading Assets', `All assets downloaded successfully. Resolved ${resolvedAssets.size} keys.`);
-    sendEvent('job_progress', { jobId, status: 'Preparing', progress: 25, logs });
+    sendProgressThrottled('Preparing', 25, undefined, true);
 
     // -------------------------------------------------------------
     // PHASE 2: COMPILE FFMPEG COMMAND
@@ -248,11 +394,24 @@ async function executeJob(
     // PHASE 3: EXECUTE FFMPEG & TRACK PROGRESS
     // -------------------------------------------------------------
     addLog('FFmpeg Render', 'Executing FFmpeg process... Monitoring console standard error...');
-    sendEvent('job_progress', { jobId, status: 'Rendering', progress: 25, logs });
+    sendProgressThrottled('Rendering', 25, undefined, true);
 
     const ffmpegStartTime = Date.now();
     let stdoutData = '';
     let stderrData = '';
+
+    // Configurable timeout to abort stuck/frozen FFmpeg operations
+    const timeoutMinutes = parseFloat(process.env.JOB_TIMEOUT_MINUTES || '10');
+    const localTimeoutLimitMs = parseInt(process.env.JOB_TIMEOUT_MS || String(timeoutMinutes * 60 * 1000), 10);
+
+    ffmpegTimeout = setTimeout(() => {
+      logStructured('MALICIOUS_ATTEMPT', {
+        type: 'FFMPEG_STUCK_TIMEOUT',
+        jobId,
+        limitMs: localTimeoutLimitMs
+      });
+      abortCurrentJob(`FFmpeg processing got stuck or exceeded maximum local limit of ${localTimeoutLimitMs}ms.`);
+    }, localTimeoutLimitMs);
 
     currentFFmpegProcess = spawn(commandResult.command, commandResult.args);
 
@@ -282,11 +441,7 @@ async function executeJob(
               lastReportedPercent = estimatedPercent;
               const currentStatus = estimatedPercent < 65 ? 'Rendering' : 'Encoding';
               
-              sendEvent('job_progress', {
-                jobId,
-                status: currentStatus,
-                progress: estimatedPercent
-              });
+              sendProgressThrottled(currentStatus, estimatedPercent);
 
               console.log(`[Job ${jobId}] Rendering: ${estimatedPercent}% completed (${timeMatch[0]})`);
             }
@@ -312,6 +467,11 @@ async function executeJob(
       });
     });
 
+    if (ffmpegTimeout) {
+      clearTimeout(ffmpegTimeout);
+      ffmpegTimeout = null;
+    }
+
     const ffmpegEndTime = Date.now();
     const executionTimeMs = ffmpegEndTime - ffmpegStartTime;
 
@@ -326,7 +486,7 @@ async function executeJob(
     // PHASE 4: EXTRACT THUMBNAIL & PREVIEW
     // -------------------------------------------------------------
     addLog('Output Generation', 'Generating thumbnail frame extraction & preview video clip...');
-    sendEvent('job_progress', { jobId, status: 'Saving', progress: 92, logs });
+    sendProgressThrottled('Saving', 92, undefined, true);
 
     await OutputManager.generateThumbnail(localOutputVideoPath, localOutputThumbPath, FFMPEG_PATH);
     await OutputManager.generatePreview(localOutputVideoPath, localOutputPreviewPath, FFMPEG_PATH);
@@ -337,14 +497,15 @@ async function executeJob(
     // PHASE 5: UPLOAD FILES
     // -------------------------------------------------------------
     addLog('Asset Upload', 'Uploading rendered assets back to the SaaS storage...');
-    sendEvent('job_progress', { jobId, status: 'Saving', progress: 95, logs });
+    sendProgressThrottled('Saving', 95, undefined, true);
 
     const uploadResult = await AssetUploader.uploadOutputs({
       jobId,
       apiUrl: API_URL,
       videoPath: localOutputVideoPath,
       thumbnailPath: localOutputThumbPath,
-      previewPath: localOutputPreviewPath
+      previewPath: localOutputPreviewPath,
+      uploadUrls
     });
 
     addLog('Asset Upload', `Video uploaded to: ${uploadResult.videoUrl}`);
@@ -379,7 +540,18 @@ async function executeJob(
       debugInfo
     });
 
+    metrics.completedRenders++;
+    logStructured('JOB_COMPLETED', { jobId, executionTimeMs });
+
   } catch (err: any) {
+    if (ffmpegTimeout) {
+      clearTimeout(ffmpegTimeout);
+      ffmpegTimeout = null;
+    }
+
+    metrics.failures++;
+    logStructured('JOB_FAILED', { jobId, error: err.message });
+
     addLog('Pipeline Fail', `Job rendering pipeline crashed: ${err.message}`, true);
     sendEvent('job_failed', {
       jobId,
@@ -388,13 +560,14 @@ async function executeJob(
     });
   } finally {
     // -------------------------------------------------------------
-    // PHASE 7: AUTOMATIC TEMP FOLDER CLEANUP
+    // PHASE 7: AUTOMATIC TEMP FOLDER CLEANUP (RESILIENT EXCEPTION HANDLING)
     // -------------------------------------------------------------
     try {
       console.log(`[Cleanup] Purging temporary folder for Job ${jobId}: ${jobTempDir}`);
       if (fs.existsSync(jobTempDir)) {
         fs.rmSync(jobTempDir, { recursive: true, force: true });
       }
+      logStructured('TEMP_CLEANUP', { jobId, jobTempDir });
       console.log(`[Cleanup] Purge complete.`);
     } catch (cleanErr: any) {
       console.error('[Cleanup] Error deleting temporary job folders:', cleanErr.message);

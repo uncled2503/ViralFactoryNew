@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: viralfactory-config
+  namespace: viralfactory
+  labels:
+    app: viralfactory
+    environment: production
+data:
+  # General Node Environment Settings
+  NODE_ENV: "production"
+  PORT: "3000"
+
+  # Redis Cluster Service Configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_ENABLED: "true"
+
+  # Distributed Coordinator Service URLs (for worker connection within cluster)
+  API_URL: "http://coordinator-service.viralfactory.svc.cluster.local:3000"
+  WS_URL: "ws://coordinator-service.viralfactory.svc.cluster.local:3000/ws/worker"
+
+  # Render Job Pipeline Timeouts
+  JOB_TIMEOUT_MINUTES: "10"
+  JOB_TIMEOUT_MS: "600000"

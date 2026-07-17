@@ -1,0 +1,13 @@
+{
+  "tx-rp-test-999": {
+    "userId": "usr-buyer-001",
+    "planTier": "Pro",
+    "amount": 49,
+    "client": {
+      "name": "Test Buyer",
+      "email": "testbuyer@gmail.com"
+    },
+    "status": "pending",
+    "createdAt": "2026-07-15T11:04:32.543Z"
+  }
+}

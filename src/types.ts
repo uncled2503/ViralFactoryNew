@@ -142,6 +142,15 @@ export interface RenderWorker {
   memoryUsage: number;
   processedCount: number;
   region: string;
+  gpu?: string;
+  os?: string;
+  ffmpegVersion?: string;
+  version?: string;
+  ip?: string;
+  cores?: number;
+  totalRam?: number;
+  uptimeSeconds?: number;
+  lastActiveSecondsAgo?: number;
 }
 
 export type AspectRatio = '9:16' | '16:9' | '1:1';

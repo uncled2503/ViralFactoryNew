@@ -23,6 +23,8 @@ import {
   Activity,
   Maximize2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Check,
   CheckSquare,
   Play,
@@ -33,8 +35,24 @@ import {
   Settings,
   HelpCircle,
   Menu,
-  X
+  X,
+  Search
 } from 'lucide-react';
+
+const examplePages = [
+  { id: 1, image: '/exemplopaginas/02-uAy4VjXQ.webp', title: '@filosofia_ancestral', views: '1.4M views', category: 'Citações' },
+  { id: 2, image: '/exemplopaginas/03-B2jCMS6j.webp', title: '@dica_de_riqueza', views: '2.1M views', category: 'Finanças' },
+  { id: 3, image: '/exemplopaginas/04-BANhblpL.webp', title: '@rainha_das_novelas', views: '3.8M views', category: 'Cortes' },
+  { id: 4, image: '/exemplopaginas/06-BCOSIrKe.webp', title: '@mentalidade_oculta', views: '2.5M views', category: 'Motivação' },
+  { id: 5, image: '/exemplopaginas/07-xAqbZkQu.webp', title: '@cortes_de_series', views: '1.9M views', category: 'Cinema' },
+  { id: 6, image: '/exemplopaginas/08-DDZBl70i.webp', title: '@futebol_resenha', views: '4.1M views', category: 'Futebol' },
+  { id: 7, image: '/exemplopaginas/09-sQPdEBK6.webp', title: '@reflexao_diaria', views: '2.3M views', category: 'Poesia' },
+  { id: 8, image: '/exemplopaginas/10-D-kzC9r3.webp', title: '@curiosidade_global', views: '1.1M views', category: 'Curiosidades' },
+  { id: 9, image: '/exemplopaginas/11-Bd_y7XPb.webp', title: '@zicada_futebol', views: '1.7M views', category: 'Futebol' },
+  { id: 10, image: '/exemplopaginas/12-Bq0AnmXJ.webp', title: '@estetica_escura', views: '980K views', category: 'Estilo de Vida' },
+  { id: 11, image: '/exemplopaginas/13-_LniUGFI.webp', title: '@regras_devida', views: '2.9M views', category: 'Disciplina' },
+  { id: 12, image: '/exemplopaginas/14-CPvLg7dt.webp', title: '@sucesso_financeiro', views: '3.4M views', category: 'Negócios' }
+];
 
 export const LandingPage: React.FC = () => {
   const { navigate } = useRouter();
@@ -82,28 +100,28 @@ export const LandingPage: React.FC = () => {
   const demoTabs = {
     dashboard: {
       title: 'Dashboard de Performance',
-      badge: 'Visão Geral do Escopo',
-      desc: 'Monitore suas produções e veja o ganho de escala em tempo real com métricas precisas.',
+      badge: 'Visão Geral do Consumo',
+      desc: 'Acompanhe em tempo real o consumo de créditos de vídeos, os minutos gastos de processamento na nuvem e o armazenamento disponível.',
       content: (
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800/80">
-              <span className="text-[10px] uppercase text-gray-500 font-mono">Vídeos Produzidos</span>
-              <p className="text-xl font-bold font-display text-indigo-400 mt-1">1.428</p>
-              <span className="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
-                <TrendingUp className="w-3 h-3" /> +14% esta semana
+              <span className="text-[9px] uppercase text-gray-500 font-mono tracking-wider block">Consumo Mensal</span>
+              <p className="text-sm md:text-base font-bold font-display text-indigo-400 mt-1">1.428 / 5.000</p>
+              <span className="text-[8px] text-emerald-400 flex items-center gap-1 mt-0.5 font-mono">
+                <TrendingUp className="w-2.5 h-2.5" /> 28% USADO
               </span>
             </div>
             <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800/80">
-              <span className="text-[10px] uppercase text-gray-500 font-mono">Tempo Economizado</span>
-              <p className="text-xl font-bold font-display text-purple-400 mt-1">142 horas</p>
-              <span className="text-[10px] text-indigo-300 mt-0.5 block">Processamento na Nuvem</span>
+              <span className="text-[9px] uppercase text-gray-500 font-mono tracking-wider block">Minutos Usados</span>
+              <p className="text-sm md:text-base font-bold font-display text-purple-400 mt-1">456 / 2.000 min</p>
+              <span className="text-[8px] text-indigo-300 mt-0.5 block font-mono">NUVEM ATIVA</span>
             </div>
             <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800/80">
-              <span className="text-[10px] uppercase text-gray-500 font-mono">Taxa de Conversão</span>
-              <p className="text-xl font-bold font-display text-pink-400 mt-1">4.8%</p>
-              <span className="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
-                +1.2% de engajamento
+              <span className="text-[9px] uppercase text-gray-500 font-mono tracking-wider block">Armazenamento</span>
+              <p className="text-sm md:text-base font-bold font-display text-pink-400 mt-1">4.8 / 10 GB</p>
+              <span className="text-[8px] text-gray-400 flex items-center gap-1 mt-0.5 font-mono">
+                DISK CLOUD OK
               </span>
             </div>
           </div>
@@ -116,7 +134,7 @@ export const LandingPage: React.FC = () => {
               {[35, 60, 45, 90, 110, 80, 150].map((h, i) => (
                 <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
                   <div
-                    className="w-full bg-gradient-to-t from-indigo-600/40 to-indigo-500/90 rounded-t-md transition-all duration-1000"
+                    className="w-full bg-gradient-to-t from-indigo-600/40 to-indigo-500/95 rounded-t-md transition-all duration-1000"
                     style={{ height: `${(h / 150) * 100}%` }}
                   />
                   <span className="text-[9px] font-mono text-gray-500">
@@ -130,34 +148,34 @@ export const LandingPage: React.FC = () => {
       )
     },
     projetos: {
-      title: 'Gerenciador de Projetos',
-      badge: 'Lotes Organizacionais',
-      desc: 'Crie múltiplos projetos para marcas, clientes ou canais distintos, com controle de variáveis unificado.',
+      title: 'Gerenciador de Projetos e Campanhas',
+      badge: 'Organização de Lotes',
+      desc: 'Crie pastas organizadas por canal dark, marca ou nicho. Controle todas as variáveis do lote de forma centralizada.',
       content: (
         <div className="space-y-3 font-sans">
-          <div className="flex items-center justify-between border-b border-gray-900 pb-3">
-            <span className="text-xs font-semibold text-gray-300">Meus Lotes de Vídeos</span>
-            <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full font-semibold border border-indigo-500/20">3 Ativos</span>
+          <div className="flex items-center justify-between border-b border-gray-950 pb-3">
+            <span className="text-xs font-semibold text-gray-300">Minhas Campanhas Ativas</span>
+            <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full font-semibold border border-indigo-500/20">3 Pastas</span>
           </div>
           <div className="space-y-2">
             {[
-              { name: 'Histórias Curtas - Curiosidades', videos: 150, update: 'Há 5 min', status: 'Exportado' },
-              { name: 'Citações Motivacionais Diárias', videos: 80, update: 'Ontem', status: 'Em progresso' },
-              { name: 'Demonstração de Produto SaaS', videos: 45, update: 'Há 3 dias', status: 'Planejado' }
+              { name: '🧠 Desenvolvimento & Mentalidade', videos: 150, update: 'Modificado há 5 min', status: 'Concluído' },
+              { name: '🎬 Rainha das Novelas (Cortes)', videos: 80, update: 'Modificado ontem', status: 'Processando' },
+              { name: '⚽ Futebol Resenha - Melhores Lances', videos: 45, update: 'Modificado há 3 dias', status: 'Aguardando' }
             ].map((proj, i) => (
-              <div key={i} className="bg-gray-900/50 p-3 rounded-xl border border-gray-800/80 hover:border-gray-700/80 transition flex items-center justify-between">
+              <div key={i} className="bg-gray-900/40 p-3 rounded-xl border border-gray-800/50 hover:border-indigo-500/20 transition flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
                     <FolderOpen className="w-4 h-4" />
                   </div>
-                  <div>
+                  <div className="text-left">
                     <h4 className="text-xs font-semibold text-gray-200">{proj.name}</h4>
                     <span className="text-[10px] text-gray-500">{proj.videos} variações de vídeo • {proj.update}</span>
                   </div>
                 </div>
                 <span className={`text-[9px] px-2 py-0.5 rounded-md font-mono ${
-                  proj.status === 'Exportado' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                  proj.status === 'Em progresso' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
+                  proj.status === 'Concluído' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                  proj.status === 'Processando' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 animate-pulse' :
                   'bg-gray-800 text-gray-400 border border-gray-700'
                 }`}>
                   {proj.status}
@@ -169,18 +187,18 @@ export const LandingPage: React.FC = () => {
       )
     },
     templates: {
-      title: 'Biblioteca de Templates',
-      badge: 'Layouts Altamente Customizáveis',
-      desc: 'Selecione e configure layouts otimizados para retenção e engajamento nas redes verticais.',
+      title: 'Biblioteca de Templates Virais',
+      badge: 'Layouts de Altíssima Retenção',
+      desc: 'Combine fontes marcantes, efeitos de blur, barras de progresso e legendas de alto contraste testadas nas redes.',
       content: (
         <div className="grid grid-cols-2 gap-3">
           {[
-            { title: 'Estilo Reddit Stories', desc: 'Gameplay de fundo com legenda centralizada e título flutuante.', color: 'from-orange-600/20 to-orange-500/10 border-orange-500/30' },
-            { title: 'Estilo Citações Premium', desc: 'Fundo estético com efeito blur, tipografia refinada e progresso sutil.', color: 'from-purple-600/20 to-purple-500/10 border-purple-500/30' },
-            { title: 'Review Rápido de Produtos', desc: 'Transições rápidas, zoom automático e chamadas para ação integradas.', color: 'from-blue-600/20 to-blue-500/10 border-blue-500/30' },
-            { title: 'Listas Top 5 Curiosidades', desc: 'Contadores automáticos, transições deslizantes e layout dinâmico.', color: 'from-emerald-600/20 to-emerald-500/10 border-emerald-500/30' }
+            { title: 'Reddit Stories / Gameplay', desc: 'Legendas centralizadas com fundo de gameplay acelerado e áudio envolvente.', color: 'from-orange-600/10 to-orange-500/5 border-orange-500/20' },
+            { title: 'Citação Estética Escura', desc: 'Vídeo estético em câmera lenta com efeito blur, tipografia fina e citação impactante.', color: 'from-purple-600/10 to-purple-500/5 border-purple-500/20' },
+            { title: 'Cortes de Podcasts / Entrevistas', desc: 'Layout duplo inteligente, molduras arredondadas e legendas coloridas automáticas.', color: 'from-blue-600/10 to-blue-500/5 border-blue-500/20' },
+            { title: 'Lista Top 5 Curiosidades', desc: 'Contagem regressiva automática, transições limpas e zoom sutil em lote.', color: 'from-emerald-600/10 to-emerald-500/5 border-emerald-500/20' }
           ].map((tpl, i) => (
-            <div key={i} className={`bg-gradient-to-br ${tpl.color} p-3 rounded-xl border flex flex-col justify-between h-28 hover:scale-[1.02] transition-transform duration-300`}>
+            <div key={i} className={`bg-gradient-to-br ${tpl.color} p-3 rounded-xl border flex flex-col justify-between h-28 hover:border-indigo-500/30 transition-all duration-300 text-left`}>
               <div>
                 <h5 className="text-[11px] font-bold text-gray-200">{tpl.title}</h5>
                 <p className="text-[9px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">{tpl.desc}</p>
@@ -194,63 +212,78 @@ export const LandingPage: React.FC = () => {
       )
     },
     editor: {
-      title: 'Editor Visual de Variáveis',
-      badge: 'Camadas e Inputs Dinâmicos',
-      desc: 'Personalize fontes, cores, logos e legendas em lotes usando nossa timeline simplificada.',
+      title: 'Posicionador e Editor de Zonas de Vídeo',
+      badge: 'Interface Dinâmica Canva-Style',
+      desc: 'Arraste, dimensione e controle a camada onde os vídeos dinâmicos de fundo serão encaixados em todos os vídeos gerados.',
       content: (
         <div className="space-y-3 text-xs">
           <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800 flex items-center justify-between">
             <span className="text-gray-300 font-semibold flex items-center gap-2">
-              <Sliders className="w-3.5 h-3.5 text-indigo-400" /> Variáveis Dinâmicas
+              <Sliders className="w-3.5 h-3.5 text-indigo-400" /> Camada Ativa: [ZONA_DE_VÍDEO]
             </span>
-            <span className="text-[10px] text-indigo-300 font-mono">{"{{HEADLINE}}"}</span>
+            <span className="text-[10px] text-indigo-300 font-mono">{"{{VIDEO_DINAMICO}}"}</span>
           </div>
-          <div className="bg-gray-950 p-2.5 rounded-lg border border-gray-900 space-y-2">
-            <div className="flex items-center justify-between text-[10px] text-gray-500">
-              <span>Camada de Texto Principal</span>
-              <span className="font-mono text-indigo-400">Ativa</span>
+          
+          <div className="bg-gray-950 p-2.5 rounded-lg border border-gray-900/80 space-y-2">
+            <div className="flex items-center justify-between text-[9px] text-gray-500 font-mono">
+              <span>COORDENADAS DE REDIMENSIONAMENTO</span>
+              <span className="text-indigo-400 font-bold">Customizado</span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-gray-900 p-2 rounded border border-gray-800">
-                <span className="text-[8px] text-gray-500 uppercase block">Fonte</span>
-                <span className="text-[10px] font-semibold text-gray-300">Space Grotesk</span>
+            <div className="grid grid-cols-4 gap-1.5 text-center">
+              <div className="bg-gray-900/60 p-1.5 rounded border border-gray-800/80">
+                <span className="text-[7.5px] text-gray-500 uppercase block">Posição X</span>
+                <span className="text-[10px] font-mono font-semibold text-gray-300">145 px</span>
               </div>
-              <div className="bg-gray-900 p-2 rounded border border-gray-800">
-                <span className="text-[8px] text-gray-500 uppercase block">Cor do Destaque</span>
-                <span className="text-[10px] font-semibold text-purple-400">#A855F7</span>
+              <div className="bg-gray-900/60 p-1.5 rounded border border-gray-800/80">
+                <span className="text-[7.5px] text-gray-500 uppercase block">Posição Y</span>
+                <span className="text-[10px] font-mono font-semibold text-gray-300">320 px</span>
+              </div>
+              <div className="bg-gray-900/60 p-1.5 rounded border border-gray-800/80">
+                <span className="text-[7.5px] text-gray-500 uppercase block">Largura</span>
+                <span className="text-[10px] font-mono font-semibold text-gray-300">760 px</span>
+              </div>
+              <div className="bg-gray-900/60 p-1.5 rounded border border-gray-800/80">
+                <span className="text-[7.5px] text-gray-500 uppercase block">Altura</span>
+                <span className="text-[10px] font-mono font-semibold text-gray-300">980 px</span>
               </div>
             </div>
-          </div>
-          <div className="h-10 bg-gray-900/40 rounded-xl border border-gray-800/60 flex items-center px-3 gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[10px] text-gray-400 font-mono">Pré-visualização ao vivo: "Como os milionários pensam..."</span>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="flex items-center justify-between px-2 py-1 bg-gray-900/40 rounded border border-gray-800/50 text-[9px] text-gray-400">
+                <span>Modo de Preenchimento:</span>
+                <span className="font-semibold text-indigo-400">Cover (Cortar)</span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1 bg-gray-900/40 rounded border border-gray-800/50 text-[9px] text-gray-400">
+                <span>Bordas Arredondadas:</span>
+                <span className="font-semibold text-indigo-400">16 px</span>
+              </div>
+            </div>
           </div>
         </div>
       )
     },
     renders: {
-      title: 'Fila de Exportação em Massa',
-      badge: 'Processamento Concorrente',
-      desc: 'Veja centenas de vídeos gerados simultaneamente prontos para publicação em segundos.',
+      title: 'Fila Concorrente & Sistema Anti-Detecção',
+      badge: 'Segurança & Escala Algorítmica',
+      desc: 'Nossos servidores processam em lote limpando metadados, adicionando filtros de ruído sutis e alterando o áudio para evitar conteúdo duplicado.',
       content: (
         <div className="space-y-3 font-sans">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-gray-300">Progresso do Lote #142</span>
-            <span className="text-indigo-400 font-mono font-bold">75% Concluído</span>
+            <span className="font-semibold text-gray-300">Exportação do Lote #142 (Ativo)</span>
+            <span className="text-indigo-400 font-mono font-bold">75% CONCLUÍDO</span>
           </div>
           <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden border border-gray-800">
             <div className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 w-3/4 rounded-full" />
           </div>
           <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
             {[
-              { id: 'video_001.mp4', size: '18.4MB', status: 'Pronto', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
-              { id: 'video_002.mp4', size: '17.9MB', status: 'Pronto', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
-              { id: 'video_003.mp4', size: '19.1MB', status: 'Renderizando...', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20 animate-pulse' },
-              { id: 'video_004.mp4', size: '18.2MB', status: 'Na fila', color: 'text-gray-400 bg-gray-800 border-gray-700' }
+              { id: 'video_001.mp4', status: 'Anti-Detecção OK', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+              { id: 'video_002.mp4', status: 'Anti-Detecção OK', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+              { id: 'video_003.mp4', status: 'Processando Filtros...', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20 animate-pulse' },
+              { id: 'video_004.mp4', status: 'Na fila', color: 'text-gray-400 bg-gray-800 border-gray-700' }
             ].map((v, i) => (
               <div key={i} className="flex items-center justify-between text-[10px] bg-gray-900/40 p-2 rounded-lg border border-gray-800/50">
-                <span className="font-mono text-gray-300">{v.id} ({v.size})</span>
-                <span className={`px-2 py-0.5 rounded text-[9px] border font-semibold ${v.color}`}>{v.status}</span>
+                <span className="font-mono text-gray-300">{v.id}</span>
+                <span className={`px-2 py-0.5 rounded text-[8px] border font-mono font-bold tracking-wider ${v.color}`}>{v.status}</span>
               </div>
             ))}
           </div>
@@ -671,56 +704,76 @@ export const LandingPage: React.FC = () => {
       {/* COMO FUNCIONA */}
       <section id="como-funciona" className="py-24 max-w-7xl mx-auto px-6 relative z-10 text-center">
         <div className="space-y-4 max-w-2xl mx-auto mb-16">
-          <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Passo a Passo</span>
+          <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Metodologia</span>
           <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight">
-            Produza conteúdo massivo em 4 etapas simples
+            Como usar o <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 font-extrabold">Viral Factory?</span>
           </h2>
           <p className="text-gray-400 text-xs md:text-sm">
-            Uma estrutura inteligente desenhada para remover qualquer atrito operacional da sua produção diária.
+            Uma estrutura inteligente de alta conversão desenhada para remover qualquer atrito operacional da sua produção diária de vídeos virais.
           </p>
         </div>
 
         {/* Interactive Steps Card Line */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 relative">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative max-w-6xl mx-auto">
           
           {/* Connector Line behind steps (Desktop only) */}
-          <div className="hidden md:block absolute top-[68px] left-[12%] right-[12%] h-[1px] bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-indigo-500/20 z-0" />
+          <div className="hidden md:block absolute top-[80px] left-[15%] right-[15%] h-[1px] bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-indigo-500/10 z-0" />
 
           {[
             {
               step: '01',
-              title: 'Crie ou escolha seu template',
-              desc: 'Escolha um de nossos modelos de alta retenção ou crie o seu do zero no editor.',
-              icon: <Layers className="w-5 h-5 text-indigo-400" />
+              title: 'Encontre e selecione',
+              desc: 'Busque entre milhares de vídeos virais do nicho e selecione quantos quiser pra editar de uma vez só.',
+              icon: <Search className="w-5 h-5 text-indigo-400" />,
+              glow: 'rgba(99, 102, 241, 0.12)',
+              borderHover: 'hover:border-indigo-500/30'
             },
             {
               step: '02',
-              title: 'Defina suas variáveis',
-              desc: 'Insira os textos, títulos, imagens ou fundos específicos que vão variar em cada vídeo.',
-              icon: <Sliders className="w-5 h-5 text-purple-400" />
+              title: 'Escolha seu template',
+              desc: 'Aplique o template de edição que combina com a identidade da sua página. Uma vez configurado, fica salvo pra sempre.',
+              icon: <Layers className="w-5 h-5 text-purple-400" />,
+              glow: 'rgba(168, 85, 247, 0.12)',
+              borderHover: 'hover:border-purple-500/30'
             },
             {
               step: '03',
-              title: 'Configure os detalhes',
-              desc: 'Configure o idioma das legendas automáticas, cores de destaque e logo da marca.',
-              icon: <Settings className="w-5 h-5 text-indigo-400" />
-            },
-            {
-              step: '04',
-              title: 'Exporte tudo em lote',
-              desc: 'Nossos servidores processam tudo simultaneamente. Em segundos, baixe todos os vídeos prontos.',
-              icon: <Zap className="w-5 h-5 text-pink-400" />
+              title: 'Aperte 1 botão',
+              desc: 'O Viral Factory edita, corta e aplica o sistema anti-detecção em todos os vídeos selecionados automaticamente. Simultaneamente. Sem você tocar em editor nenhum.',
+              icon: <Zap className="w-5 h-5 text-pink-400" />,
+              glow: 'rgba(236, 72, 153, 0.12)',
+              borderHover: 'hover:border-pink-500/30'
             }
           ].map((item, i) => (
-            <div key={i} className="relative z-10 flex flex-col items-center group">
-              <div className="w-14 h-14 rounded-2xl bg-gray-950 border border-gray-800/80 hover:border-indigo-500/50 flex items-center justify-center shadow-xl group-hover:scale-105 transition-all duration-300 relative">
+            <div 
+              key={i} 
+              className={`relative z-10 flex flex-col items-center group bg-gradient-to-b from-gray-950 to-gray-950/40 p-8 rounded-3xl border border-gray-900/80 ${item.borderHover} transition-all duration-500 shadow-xl overflow-hidden hover:shadow-2xl hover:shadow-indigo-500/5`}
+            >
+              {/* Giant background number watermark */}
+              <div className="absolute -top-4 -right-2 text-[120px] font-display font-extrabold text-white/[0.02] select-none group-hover:text-white/[0.04] transition-colors duration-500 pointer-events-none font-mono">
+                {item.step}
+              </div>
+
+              {/* Ambient circle glow under icon */}
+              <div 
+                className="absolute w-32 h-32 rounded-full -top-10 -left-10 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none blur-2xl"
+                style={{ backgroundColor: item.glow }}
+              />
+
+              {/* Icon container */}
+              <div className="w-16 h-16 rounded-2xl bg-gray-900/90 border border-gray-800 flex items-center justify-center shadow-inner group-hover:scale-110 group-hover:border-indigo-500/30 transition-all duration-500 relative z-10">
                 {item.icon}
-                <span className="absolute -top-2.5 -right-2.5 bg-gray-900 border border-gray-800 text-[9px] font-mono font-bold text-gray-500 w-6 h-6 rounded-full flex items-center justify-center">
+                <span className="absolute -top-2.5 -right-2.5 bg-gradient-to-r from-indigo-600 to-indigo-500 border border-indigo-400/30 text-[9px] font-mono font-bold text-white w-6 h-6 rounded-full flex items-center justify-center shadow-lg shadow-indigo-950">
                   {item.step}
                 </span>
               </div>
-              <h3 className="text-xs font-bold text-gray-200 mt-5 mb-2 font-display">{item.title}</h3>
-              <p className="text-[11px] text-gray-400 leading-relaxed max-w-[220px]">{item.desc}</p>
+
+              <h3 className="text-xs font-bold text-gray-200 mt-6 mb-3 font-display uppercase tracking-wider relative z-10 group-hover:text-white transition-colors duration-300">
+                {item.title}
+              </h3>
+              <p className="text-[11px] text-gray-400 leading-relaxed max-w-[260px] text-center relative z-10 group-hover:text-gray-300 transition-colors duration-300">
+                {item.desc}
+              </p>
             </div>
           ))}
 
@@ -837,10 +890,10 @@ export const LandingPage: React.FC = () => {
             <div className="space-y-2 pt-2">
               {[
                 { id: 'dashboard', label: 'Dashboard de Performance', icon: <LayoutGrid className="w-4 h-4" /> },
-                { id: 'projetos', label: 'Gerenciador de Projetos', icon: <FolderOpen className="w-4 h-4" /> },
+                { id: 'projetos', label: 'Campanhas & Projetos', icon: <FolderOpen className="w-4 h-4" /> },
                 { id: 'templates', label: 'Modelos & Templates', icon: <Layers className="w-4 h-4" /> },
-                { id: 'editor', label: 'Editor de Variáveis', icon: <Sliders className="w-4 h-4" /> },
-                { id: 'renders', label: 'Fila de Exportação', icon: <Activity className="w-4 h-4" /> }
+                { id: 'editor', label: 'Canva/Figma Video Editor', icon: <Sliders className="w-4 h-4" /> },
+                { id: 'renders', label: 'Fila & Anti-Detecção', icon: <Activity className="w-4 h-4" /> }
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -904,41 +957,129 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* COMPARAÇÃO (PRODUÇÃO MANUAL VS VIRAL FACTORY) */}
+      {/* COMPARAÇÃO (PRODUÇÃO MANUAL VS VIRAL FACTORY - PRÓS E CONTRAS) */}
       <section className="py-24 border-t border-gray-900/40 bg-gray-950/20 max-w-7xl mx-auto px-6 relative z-10 text-center">
         <div className="space-y-4 max-w-2xl mx-auto mb-16">
           <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Comparativo de Eficiência</span>
           <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight">
-            Produção Manual vs Viral Factory
+            Edite <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">centenas de vídeos</span> virais para sua página ao mesmo tempo
           </h2>
           <p className="text-gray-400 text-xs md:text-sm">
-            Entenda numericamente por que continuar editando seus vídeos curtos um a um é o maior gargalo do seu crescimento.
+            Compare o método tradicional e lento com a escala massiva e automatizada do Viral Factory.
           </p>
         </div>
 
-        {/* Comparison Table */}
-        <div className="max-w-4xl mx-auto overflow-hidden rounded-2xl border border-gray-900 bg-gray-950/50 backdrop-blur-md">
-          <div className="grid grid-cols-12 bg-gray-950 p-4 border-b border-gray-900 font-mono text-[10px] text-gray-500 uppercase tracking-wider text-left">
-            <div className="col-span-4 pl-2">Métrica de Operação</div>
-            <div className="col-span-4 text-center">Produção Manual (Tradicional)</div>
-            <div className="col-span-4 text-center text-indigo-400 font-bold">Na Viral Factory</div>
+        {/* Side by Side Pros & Cons Layout */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          
+          {/* SEM VIRAL FACTORY CARD (CONTRAS) */}
+          <div className="bg-gradient-to-b from-red-950/10 to-transparent border border-red-500/10 rounded-2xl p-8 text-left shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-3xl rounded-full pointer-events-none" />
+            
+            <div className="flex items-center gap-2 mb-6 pb-4 border-b border-gray-900/60">
+              <span className="bg-red-500/10 text-red-400 text-[10px] font-mono uppercase px-3 py-1 rounded-lg border border-red-500/25 font-bold flex items-center gap-1.5">
+                <span className="text-[12px]">❌</span> SEM VIRAL FACTORY
+              </span>
+            </div>
+
+            <ul className="space-y-4 text-xs text-gray-400">
+              {[
+                "Edição 1 a 1",
+                "10 a 20 min por post",
+                "Maior risco de identificação de conteúdo inautêntico",
+                "Você trava a página inteira esperando \"dar tempo\" de editar",
+                "Depende de você estar online todo dia pra manter o ritmo"
+              ].map((text, i) => (
+                <li key={i} className="flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0 mt-0.5 text-red-400 font-bold text-[10px]">
+                    ✕
+                  </div>
+                  <span className="leading-relaxed">{text}</span>
+                </li>
+              ))}
+            </ul>
           </div>
 
-          <div className="divide-y divide-gray-900/80 text-left text-xs">
-            {[
-              { metric: 'Tempo para 100 Vídeos', manual: 'Aproximadamente 40 a 50 horas', factory: 'Cerca de 10 a 15 minutos' },
-              { metric: 'Quantidade de Cliques', manual: 'Milhares de ações repetitivas de arrastar/cortar', factory: 'Menos de 10 cliques no lote' },
-              { metric: 'Escalabilidade', manual: 'Limitada ao cansaço físico do editor humano', factory: 'Escala infinita na nuvem concorrente' },
-              { metric: 'Padronização Visual', manual: 'Sujeito a erros de alinhamento e fontes', factory: '100% fiel ao template e marca estabelecidos' },
-              { metric: 'Organização de Lotes', manual: 'Pastas perdidas e bagunça no HD local', factory: 'Sincronizado de forma estruturada por projetos' },
-              { metric: 'Exportação e Processamento', manual: 'Gargalo de render travando seu computador', factory: 'Computação em massa e download pronto na nuvem' }
-            ].map((row, i) => (
-              <div key={i} className="grid grid-cols-12 p-4 items-center hover:bg-gray-900/10 transition">
-                <div className="col-span-4 font-semibold text-gray-300 pl-2">{row.metric}</div>
-                <div className="col-span-4 text-center text-gray-400/80 line-through decoration-red-500/50">{row.manual}</div>
-                <div className="col-span-4 text-center text-indigo-300 font-bold bg-indigo-500/5 py-1.5 rounded-lg border border-indigo-500/10">{row.factory}</div>
-              </div>
-            ))}
+          {/* COM VIRAL FACTORY CARD (PRÓS) */}
+          <div className="bg-gradient-to-b from-indigo-950/20 to-transparent border border-indigo-500/30 rounded-2xl p-8 text-left shadow-2xl relative overflow-hidden ring-1 ring-indigo-500/20">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-3xl rounded-full pointer-events-none" />
+            
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-900/60">
+              <span className="bg-indigo-500/10 text-indigo-300 text-[10px] font-mono uppercase px-3 py-1 rounded-lg border border-indigo-500/25 font-bold flex items-center gap-1.5">
+                <span className="text-[12px]">⚡</span> COM VIRAL FACTORY
+              </span>
+              <span className="bg-emerald-500/10 text-emerald-400 text-[9px] font-mono uppercase px-2 py-0.5 rounded border border-emerald-500/25 font-bold">
+                100x Mais Rápido
+              </span>
+            </div>
+
+            <ul className="space-y-4 text-xs text-gray-300">
+              {[
+                "Edição em massa",
+                "1 minuto para 100 vídeos",
+                "Sistema Anti-Detecção",
+                "Você posta uma semana de conteúdo em uma sentada",
+                "Escala quantas páginas quiser sem precisar contratar editor"
+              ].map((text, i) => (
+                <li key={i} className="flex items-start gap-3 group">
+                  <div className="w-5 h-5 rounded-full bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center shrink-0 mt-0.5 text-indigo-400 font-bold text-[10px] group-hover:scale-110 transition-transform">
+                    ✓
+                  </div>
+                  <span className="leading-relaxed font-medium text-gray-200">{text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+        </div>
+      </section>
+
+      {/* EXEMPLOS DE SUCESSO (AUTOPLAY SMARTPHONE CAROUSEL) */}
+      <section id="exemplos" className="py-24 border-t border-gray-900/40 bg-gray-950/10 max-w-7xl mx-auto px-6 relative z-10 text-center overflow-hidden">
+        <div className="space-y-4 max-w-2xl mx-auto mb-12">
+          <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Nichos Lucrativos</span>
+          <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight">
+            Exemplos de Páginas de Sucesso
+          </h2>
+          <p className="text-gray-400 text-xs md:text-sm">
+            Veja canais reais em diversos nichos escalando visualizações, seguidores e engajamento diariamente com nosso sistema automatizado de edição em lote.
+          </p>
+        </div>
+
+        {/* Carousel Container */}
+        <div className="relative max-w-full mx-auto overflow-hidden">
+          {/* Subtle Ambient light behind visual content */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/5 blur-[120px] pointer-events-none z-0" />
+
+          {/* Infinite Scrolling Track */}
+          <div className="overflow-hidden w-full py-4 relative z-10">
+            <div className="animate-infinite-scroll flex gap-6">
+              {[...examplePages, ...examplePages].map((page, index) => (
+                <div 
+                  key={`${page.id}-${index}`}
+                  className="flex-shrink-0 w-[240px] sm:w-[265px] bg-[#0c0f1a] border-4 border-gray-800/80 rounded-[34px] shadow-xl overflow-hidden p-2 select-none relative group transition-all duration-500 hover:border-indigo-500/60 hover:scale-[1.02]"
+                >
+                  {/* Camera Notch / Speaker Mockup */}
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-24 h-4.5 bg-[#0c0f1a] rounded-b-xl z-30 flex items-center justify-center">
+                    <div className="w-10 h-0.5 bg-gray-800 rounded-full mb-1" />
+                  </div>
+
+                  {/* Vertical Image 9:16 aspect ratio */}
+                  <div className="w-full aspect-[9/16] rounded-[26px] overflow-hidden relative bg-[#06080e]">
+                    <img 
+                      src={`${page.image}?v=2`} 
+                      alt={page.title} 
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                    />
+                    
+                    {/* Subtle dark gradient overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-90 transition-opacity duration-300" />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -993,8 +1134,8 @@ export const LandingPage: React.FC = () => {
                 <img
                   src={testimonials[currentTestimonial].avatar}
                   alt={testimonials[currentTestimonial].name}
-                  referrerPolicy="no-referrer"
                   className="w-10 h-10 rounded-full object-cover border border-indigo-500/30"
+                  referrerPolicy="no-referrer"
                 />
                 <div>
                   <h4 className="text-xs font-bold text-white font-display">{testimonials[currentTestimonial].name}</h4>

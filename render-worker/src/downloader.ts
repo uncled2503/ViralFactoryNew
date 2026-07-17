@@ -47,6 +47,13 @@ export class AssetDownloader {
         return;
       }
 
+      // Check if it's actually a valid URL or local server relative path
+      const isUrlOrPath = url.startsWith('/') || url.startsWith('http://') || url.startsWith('https://');
+      if (!isUrlOrPath) {
+        // Not a download asset, probably raw text content or solid color code
+        return;
+      }
+
       // Format clean, absolute download URL
       let downloadUrl = url;
       if (url.startsWith('/')) {

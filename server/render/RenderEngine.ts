@@ -8,8 +8,9 @@ import { LayerEngine } from './LayerEngine';
 import { TextEngine } from './TextEngine';
 import { ExportEngine } from './ExportEngine';
 import { OutputManager } from './OutputManager';
-
 import { PipelineManager } from './PipelineManager';
+import { LocalDbMutex } from '../database/LocalDbMutex';
+import { RedisService } from '../services/RedisService';
 
 // Initialize server-side Supabase if config is provided
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
@@ -32,6 +33,17 @@ export class RenderEngine {
    * Direct fetching of Project record from Supabase database or Server JSON database
    */
   private static async fetchProject(projectId: string, userId: string): Promise<any> {
+    const cacheKey = `cache:project:${projectId}:${userId}`;
+    try {
+      const cached = await RedisService.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (err) {
+      console.error('[RenderEngine] Cache read error for project:', err);
+    }
+
+    let project: any = null;
     if (supabase) {
       const { data, error } = await supabase
         .from('projects')
@@ -39,27 +51,59 @@ export class RenderEngine {
         .eq('id', projectId)
         .eq('user_id', userId)
         .maybeSingle();
-      if (!error && data) return data;
+      if (!error && data) project = data;
     }
 
-    // Fallback Server database (public/storage/db.json)
-    return this.getLocalDbItem('projects', { id: projectId, user_id: userId });
+    if (!project) {
+      project = this.getLocalDbItem('projects', { id: projectId, user_id: userId });
+    }
+
+    if (project) {
+      try {
+        await RedisService.set(cacheKey, JSON.stringify(project), 60); // Cache for 60 seconds
+      } catch (err) {
+        console.error('[RenderEngine] Cache write error for project:', err);
+      }
+    }
+    return project;
   }
 
   /**
    * Direct fetching of Template record
    */
   private static async fetchTemplate(templateId: string, userId: string): Promise<any> {
+    const cacheKey = `cache:template:${templateId}:${userId}`;
+    try {
+      const cached = await RedisService.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (err) {
+      console.error('[RenderEngine] Cache read error for template:', err);
+    }
+
+    let template: any = null;
     if (supabase) {
       const { data, error } = await supabase
         .from('templates')
         .select('*')
         .eq('id', templateId)
         .maybeSingle();
-      if (!error && data) return data;
+      if (!error && data) template = data;
     }
 
-    return this.getLocalDbItem('templates', { id: templateId });
+    if (!template) {
+      template = this.getLocalDbItem('templates', { id: templateId });
+    }
+
+    if (template) {
+      try {
+        await RedisService.set(cacheKey, JSON.stringify(template), 60); // Cache for 60 seconds
+      } catch (err) {
+        console.error('[RenderEngine] Cache write error for template:', err);
+      }
+    }
+    return template;
   }
 
   /**
@@ -67,10 +111,7 @@ export class RenderEngine {
    */
   private static getLocalDbItem(table: string, filters: Record<string, any>): any {
     try {
-      const dbPath = path.join(process.cwd(), 'public', 'storage', 'db.json');
-      if (!fs.existsSync(dbPath)) return null;
-      
-      const dbData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      const dbData = LocalDbMutex.getDbDataSync();
       const items = dbData[table] || [];
       return items.find((item: any) => 
         Object.entries(filters).every(([key, val]) => item[key] === val)
@@ -124,15 +165,7 @@ export class RenderEngine {
     }
 
     // Always update Server JSON file-database for local/offline preview consistency
-    try {
-      const dbPath = path.join(process.cwd(), 'public', 'storage', 'db.json');
-      const parentDir = path.dirname(dbPath);
-      if (!fs.existsSync(parentDir)) {
-        fs.mkdirSync(parentDir, { recursive: true });
-      }
-
-      const dbData = fs.existsSync(dbPath) ? JSON.parse(fs.readFileSync(dbPath, 'utf8')) : {};
-      
+    await LocalDbMutex.runLocked((dbData) => {
       // Update task list
       if (!dbData.rendering_tasks) dbData.rendering_tasks = [];
       const taskIndex = dbData.rendering_tasks.findIndex((t: any) => t.id === jobId);
@@ -185,10 +218,41 @@ export class RenderEngine {
           dbData.saas_users[userIndex].usageCurrent = dbData.saas_users[userIndex].usage_current;
         }
       }
+    }).catch((e) => {
+      console.error('Failed to sync database:', e);
+    });
 
-      fs.writeFileSync(dbPath, JSON.stringify(dbData, null, 2));
-    } catch (e) {
-      console.error('Failed to sync server db.json file:', e);
+    // --- REDIS SCALE ENGINE EXTENSIONS ---
+    const jobState = {
+      id: jobId,
+      status: status,
+      progress: progress,
+      videoUrl: videoUrl,
+      renderTime: renderTime,
+      errorMsg: errorMsg,
+      logs: logs,
+      updatedAt: timeNow
+    };
+
+    try {
+      // 1. Cache the current job state in Redis with a TTL of 2 minutes
+      await RedisService.set(`job:state:${jobId}`, JSON.stringify(jobState), 120);
+
+      // 2. Push the status change to the Redis Progress Queue (fila de progresso)
+      await RedisService.pushQueue(`queue:progress:${jobId}`, jobState);
+
+      // 3. Publish the job progress update to the cluster via Redis Pub/Sub
+      await RedisService.publish('cluster:job_progress', JSON.stringify({
+        jobId,
+        status,
+        progress,
+        logs,
+        videoUrl,
+        renderTime,
+        errorMsg
+      }));
+    } catch (redisErr: any) {
+      console.error('[RenderEngine] Redis synchronization failed:', redisErr.message);
     }
   }
 
@@ -214,36 +278,31 @@ export class RenderEngine {
     }
 
     // Sync to Server JSON database folders uploads structure
-    try {
-      const dbPath = path.join(process.cwd(), 'public', 'storage', 'db.json');
-      if (fs.existsSync(dbPath)) {
-        const dbData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-        
-        if (!dbData.storage_folders) dbData.storage_folders = [];
-        
-        let renderedFolder = dbData.storage_folders.find((f: any) => f.id === 'fld-rendered');
-        if (!renderedFolder) {
-          renderedFolder = {
-            id: 'fld-rendered',
-            name: 'Vídos Renderizados',
-            path: '/rendered',
-            description: 'Vídeos finais prontos para publicação',
-            files: []
-          };
-          dbData.storage_folders.push(renderedFolder);
-        }
-
-        renderedFolder.files.push({
-          id: `f-rnd-${Date.now()}`,
-          name: `${name.toLowerCase().replace(/\s+/g, '_')}_final.mp4`,
-          size: `${sizeMb.toFixed(1)} MB`,
-          type: 'render',
-          url: url,
-          createdAt: timestamp
-        });
-
-        fs.writeFileSync(dbPath, JSON.stringify(dbData, null, 2));
+    await LocalDbMutex.runLocked((dbData) => {
+      if (!dbData.storage_folders) dbData.storage_folders = [];
+      
+      let renderedFolder = dbData.storage_folders.find((f: any) => f.id === 'fld-rendered');
+      if (!renderedFolder) {
+        renderedFolder = {
+          id: 'fld-rendered',
+          name: 'Vídos Renderizados',
+          path: '/rendered',
+          description: 'Vídeos finais prontos para publicação',
+          files: []
+        };
+        dbData.storage_folders.push(renderedFolder);
       }
-    } catch (e) {}
+
+      renderedFolder.files.push({
+        id: `f-rnd-${Date.now()}`,
+        name: `${name.toLowerCase().replace(/\s+/g, '_')}_final.mp4`,
+        size: `${sizeMb.toFixed(1)} MB`,
+        type: 'render',
+        url: url,
+        createdAt: timestamp
+      });
+    }).catch((e) => {
+      console.error('Failed to sync database folder registration:', e);
+    });
   }
 }

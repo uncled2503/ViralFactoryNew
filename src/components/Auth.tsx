@@ -328,13 +328,8 @@ export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
         {/* Database Security info block */}
         <div className="mt-4 text-center space-y-2">
           <p className="text-[10px] text-gray-500/80 font-mono">
-            Conexão com banco de dados ativa e criptografada.
+            Conexão com banco de dados ativa e criptografada via Supabase.
           </p>
-          <div className="inline-block px-3 py-1.5 bg-indigo-500/5 border border-indigo-500/10 rounded-lg text-[11px] text-indigo-300 font-sans max-w-xs mx-auto">
-            <span className="font-semibold block text-white text-[10px] uppercase tracking-wider mb-0.5">Acesso de Administrador</span>
-            E-mail: <code className="text-white font-mono bg-slate-950 px-1 py-0.5 rounded">mouragabriel2011@gmail.com</code> <br />
-            Senha: <code className="text-white font-mono bg-slate-950 px-1 py-0.5 rounded">admin123</code>
-          </div>
         </div>
       </div>
     </div>

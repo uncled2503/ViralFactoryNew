@@ -202,14 +202,16 @@ export class FFmpegAnimationEngine {
       // We skip building infinite expressions here for speed unless explicitly demanded
     }
 
+    const escapeCommas = (str: string) => str.replace(/,/g, '\\,');
+
     return {
-      x: xExpr,
-      y: yExpr,
-      alpha: alphaExpr,
-      scaleW: scaleWExpr,
-      scaleH: scaleHExpr,
-      rotation: rotationExpr,
-      videoFiltersBeforeOverlay: beforeFilters
+      x: escapeCommas(xExpr),
+      y: escapeCommas(yExpr),
+      alpha: escapeCommas(alphaExpr),
+      scaleW: escapeCommas(scaleWExpr),
+      scaleH: escapeCommas(scaleHExpr),
+      rotation: escapeCommas(rotationExpr),
+      videoFiltersBeforeOverlay: beforeFilters.map(escapeCommas)
     };
   }
 }

@@ -1,71 +1,12 @@
 import { supabaseAdmin, isSupabaseConfigured } from '../database/supabaseClient';
-import fs from 'fs';
-import path from 'path';
-
-const MOCK_DB_PATH = path.join(process.cwd(), 'public', 'storage', 'admin_mock_db.json');
-
-function ensureMockDb() {
-  const parent = path.dirname(MOCK_DB_PATH);
-  if (!fs.existsSync(parent)) {
-    fs.mkdirSync(parent, { recursive: true });
-  }
-  if (!fs.existsSync(MOCK_DB_PATH)) {
-    const initialData = {
-      users: [
-        {
-          id: 'usr-001',
-          name: 'Gabriel Moura',
-          email: 'mouragabriel2011@gmail.com',
-          company: 'Viral S.A.',
-          role: 'owner',
-          avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
-          subscription_tier: 'Pro',
-          status: 'active',
-          usage_current: 0,
-          usage_limit: 100,
-          storage_used_mb: 0,
-          templates_used: 0,
-          projects_active: 0,
-          created_at: new Date().toISOString()
-        }
-      ],
-      jobs: [],
-      workers: [],
-      invoices: [],
-      support_tickets: [],
-      audit_logs: [],
-      coupons: [],
-      settings: [
-        { id: 's-1', key: 'saas_name', value: 'Viral Factory', description: 'Nome da plataforma SaaS' },
-        { id: 's-2', key: 'saas_email', value: 'support@viralfactory.com', description: 'E-mail oficial' },
-        { id: 's-3', key: 'stripe_secret_key', value: '', description: 'Chave secreta do Stripe' },
-        { id: 's-4', key: 'feature_flags', value: JSON.stringify({ aiSubtitles: true, batchRenders: false, stripeLive: false, offlineFallbackAuth: true, telemetryLogs: false }), description: 'FeatureFlags dinâmicas' }
-      ]
-    };
-    fs.writeFileSync(MOCK_DB_PATH, JSON.stringify(initialData, null, 2));
-  }
-}
-
-function readMockDb(): any {
-  ensureMockDb();
-  try {
-    return JSON.parse(fs.readFileSync(MOCK_DB_PATH, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-function writeMockDb(data: any) {
-  ensureMockDb();
-  fs.writeFileSync(MOCK_DB_PATH, JSON.stringify(data, null, 2));
-}
+import { LocalDbMutex } from '../database/LocalDbMutex';
 
 function mapDbUserToFrontendUser(u: any): any {
   if (!u) return null;
   const subscription = u.subscription_tier || u.subscription || 'Starter';
   const avatarUrl = u.avatar_url || u.avatarUrl || '';
   const usageCurrent = u.usage_current !== undefined ? u.usage_current : (u.usageCurrent || 0);
-  const usageLimit = u.usage_limit !== undefined ? u.usage_limit : (u.usageLimit || 5);
+  const usageLimit = u.usage_limit !== undefined ? u.usage_limit : (u.usageLimit || 100);
   const storageUsedMB = u.storage_used_mb !== undefined ? u.storage_used_mb : (u.storageUsedMB || 0);
   const templatesUsed = u.templates_used !== undefined ? u.templates_used : (u.templatesUsed || 0);
   const projectsActive = u.projects_active !== undefined ? u.projects_active : (u.projectsActive || 0);
@@ -133,14 +74,12 @@ export class AdminRepository {
         if (!error && data && data.length > 0) {
           return data.map(mapDbUserToFrontendUser);
         }
-        // Graceful warning rather than loud error
-        console.warn('Supabase saas_users read failed, using mock database fallback.');
       } catch (err) {
-        console.warn('getUsers Supabase error, using mock database fallback:', err);
+        console.error('getUsers Supabase error:', err);
       }
     }
-    const db = readMockDb();
-    return (db.users || []).map(mapDbUserToFrontendUser);
+    const db = LocalDbMutex.getDbDataSync();
+    return (db.saas_users || []).map(mapDbUserToFrontendUser);
   }
 
   /**
@@ -160,23 +99,20 @@ export class AdminRepository {
         if (!error && data) {
           return mapDbUserToFrontendUser(data);
         }
-        console.warn('Supabase saas_users update failed, updating mock database.');
       } catch (err) {
-        console.warn('updateUser Supabase error, fallback to mock database:', err);
+        console.error('updateUser Supabase error:', err);
       }
     }
-
-    const db = readMockDb();
-    const index = db.users.findIndex((u: any) => u.id === id);
+    const db = LocalDbMutex.getDbDataSync();
+    const users = db.saas_users || db.users || [];
+    const index = users.findIndex((u: any) => u.id === id);
     if (index !== -1) {
-      const existing = db.users[index];
       const updated = {
-        ...existing,
+        ...users[index],
         ...mapFrontendUserToDbUser(updateData),
-        id // enforce original ID
+        id
       };
-      db.users[index] = updated;
-      writeMockDb(db);
+      users[index] = updated;
       return mapDbUserToFrontendUser(updated);
     }
     return null;
@@ -196,20 +132,15 @@ export class AdminRepository {
         if (!error) {
           return true;
         }
-        console.warn('Supabase saas_users delete failed, deleting from mock database.');
       } catch (err) {
-        console.warn('deleteUser Supabase error, fallback to mock database:', err);
+        console.error('deleteUser Supabase error:', err);
       }
     }
-
-    const db = readMockDb();
-    const originalLength = db.users.length;
-    db.users = db.users.filter((u: any) => u.id !== id);
-    if (db.users.length !== originalLength) {
-      writeMockDb(db);
-      return true;
-    }
-    return false;
+    const db = LocalDbMutex.getDbDataSync();
+    const lenBefore = db.saas_users.length;
+    db.saas_users = db.saas_users.filter((u: any) => u.id !== id);
+    db.users = db.saas_users;
+    return db.saas_users.length !== lenBefore;
   }
 
   /**
@@ -226,13 +157,11 @@ export class AdminRepository {
         if (!error && data && data.length > 0) {
           return data;
         }
-        console.warn('Supabase rendering_tasks read failed, fallback to mock database.');
       } catch (err) {
-        console.warn('getJobs Supabase error, fallback to mock database:', err);
+        console.error('getJobs Supabase error:', err);
       }
     }
-    const db = readMockDb();
-    return db.jobs || [];
+    return LocalDbMutex.getDbDataSync().rendering_tasks || [];
   }
 
   /**
@@ -249,13 +178,11 @@ export class AdminRepository {
         if (!error && data && data.length > 0) {
           return data;
         }
-        console.warn('Supabase render_workers read failed, fallback to mock database.');
       } catch (err) {
-        console.warn('getWorkers Supabase error, fallback to mock database:', err);
+        console.error('getWorkers Supabase error:', err);
       }
     }
-    const db = readMockDb();
-    return db.workers || [];
+    return [];
   }
 
   /**
@@ -272,13 +199,11 @@ export class AdminRepository {
         if (!error && data && data.length > 0) {
           return data;
         }
-        console.warn('Supabase saas_support_tickets read failed, fallback to mock database.');
       } catch (err) {
-        console.warn('getSupportTickets Supabase error, fallback to mock database:', err);
+        console.error('getSupportTickets Supabase error:', err);
       }
     }
-    const db = readMockDb();
-    return db.support_tickets || [];
+    return LocalDbMutex.getDbDataSync().support_tickets || [];
   }
 
   /**
@@ -295,13 +220,11 @@ export class AdminRepository {
         if (!error && data && data.length > 0) {
           return data;
         }
-        console.warn('Supabase saas_audit_logs read failed, fallback to mock database.');
       } catch (err) {
-        console.warn('getAuditLogs Supabase error, fallback to mock database:', err);
+        console.error('getAuditLogs Supabase error:', err);
       }
     }
-    const db = readMockDb();
-    return db.audit_logs || [];
+    return LocalDbMutex.getDbDataSync().audit_logs || [];
   }
 
   /**
@@ -312,28 +235,36 @@ export class AdminRepository {
       try {
         const { data, error } = await supabaseAdmin
           .from('saas_audit_logs')
-          .insert(log)
+          .insert({
+            admin_name: log.admin_name || 'System',
+            action: log.action || 'ACTION',
+            target_user: log.target_user || 'SYSTEM',
+            ip: log.ip || '127.0.0.1',
+            status: log.status || 'SUCCESS',
+            timestamp: log.timestamp || new Date().toISOString()
+          })
           .select()
           .maybeSingle();
 
         if (!error && data) {
           return data;
         }
-        console.warn('Supabase saas_audit_logs insert failed, fallback to mock database.');
       } catch (err) {
-        console.warn('createAuditLog Supabase error, fallback to mock database:', err);
+        console.error('createAuditLog Supabase error:', err);
       }
     }
-
-    const db = readMockDb();
+    const db = LocalDbMutex.getDbDataSync();
     const newLog = {
       id: `log-${Math.random().toString(36).substr(2, 9)}`,
-      ...log,
+      admin_name: log.admin_name || 'System',
+      action: log.action || 'ACTION',
+      target_user: log.target_user || 'SYSTEM',
+      ip: log.ip || '127.0.0.1',
+      status: log.status || 'SUCCESS',
       timestamp: log.timestamp || new Date().toISOString()
     };
     if (!db.audit_logs) db.audit_logs = [];
     db.audit_logs.unshift(newLog);
-    writeMockDb(db);
     return newLog;
   }
 
@@ -351,13 +282,11 @@ export class AdminRepository {
         if (!error && data && data.length > 0) {
           return data;
         }
-        console.warn('Supabase saas_coupons read failed, fallback to mock database.');
       } catch (err) {
-        console.warn('getCoupons Supabase error, fallback to mock database:', err);
+        console.error('getCoupons Supabase error:', err);
       }
     }
-    const db = readMockDb();
-    return db.coupons || [];
+    return LocalDbMutex.getDbDataSync().coupons || [];
   }
 
   /**
@@ -374,13 +303,11 @@ export class AdminRepository {
         if (!error && data && data.length > 0) {
           return data;
         }
-        console.warn('Supabase saas_invoices read failed, fallback to mock database.');
       } catch (err) {
-        console.warn('getInvoices Supabase error, fallback to mock database:', err);
+        console.error('getInvoices Supabase error:', err);
       }
     }
-    const db = readMockDb();
-    return db.invoices || [];
+    return LocalDbMutex.getDbDataSync().invoices || [];
   }
 
   /**
@@ -390,19 +317,28 @@ export class AdminRepository {
     if (isSupabaseConfigured() && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
-          .from('settings')
+          .from('configuration')
           .select('*');
 
         if (!error && data && data.length > 0) {
-          return data;
+          return data.map(r => ({
+            id: `cfg-${r.key_name}`,
+            key: r.key_name,
+            value: r.key_value,
+            description: ''
+          }));
         }
-        console.warn('Supabase settings read failed, fallback to mock database.');
       } catch (err) {
-        console.warn('getSettings Supabase error, fallback to mock database:', err);
+        console.error('getSettings Supabase error:', err);
       }
     }
-    const db = readMockDb();
-    return db.settings || [];
+    const db = LocalDbMutex.getDbDataSync();
+    return (db.settings || []).map((s: any) => ({
+      id: s.id,
+      key: s.key,
+      value: s.value,
+      description: s.description || ''
+    }));
   }
 
   /**
@@ -412,21 +348,28 @@ export class AdminRepository {
     if (isSupabaseConfigured() && supabaseAdmin) {
       try {
         const { data, error } = await supabaseAdmin
-          .from('settings')
-          .upsert({ key, value, description, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+          .from('configuration')
+          .upsert({ 
+            key_name: key, 
+            key_value: typeof value === 'string' ? value : JSON.stringify(value), 
+            updated_at: new Date().toISOString() 
+          }, { onConflict: 'key_name' })
           .select()
           .maybeSingle();
 
         if (!error && data) {
-          return data;
+          return {
+            id: `cfg-${data.key_name}`,
+            key: data.key_name,
+            value: data.key_value,
+            description: description || ''
+          };
         }
-        console.warn('Supabase settings save failed, fallback to mock database.');
       } catch (err) {
-        console.warn('updateSetting Supabase error, fallback to mock database:', err);
+        console.error('updateSetting Supabase error:', err);
       }
     }
-
-    const db = readMockDb();
+    const db = LocalDbMutex.getDbDataSync();
     if (!db.settings) db.settings = [];
     const index = db.settings.findIndex((s: any) => s.key === key);
     const updated = {
@@ -440,7 +383,6 @@ export class AdminRepository {
     } else {
       db.settings.push(updated);
     }
-    writeMockDb(db);
     return updated;
   }
 
@@ -450,8 +392,6 @@ export class AdminRepository {
   static async getStorageStats(): Promise<any> {
     let assetsCount = 0;
     let assetsSize = 0;
-    let outputsCount = 0;
-    let outputsSize = 0;
 
     if (isSupabaseConfigured() && supabaseAdmin) {
       try {
@@ -464,35 +404,13 @@ export class AdminRepository {
           assetsSize = assets.reduce((acc, a) => acc + Number(a.size_mb || 0), 0);
         }
       } catch (err) {
-        console.warn('getStorageStats assets Supabase error, using mock fallback values:', err);
-      }
-
-      try {
-        const { data: outputs, error: outputError } = await supabaseAdmin
-          .from('render_outputs')
-          .select('size_mb');
-
-        if (!outputError && outputs) {
-          outputsCount = outputs.length;
-          outputsSize = outputs.reduce((acc, o) => acc + Number(o.size_mb || 0), 0);
-        }
-      } catch (err) {
-        console.warn('getStorageStats render_outputs Supabase error, using mock fallback values:', err);
-      }
-
-      // If we got valid results from either table, return them
-      if (assetsCount > 0 || outputsCount > 0) {
-        return {
-          totalSizeMB: assetsSize + outputsSize,
-          filesCount: assetsCount + outputsCount
-        };
+        console.error('getStorageStats assets Supabase error:', err);
       }
     }
 
-    // Default empty storage fallback if tables are missing or empty
     return {
-      totalSizeMB: 0,
-      filesCount: 0
+      totalSizeMB: parseFloat(assetsSize.toFixed(2)),
+      filesCount: assetsCount
     };
   }
 }

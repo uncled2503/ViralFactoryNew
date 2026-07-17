@@ -20,6 +20,36 @@ router.delete('/users/:id', AdminController.deleteUser);
 router.get('/jobs', AdminController.getJobs);
 router.get('/workers', AdminController.getWorkers);
 
+// Auto Scaling Management
+router.get('/autoscaling', (req, res) => {
+  const { AutoScalingService } = require('../services/AutoScalingService');
+  res.json(AutoScalingService.getMetrics());
+});
+
+router.post('/autoscaling/config', (req, res) => {
+  const { AutoScalingService } = require('../services/AutoScalingService');
+  AutoScalingService.updateConfig(req.body);
+  res.json({ success: true, config: AutoScalingService.getConfig() });
+});
+
+router.post('/autoscaling/scale-up', (req, res) => {
+  const { AutoScalingService } = require('../services/AutoScalingService');
+  const success = AutoScalingService.scaleUp(0, 100);
+  res.json({ success, message: success ? 'Scale up forçado com sucesso.' : 'Limite de workers atingido.' });
+});
+
+router.post('/autoscaling/scale-down', (req, res) => {
+  const { AutoScalingService } = require('../services/AutoScalingService');
+  const success = AutoScalingService.scaleDown();
+  res.json({ success, message: success ? 'Scale down forçado com sucesso.' : 'Nenhum worker elástico ocioso para desligar.' });
+});
+
+router.post('/autoscaling/clear', (req, res) => {
+  const { AutoScalingService } = require('../services/AutoScalingService');
+  AutoScalingService.clearHistory();
+  res.json({ success: true });
+});
+
 // Storage Management
 router.get('/storage', AdminController.getStorage);
 
@@ -38,5 +68,17 @@ router.post('/settings', AdminValidators.validateSetting, AdminController.saveSe
 
 // Audit Logs
 router.get('/audit-logs', AdminController.getAuditLogs);
+
+// Redis Performance Metrics & Status Control
+router.get('/redis', (req, res) => {
+  const { RedisService } = require('../services/RedisService');
+  res.json(RedisService.healthCheck());
+});
+
+router.post('/redis/reconnect', (req, res) => {
+  const { RedisService } = require('../services/RedisService');
+  RedisService.forceReconnect();
+  res.json({ success: true, message: 'Reconexão forçada com sucesso.' });
+});
 
 export const adminRouter = router;

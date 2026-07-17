@@ -74,3 +74,24 @@ html, body, #root {
 .glow-btn:hover::after {
   opacity: 1;
 }
+
+/* Infinite Scrolling Carousel Animation */
+@keyframes infiniteScroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-50% - 12px)); /* -50% minus half of the gap-6 (12px) to make the transition perfectly seamless */
+  }
+}
+
+.animate-infinite-scroll {
+  display: flex;
+  width: max-content;
+  animation: infiniteScroll 35s linear infinite;
+}
+
+.animate-infinite-scroll:hover {
+  animation-play-state: paused;
+}
+

@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # REDIS: High Performance Memory Cache & PubSub
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: viralfactory-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --loglevel warning
+    volumes:
+      - redis-data:/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================
+  # COORDINATOR: Full-Stack Web App & WS Server
+  # ==========================================
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: viralfactory-coordinator
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_ENABLED=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
+      # Set your API keys in a local .env file before running
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-https://your-project-id.supabase.co}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - storage-data:/app/public/storage
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================
+  # RENDER WORKER: FFmpeg Video Renderer Node
+  # ==========================================
+  worker:
+    build:
+      context: ./render-worker
+      dockerfile: Dockerfile
+    container_name: viralfactory-worker
+    environment:
+      - NODE_ENV=production
+      - API_URL=http://coordinator:3000
+      - WS_URL=ws://coordinator:3000/ws/worker
+      - FFMPEG_PATH=ffmpeg
+      - JOB_TIMEOUT_MINUTES=10
+      - WORKER_ID=docker-local-worker
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD", "ffmpeg", "-version"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  redis-data:
+    driver: local
+  storage-data:
+    driver: local

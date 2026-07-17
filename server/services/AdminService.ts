@@ -1,10 +1,11 @@
 import { AdminRepository } from '../repositories/AdminRepository';
+import { WorkerWebSocketServer } from '../render/WorkerWebSocketServer';
 
 export class AdminService {
   static async getDashboardSummary() {
     const users = await AdminRepository.getUsers();
     const jobs = await AdminRepository.getJobs();
-    const workers = await AdminRepository.getWorkers();
+    const workers = await WorkerWebSocketServer.getWorkers();
     const invoices = await AdminRepository.getInvoices();
     const storage = await AdminRepository.getStorageStats();
 
@@ -82,7 +83,7 @@ export class AdminService {
   }
 
   static async getWorkers() {
-    return AdminRepository.getWorkers();
+    return WorkerWebSocketServer.getWorkers();
   }
 
   static async getStorageStats() {

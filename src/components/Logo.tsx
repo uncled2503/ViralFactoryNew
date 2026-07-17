@@ -13,9 +13,9 @@ interface LogoProps {
 export const LogoIcon: React.FC<LogoProps> = ({ className = '', size = 40 }) => {
   return (
     <img
-      src="/fotos/logo_simbolo.png"
+      src="/fotos/logocomnome2.png"
       alt="Viral Factory Symbol"
-      style={{ width: size, height: size }}
+      style={{ width: size * 0.25, height: size * 0.25 }}
       className={`shrink-0 object-contain rounded-lg ${className}`}
       referrerPolicy="no-referrer"
     />
@@ -37,9 +37,9 @@ export const LogoFull: React.FC<LogoFullProps> = ({
   return (
     <div className={`flex items-center ${className}`}>
       <img
-        src="/fotos/logo_com_nome.png"
+        src="/fotos/logocomnome2.png"
         alt="Viral Factory Logo"
-        style={{ height: iconSize }}
+        style={{ height: iconSize * 0.25 }}
         className="shrink-0 object-contain"
         referrerPolicy="no-referrer"
       />

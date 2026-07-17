@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator-deployment
+  namespace: viralfactory
+  labels:
+    app: coordinator
+    tier: api
+spec:
+  replicas: 2 # Ensures High Availability (HA) across nodes
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1       # Spin up exactly 1 new container before terminating old ones
+      maxUnavailable: 0 # Guarantee zero-downtime during rolling deployments
+  selector:
+    matchLabels:
+      app: coordinator
+  template:
+    metadata:
+      labels:
+        app: coordinator
+    spec:
+      containers:
+        - name: coordinator
+          image: viralfactory-coordinator:latest # Tag with your container registry (e.g., gcr.io/your-project/coordinator:v1)
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          # Environmental configurations loaded dynamically
+          envFrom:
+            - configMapRef:
+                name: viralfactory-config
+            - secretRef:
+                name: viralfactory-secrets
+          env:
+            - name: REDIS_URL
+              value: "redis://redis-service.viralfactory.svc.cluster.local:6379"
+          # Health Checks (Zero-Downtime Verification)
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+          # Persistent Storage Mount
+          volumeMounts:
+            - name: storage-volume
+              mountPath: /app/public/storage
+      volumes:
+        - name: storage-volume
+          persistentVolumeClaim:
+            claimName: viralfactory-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator-service
+  namespace: viralfactory
+  labels:
+    app: coordinator
+spec:
+  type: ClusterIP # Internal cluster access. External access is routed through Ingress.
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http
+  selector:
+    app: coordinator
