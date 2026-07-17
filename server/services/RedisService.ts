@@ -75,27 +75,30 @@ export class RedisService {
   }
 
   /**
-   * Builds the Redis client instances respecting the priority of REDIS_URL and TLS configuration.
-   */
-  private static rebuildClients(): void {
-    let redisUrl = process.env.REDIS_URL ? process.env.REDIS_URL.trim() : undefined;
-    if (redisUrl) {
-      // Strip outer double or single quotes if they got parsed literally
-      if ((redisUrl.startsWith('"') && redisUrl.endsWith('"')) || 
-          (redisUrl.startsWith("'") && redisUrl.endsWith("'"))) {
-        redisUrl = redisUrl.slice(1, -1).trim();
-      }
+   /**
+ * Builds the Redis client instances respecting the priority of REDIS_URL and TLS configuration.
+ */
+private static rebuildClients(): void {
+  let redisUrl = process.env.REDIS_URL ? process.env.REDIS_URL.trim() : undefined;
+
+  console.log("================================");
+  console.log("REDIS_URL :", process.env.REDIS_URL);
+  console.log("REDIS_HOST:", process.env.REDIS_HOST);
+  console.log("REDIS_PORT:", process.env.REDIS_PORT);
+  console.log("REDIS_TLS :", process.env.REDIS_TLS);
+  console.log("================================");
+
+  if (redisUrl) {
+    // Strip outer double or single quotes if they got parsed literally
+    if (
+      (redisUrl.startsWith('"') && redisUrl.endsWith('"')) ||
+      (redisUrl.startsWith("'") && redisUrl.endsWith("'"))
+    ) {
+      redisUrl = redisUrl.slice(1, -1).trim();
     }
 
-    // Fall back if URL is empty, "undefined", "null", or lacks a valid redis protocol scheme
-    if (redisUrl === '' || redisUrl === 'undefined' || redisUrl === 'null') {
-      redisUrl = undefined;
-    }
-
-    if (redisUrl && !redisUrl.startsWith('redis://') && !redisUrl.startsWith('rediss://')) {
-      console.warn(`[RedisService] Ignoring invalid REDIS_URL scheme: "${redisUrl}". Falling back to host/port config.`);
-      redisUrl = undefined;
-    }
+    console.log("REDIS_URL após trim:", redisUrl);
+  }
 
     const redisHost = process.env.REDIS_HOST || '127.0.0.1';
     const redisPort = parseInt(process.env.REDIS_PORT || '6379', 10);
@@ -167,33 +170,39 @@ export class RedisService {
   /**
    * Performs an asynchronous validation of the connection.
    */
-  private static async validateConnection(): Promise<void> {
-    if (!this.client) return;
-    try {
-      // Validate with a PING command and 2-second timeout
-      const pingResult = await Promise.race([
-        this.client.ping(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 2000))
-      ]);
+private static async validateConnection(): Promise<void> {
+  if (!this.client) return;
 
-      if (pingResult === 'PONG') {
-        this.status = 'connected';
-        this.circuitState = 'CLOSED';
-        this.consecutiveFailures = 0;
-        console.log('[RedisService] REDIS_CONNECTED');
-        if (this.reconnectTimer) {
-          clearInterval(this.reconnectTimer);
-          this.reconnectTimer = null;
-        }
-      } else {
-        throw new Error(`Unexpected ping response: ${pingResult}`);
-      }
-    } catch (err: any) {
-      console.error('[RedisService] Validation check failed:', err.message);
-      this.tripCircuit('validation_failed');
+  try {
+    await this.client.connect().catch(() => {});
+
+    await new Promise(resolve => {
+      if (this.client!.status === "ready") return resolve(null);
+
+      this.client!.once("ready", resolve);
+      this.client!.once("error", resolve);
+    });
+
+    console.log("Redis status:", this.client.status);
+
+    const pingResult = await this.client.ping();
+
+    if (pingResult === "PONG") {
+      this.status = "connected";
+      this.circuitState = "CLOSED";
+      this.consecutiveFailures = 0;
+
+      console.log("[RedisService] REDIS_CONNECTED");
+      return;
     }
-  }
 
+    throw new Error("Ping retornou " + pingResult);
+
+  } catch (err: any) {
+    console.error(err);
+    this.tripCircuit("validation_failed");
+  }
+}
   /**
    * Trips the Circuit Breaker to OPEN state, enabling memory fallback.
    */

@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-07-17T08:09:18.326Z",
+  "status": "SUCCESS",
+  "migrated_entities": {
+    "users": 0,
+    "projects": 0,
+    "templates": 0,
+    "rendering_tasks": 0,
+    "invoices": 0,
+    "coupons": 0,
+    "support_tickets": 0,
+    "audit_logs": 0,
+    "configurations": 0
+  },
+  "errors": []
+}
