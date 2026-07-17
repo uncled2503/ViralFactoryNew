@@ -26,36 +26,25 @@ export class SupabaseStorageService {
     }
 
     try {
-  console.log("================================");
-  console.log("SUPABASE_URL:", supabaseUrl);
-  console.log("SERVICE_ROLE_KEY:", supabaseServiceKey.substring(0, 40) + "...");
-  console.log("================================");
+      this.supabase = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      });
+      this.isInitialized = true;
+      console.log(`[SupabaseStorageService] Supabase Storage successfully initialized with Service Role Key.`);
 
-  this.supabase = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-
-  this.isInitialized = true;
-  console.log("[SupabaseStorageService] Supabase Storage successfully initialized with Service Role Key.");
-
-  this.ensureBucketsExist().catch(err => {
-    console.warn("[SupabaseStorageService] Non-blocking bucket verification completed/failed:", err.message);
-  });
-
-} catch (err: any) {
-  console.error("[SupabaseStorageService] Failed to initialize Supabase client:", err.message);
-  this.supabase = null;
-  this.isInitialized = true;
-}   // <- fecha o catch
-
-}   // <- ESTA CHAVE ESTÁ FALTANDO. Ela fecha o método init()
-
-/**
- * Checks if Supabase Storage is fully configured and operational
- */
+      // Attempt to programmatically ensure buckets exist in the background
+      this.ensureBucketsExist().catch(err => {
+        console.warn('[SupabaseStorageService] Non-blocking bucket verification completed/failed:', err.message);
+      });
+    } catch (err: any) {
+      console.error('[SupabaseStorageService] Failed to initialize Supabase client:', err.message);
+      this.supabase = null;
+      this.isInitialized = true;
+    }
+  }
 
   /**
    * Checks if Supabase Storage is fully configured and operational
@@ -69,26 +58,49 @@ export class SupabaseStorageService {
    * Programmatically ensures required separate buckets exist: rendered, previews, thumbnails, assets
    */
   private static async ensureBucketsExist() {
-  if (!this.supabase) return;
-
-  console.log("================================");
-  console.log("TESTANDO CONEXÃO COM O STORAGE...");
-  console.log("================================");
-
-  try {
-    const { data, error } = await this.supabase.storage.listBuckets();
-
-    console.log("LIST BUCKETS DATA:");
-    console.log(data);
-
-    console.log("LIST BUCKETS ERROR:");
-    console.log(error);
-
-  } catch (err: any) {
-    console.log("LIST BUCKETS CATCH:");
-    console.log(err);
+    if (!this.supabase) return;
+    const requiredBuckets = ['rendered', 'previews', 'thumbnails', 'assets'];
+    
+    for (const bucket of requiredBuckets) {
+      try {
+        const { data, error } = await this.supabase.storage.getBucket(bucket);
+        if (error) {
+          const errMsg = error.message || '';
+          if (errMsg.toLowerCase().includes('signature') || errMsg.toLowerCase().includes('jwt') || errMsg.toLowerCase().includes('verification failed') || errMsg.toLowerCase().includes('invalid token')) {
+            console.log(`[SupabaseStorageService] Invalid service role key or signature error detected during bucket lookup (${errMsg}). Disabling Supabase Storage features and falling back to local.`);
+            this.supabase = null;
+            return;
+          }
+        }
+        if (error || !data) {
+          console.log(`[SupabaseStorageService] Bucket "${bucket}" not found. Creating bucket...`);
+          const { error: createError } = await this.supabase.storage.createBucket(bucket, {
+            public: false, // Default to private for secure signed URL operations
+          });
+          if (createError) {
+            const createErrMsg = createError.message || '';
+            if (createErrMsg.toLowerCase().includes('signature') || createErrMsg.toLowerCase().includes('jwt') || createErrMsg.toLowerCase().includes('verification failed') || createErrMsg.toLowerCase().includes('invalid token')) {
+              console.log(`[SupabaseStorageService] Invalid service role key or signature error detected during bucket creation (${createErrMsg}). Disabling Supabase Storage features and falling back to local.`);
+              this.supabase = null;
+              return;
+            }
+            console.warn(`[SupabaseStorageService] Bucket "${bucket}" creation skipped (probably exists or lacking permissions):`, createError.message);
+          } else {
+            console.log(`[SupabaseStorageService] Bucket "${bucket}" created successfully (private).`);
+          }
+        }
+      } catch (err: any) {
+        const errMsg = err.message || '';
+        if (errMsg.toLowerCase().includes('signature') || errMsg.toLowerCase().includes('jwt') || errMsg.toLowerCase().includes('verification failed') || errMsg.toLowerCase().includes('invalid token')) {
+          console.log(`[SupabaseStorageService] Invalid service role key or signature error detected during bucket lookup catch (${errMsg}). Disabling Supabase Storage features and falling back to local.`);
+          this.supabase = null;
+          return;
+        }
+        console.warn(`[SupabaseStorageService] Verification error for bucket "${bucket}":`, err.message);
+      }
+    }
   }
-}
+
   /**
    * Resolves folder and file names to the corresponding separate bucket and path
    * Supports:
