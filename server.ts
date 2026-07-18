@@ -14,6 +14,7 @@ import { SupabaseStorageService } from './server/services/SupabaseStorageService
 import { ExportPresetManager } from './server/render/ExportPresetManager';
 import { SupabaseDbService } from './server/database/SupabaseDbService';
 import { LocalDbMutex } from './server/database/LocalDbMutex';
+import { supabaseAdmin, isSupabaseConfigured } from './server/database/supabaseClient';
 
 async function startServer() {
   const app = express();
@@ -557,23 +558,306 @@ async function startServer() {
     res.json({ success: true, message: 'Job cancellation requested' });
   });
 
+  // Helper to extract authenticated user from Authorization Bearer token (Supabase Auth)
+  // falls back to query/body parameter with strict validation
+  async function getAuthenticatedUser(req: express.Request): Promise<{ userId: string; email: string | null } | null> {
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      if (isSupabaseConfigured() && supabaseAdmin) {
+        try {
+          const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+          if (!error && user) {
+            return { userId: user.id, email: user.email || null };
+          }
+        } catch (e: any) {
+          console.error('[Auth Helper] Supabase JWT verification failed:', e.message);
+        }
+      }
+    }
+    
+    // Fallback to query/body parameters for sandbox/local-only or backward-compatible development
+    const userId = (req.query.userId || req.body.userId) as string;
+    if (!userId) return null;
+    
+    // Find user in cachedDbData to obtain email if possible
+    try {
+      const dbData = await LocalDbMutex.loadDb();
+      const users = dbData.saas_users || dbData.users || [];
+      const userObj = users.find((u: any) => u.id === userId);
+      return { userId, email: userObj?.email || null };
+    } catch {
+      return { userId, email: null };
+    }
+  }
+
   // Sync server database from/to client localStorage states when requested
   app.get('/api/db/sync', async (req, res) => {
     try {
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Identificação de usuário ausente ou inválida.' });
+        return;
+      }
+
+      const { userId, email: userEmail } = authUser;
       const dbData = await LocalDbMutex.loadDb();
-      res.json(dbData);
+
+      // Return a carefully filtered, tenant-isolated snapshot of the database to prevent leakage
+      const filteredData = {
+        saas_users: (dbData.saas_users || []).filter((u: any) => u && u.id === userId),
+        users: (dbData.users || []).filter((u: any) => u && u.id === userId),
+        projects: (dbData.projects || []).filter((p: any) => p && (p.userId === userId || p.user_id === userId)),
+        rendering_tasks: (dbData.rendering_tasks || []).filter((t: any) => t && (t.userId === userId || t.user_id === userId)),
+        invoices: (dbData.invoices || []).filter((inv: any) => inv && (inv.userId === userId || inv.user_id === userId)),
+        templates: (dbData.templates || []).filter((t: any) => t && (t.is_public || t.userId === userId || t.user_id === userId || !t.userId)),
+        settings: (dbData.settings || []).filter((s: any) => s && s.key !== 'stripe_secret_key' && s.key !== 'stripe_webhook_secret' && !s.key.includes('key') && !s.key.includes('secret')),
+        storage_folders: (dbData.storage_folders || []).map((folder: any) => {
+          if (!folder) return null;
+          const isStandard = ['fld-uploads', 'fld-templates', 'fld-logos', 'fld-videos', 'fld-rendered', 'uploads', 'templates', 'rendered'].includes(folder.id);
+          if (isStandard) {
+            return {
+              ...folder,
+              files: (folder.files || []).filter((file: any) => file && (file.userId === userId || file.user_id === userId))
+            };
+          }
+          // Custom folders belong strictly to their creator
+          if (folder.userId === userId || folder.user_id === userId) {
+            return folder;
+          }
+          return null;
+        }).filter(Boolean),
+        support_tickets: userEmail 
+          ? (dbData.support_tickets || []).filter((st: any) => st && (st.customer_email === userEmail || st.customerEmail === userEmail || st.user_id === userId || st.userId === userId))
+          : []
+      };
+
+      res.json(filteredData);
     } catch (e: any) {
+      console.error('[Sync GET Error]:', e);
       res.status(500).json({ error: e.message });
     }
   });
 
   app.post('/api/db/sync', async (req, res) => {
     try {
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Identificação de usuário ausente ou inválida.' });
+        return;
+      }
+
+      const { userId } = authUser;
+
       await LocalDbMutex.runLocked((dbData) => {
-        Object.assign(dbData, req.body);
+        // Safe, bounded merger that prevents cross-user overwriting
+        const mergeById = (targetArray: any[] = [], sourceArray: any[] = []) => {
+          const map = new Map();
+          targetArray.forEach(item => {
+            if (item && item.id) {
+              map.set(item.id, item);
+            }
+          });
+          sourceArray.forEach(item => {
+            if (item && item.id) {
+              map.set(item.id, { ...map.get(item.id), ...item });
+            }
+          });
+          return Array.from(map.values());
+        };
+
+        // 1. Sync current user profile safely
+        if (req.body.saas_users) {
+          const incomingProfile = req.body.saas_users.filter((u: any) => u && u.id === userId);
+          dbData.saas_users = mergeById(dbData.saas_users, incomingProfile);
+          dbData.users = dbData.saas_users;
+        }
+        if (req.body.users) {
+          const incomingProfile = req.body.users.filter((u: any) => u && u.id === userId);
+          dbData.users = mergeById(dbData.users, incomingProfile);
+          dbData.saas_users = dbData.users;
+        }
+
+        // 2. Sync Projects with Scoped Overwrite (Deletes & Updates) & Concurrency Guard
+        if (req.body.projects) {
+          const incomingUserProjects = req.body.projects
+            .filter((p: any) => p && (p.userId === userId || p.user_id === userId || !p.userId))
+            .map((p: any) => ({ ...p, userId, user_id: userId }));
+
+          const otherUsersProjects = (dbData.projects || [])
+            .filter((p: any) => p && p.userId !== userId && p.user_id !== userId);
+
+          // Merge user projects with backend state, resolving worker status conflicts
+          const existingUserProjects = (dbData.projects || [])
+            .filter((p: any) => p && (p.userId === userId || p.user_id === userId));
+
+          const existingProjectsMap = new Map<string, any>(existingUserProjects.map((p: any) => [p.id, p]));
+
+          const resolvedUserProjects = incomingUserProjects.map((incoming: any) => {
+            const existing = existingProjectsMap.get(incoming.id);
+            if (existing) {
+              const definitiveStatuses = ['completed', 'failed'];
+              const incomingStatus = (incoming.status || '').toLowerCase();
+              const existingStatus = (existing.status || '').toLowerCase();
+              
+              let status = incoming.status;
+              let videoUrl = incoming.videoUrl || incoming.video_url;
+
+              if (definitiveStatuses.includes(existingStatus) && !definitiveStatuses.includes(incomingStatus)) {
+                status = existing.status;
+                videoUrl = existing.videoUrl || existing.video_url;
+              }
+
+              return {
+                ...existing,
+                ...incoming,
+                status,
+                videoUrl,
+                video_url: videoUrl,
+                updatedAt: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+            }
+            return {
+              ...incoming,
+              userId,
+              user_id: userId,
+              createdAt: incoming.createdAt || incoming.created_at || new Date().toISOString(),
+              updatedAt: incoming.updatedAt || incoming.updated_at || new Date().toISOString()
+            };
+          });
+
+          dbData.projects = [...otherUsersProjects, ...resolvedUserProjects];
+        }
+
+        // 3. Sync Templates with Owner restriction
+        if (req.body.templates) {
+          // Regular users can only modify/create templates owned by them
+          const incomingUserTemplates = req.body.templates
+            .filter((t: any) => t && (t.userId === userId || t.user_id === userId || !t.userId))
+            .map((t: any) => ({ ...t, userId, user_id: userId }));
+
+          const otherTemplates = (dbData.templates || [])
+            .filter((t: any) => t && t.userId !== userId && t.user_id !== userId);
+
+          const existingUserTemplates = (dbData.templates || [])
+            .filter((t: any) => t && (t.userId === userId || t.user_id === userId));
+
+          const mergedUserTemplates = mergeById(existingUserTemplates, incomingUserTemplates);
+          dbData.templates = [...otherTemplates, ...mergedUserTemplates];
+        }
+
+        // 4. Sync Rendering Tasks with Concurrency Guard
+        if (req.body.rendering_tasks) {
+          const incomingUserTasks = req.body.rendering_tasks
+            .filter((t: any) => t && (t.userId === userId || t.user_id === userId || !t.userId))
+            .map((t: any) => ({ ...t, userId, user_id: userId }));
+
+          const otherUsersTasks = (dbData.rendering_tasks || [])
+            .filter((t: any) => t && t.userId !== userId && t.user_id !== userId);
+
+          const existingUserTasks = (dbData.rendering_tasks || [])
+            .filter((t: any) => t && (t.userId === userId || t.user_id === userId));
+
+          const existingTasksMap = new Map<string, any>(existingUserTasks.map((t: any) => [t.id, t]));
+
+          const resolvedUserTasks = incomingUserTasks.map((incoming: any) => {
+            const existing = existingTasksMap.get(incoming.id);
+            if (existing) {
+              const definitiveStatuses = ['completed', 'failed', 'cancelled'];
+              const incomingStatus = (incoming.status || '').toLowerCase();
+              const existingStatus = (existing.status || '').toLowerCase();
+
+              let status = incoming.status;
+              let progress = incoming.progress;
+              let outputUrl = incoming.outputUrl || incoming.output_url;
+
+              if (definitiveStatuses.includes(existingStatus) && !definitiveStatuses.includes(incomingStatus)) {
+                status = existing.status;
+                progress = existing.progress;
+                outputUrl = existing.outputUrl || existing.output_url;
+              }
+
+              return {
+                ...existing,
+                ...incoming,
+                status,
+                progress,
+                outputUrl,
+                output_url: outputUrl
+              };
+            }
+            return incoming;
+          });
+
+          dbData.rendering_tasks = [...otherUsersTasks, ...resolvedUserTasks];
+        }
+
+        // 5. Sync Storage Folders with perfect Tenant Isolation at Folder/File level
+        if (req.body.storage_folders) {
+          if (!dbData.storage_folders) dbData.storage_folders = [];
+
+          // Standard folder IDs
+          const standardFolderIds = ['fld-uploads', 'fld-templates', 'fld-logos', 'fld-videos', 'fld-rendered', 'uploads', 'templates', 'rendered'];
+
+          // Separate other users' custom folders
+          const otherUsersCustomFolders = dbData.storage_folders
+            .filter((f: any) => f && f.id && !standardFolderIds.includes(f.id) && f.userId !== userId && f.user_id !== userId);
+
+          // Filter incoming custom folders (non-standard) to only those of this user, forcing tenancy
+          const incomingUserCustomFolders = req.body.storage_folders
+            .filter((f: any) => f && f.id && !standardFolderIds.includes(f.id))
+            .map((f: any) => ({ ...f, userId, user_id: userId }));
+
+          // Combine custom folders list
+          const existingUserCustomFolders = dbData.storage_folders
+            .filter((f: any) => f && f.id && !standardFolderIds.includes(f.id) && (f.userId === userId || f.user_id === userId));
+
+          const mergedUserCustomFolders = mergeById(existingUserCustomFolders, incomingUserCustomFolders);
+
+          // Now, handle standard folders by merging/replacing files belonging to the current user only
+          const resolvedStandardFolders = standardFolderIds.map(folderId => {
+            const existingFolder = dbData.storage_folders.find((f: any) => f && f.id === folderId);
+            const incomingFolder = req.body.storage_folders.find((f: any) => f && f.id === folderId);
+
+            const standardFolderSkeleton = {
+              id: folderId,
+              name: folderId.replace('fld-', '').toUpperCase(),
+              path: `/storage/${folderId.replace('fld-', '')}`,
+              description: '',
+              files: []
+            };
+
+            const targetFolder = existingFolder ? { ...existingFolder } : { ...standardFolderSkeleton };
+
+            // Files from other users
+            const otherUsersFiles = (targetFolder.files || [])
+              .filter((file: any) => file && file.userId !== userId && file.user_id !== userId);
+
+            // Incoming files for this user, force tagged with userId
+            const incomingUserFiles = (incomingFolder?.files || [])
+              .map((file: any) => ({ ...file, userId, user_id: userId }));
+
+            // Update files for the target folder
+            targetFolder.files = [...incomingUserFiles, ...otherUsersFiles];
+            return targetFolder;
+          });
+
+          // Set complete set of storage folders
+          dbData.storage_folders = [
+            ...resolvedStandardFolders,
+            ...otherUsersCustomFolders,
+            ...mergedUserCustomFolders
+          ];
+        }
+
+        // 6. DISCARD client invoices to prevent financial/payment spoofing
+        // Invoices can only be added/edited by backend webhook triggers or administrators.
       });
+
       res.json({ success: true });
     } catch (e: any) {
+      console.error('[Sync POST Error]:', e);
       res.status(500).json({ error: e.message });
     }
   });

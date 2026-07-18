@@ -40,18 +40,18 @@ import {
 } from 'lucide-react';
 
 const examplePages = [
-  { id: 1, image: '/exemplopaginas/02-uAy4VjXQ.webp', title: '@filosofia_ancestral', views: '1.4M views', category: 'Citações' },
-  { id: 2, image: '/exemplopaginas/03-B2jCMS6j.webp', title: '@dica_de_riqueza', views: '2.1M views', category: 'Finanças' },
-  { id: 3, image: '/exemplopaginas/04-BANhblpL.webp', title: '@rainha_das_novelas', views: '3.8M views', category: 'Cortes' },
-  { id: 4, image: '/exemplopaginas/06-BCOSIrKe.webp', title: '@mentalidade_oculta', views: '2.5M views', category: 'Motivação' },
-  { id: 5, image: '/exemplopaginas/07-xAqbZkQu.webp', title: '@cortes_de_series', views: '1.9M views', category: 'Cinema' },
-  { id: 6, image: '/exemplopaginas/08-DDZBl70i.webp', title: '@futebol_resenha', views: '4.1M views', category: 'Futebol' },
-  { id: 7, image: '/exemplopaginas/09-sQPdEBK6.webp', title: '@reflexao_diaria', views: '2.3M views', category: 'Poesia' },
-  { id: 8, image: '/exemplopaginas/10-D-kzC9r3.webp', title: '@curiosidade_global', views: '1.1M views', category: 'Curiosidades' },
-  { id: 9, image: '/exemplopaginas/11-Bd_y7XPb.webp', title: '@zicada_futebol', views: '1.7M views', category: 'Futebol' },
-  { id: 10, image: '/exemplopaginas/12-Bq0AnmXJ.webp', title: '@estetica_escura', views: '980K views', category: 'Estilo de Vida' },
-  { id: 11, image: '/exemplopaginas/13-_LniUGFI.webp', title: '@regras_devida', views: '2.9M views', category: 'Disciplina' },
-  { id: 12, image: '/exemplopaginas/14-CPvLg7dt.webp', title: '@sucesso_financeiro', views: '3.4M views', category: 'Negócios' }
+  { id: 1, image: '/fotos/02-uAy4VjXQ.webp', title: '@filosofia_ancestral', views: '1.4M views', category: 'Citações' },
+  { id: 2, image: '/fotos/03-B2jCMS6j.webp', title: '@dica_de_riqueza', views: '2.1M views', category: 'Finanças' },
+  { id: 3, image: '/fotos/04-BANhblpL.webp', title: '@rainha_das_novelas', views: '3.8M views', category: 'Cortes' },
+  { id: 4, image: '/fotos/06-BCOSIrKe.webp', title: '@mentalidade_oculta', views: '2.5M views', category: 'Motivação' },
+  { id: 5, image: '/fotos/07-xAqbZkQu.webp', title: '@cortes_de_series', views: '1.9M views', category: 'Cinema' },
+  { id: 6, image: '/fotos/08-DDZBl70i.webp', title: '@futebol_resenha', views: '4.1M views', category: 'Futebol' },
+  { id: 7, image: '/fotos/09-sQPdEBK6.webp', title: '@reflexao_diaria', views: '2.3M views', category: 'Poesia' },
+  { id: 8, image: '/fotos/10-D-kzC9r3.webp', title: '@curiosidade_global', views: '1.1M views', category: 'Curiosidades' },
+  { id: 9, image: '/fotos/11-Bd_y7XPb.webp', title: '@zicada_futebol', views: '1.7M views', category: 'Futebol' },
+  { id: 10, image: '/fotos/12-Bq0AnmXJ.webp', title: '@estetica_escura', views: '980K views', category: 'Estilo de Vida' },
+  { id: 11, image: '/fotos/13-_LniUGFI.webp', title: '@regras_devida', views: '2.9M views', category: 'Disciplina' },
+  { id: 12, image: '/fotos/14-CPvLg7dt.webp', title: '@sucesso_financeiro', views: '3.4M views', category: 'Negócios' }
 ];
 
 export const LandingPage: React.FC = () => {

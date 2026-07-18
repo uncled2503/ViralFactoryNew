@@ -124,7 +124,19 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 // Core Mock Users removed to enforce Supabase-only authentication
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUserState] = useState<User | null>(null);
+  const normalizeUser = (u: User | null): User | null => {
+    if (!u) return null;
+    const tierRaw = u.subscription || 'Free';
+    const subscription = (tierRaw.charAt(0).toUpperCase() + tierRaw.slice(1).toLowerCase()) as PlanTier;
+    return {
+      ...u,
+      subscription: ['Free', 'Starter', 'Pro', 'Business'].includes(subscription) ? subscription : 'Free'
+    };
+  };
+  const setUser = (u: User | null) => {
+    setUserState(normalizeUser(u));
+  };
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [originalAdminUser, setOriginalAdminUser] = useState<User | null>(() => {
     try {
@@ -419,10 +431,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loadUserWorkspace = async (targetUser: User) => {
     const userId = targetUser.id;
 
+    // Reset all workspace states instantly to prevent race conditions or data pollution during the fetch
+    setProjects([]);
+    setTemplates([]);
+    setRenderingTasks([]);
+    setFolders([]);
+    setInvoices([]);
+    setLimitError(null);
+
     // Let's attempt to fetch synced DB snapshot from the server first to merge rendering changes
     let serverDb: any = {};
     try {
-      const res = await fetch('/api/db/sync');
+      const res = await fetch(`/api/db/sync?userId=${userId}`);
       if (res.ok) {
         serverDb = await res.json();
       }
@@ -436,7 +456,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let curProjects: Project[] = [];
     
     if (serverDb.projects && serverDb.projects.length > 0) {
-      curProjects = serverDb.projects;
+      // Isolate only the current user's projects
+      curProjects = serverDb.projects.filter((p: any) => p.userId === userId || p.user_id === userId);
       localStorage.setItem(userProjectsKey, JSON.stringify(curProjects));
     } else if (savedProjects) {
       curProjects = JSON.parse(savedProjects);
@@ -464,8 +485,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let curTasks: RenderingTask[] = [];
 
     if (serverDb.rendering_tasks && serverDb.rendering_tasks.length > 0) {
+      // Isolate only the current user's rendering tasks
+      const userTasks = serverDb.rendering_tasks.filter((st: any) => st.userId === userId || st.user_id === userId);
       // Map server-side rendering tasks schema to client-side
-      curTasks = serverDb.rendering_tasks.map((st: any) => ({
+      curTasks = userTasks.map((st: any) => ({
         id: st.id,
         projectId: st.project_id || st.projectId,
         projectName: st.project_name || st.projectName,
@@ -892,6 +915,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = async () => {
     setUser(null);
+    setProjects([]);
+    setTemplates([]);
+    setRenderingTasks([]);
+    setFolders([]);
+    setInvoices([]);
+    setLimitError(null);
+    
     sessionStorage.removeItem('vf_user');
     localStorage.removeItem('vf_user');
     
@@ -1186,7 +1216,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Sync local DB snapshot to the server file database first
-      fetch('/api/db/sync', {
+      fetch(`/api/db/sync?userId=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
