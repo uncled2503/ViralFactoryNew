@@ -516,7 +516,7 @@ export class AutoScalingService {
 
         // Register rendered file
         try {
-          await (RenderEngine as any).registerRenderedFile(
+          await RenderEngine.registerRenderedFile(
             job.userId,
             job.projectId,
             job.projectName,

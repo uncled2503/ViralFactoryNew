@@ -187,4 +187,58 @@ export class JobQueue {
       this.updateJob(id, { status: 'Canceled', progress: 0 });
     }
   }
+
+  static async recoverJobsFromDb() {
+    try {
+      console.log('[JobQueue] Running startup crash recovery check...');
+      const dbData = await LocalDbMutex.loadDb();
+      const tasks = dbData.rendering_tasks || [];
+      
+      let recoveredCount = 0;
+      for (const t of tasks) {
+        if (t && (t.status === 'queued' || t.status === 'processing' || t.status === 'Preparing' || t.status === 'Rendering' || t.status === 'Encoding' || t.status === 'Saving')) {
+          // Check if already loaded to prevent duplicate recovery
+          if (this.jobs.has(t.id)) continue;
+
+          // Map string priority to weight or default
+          const userInDb = (dbData.saas_users || []).find((u: any) => u.id === t.user_id);
+          const tier = userInDb?.subscription_tier || 'Starter';
+          const priority = tier === 'Business' ? 'high' : tier === 'Pro' ? 'medium' : 'low';
+
+          const job: RenderJob = {
+            id: t.id,
+            userId: t.user_id || t.userId,
+            projectId: t.project_id || t.projectId,
+            projectName: t.project_name || t.projectName || 'Project',
+            templateId: t.template_id || t.templateId,
+            templateName: t.template_name || t.templateName || 'Template',
+            status: 'Queued', // Reset to Queued so it gets picked up again
+            progress: 0,
+            duration: t.duration || '0:30',
+            createdAt: t.created_at || t.createdAt || new Date().toISOString(),
+            variables: t.variables || {},
+            priority,
+            logs: t.logs || []
+          };
+
+          this.jobs.set(job.id, job);
+          this.queue.push(job.id);
+          recoveredCount++;
+        }
+      }
+      
+      if (recoveredCount > 0) {
+        console.log(`[JobQueue] Successfully recovered ${recoveredCount} unfinished/stuck jobs from database!`);
+        this.emitter.emit('queueChanged');
+        
+        // Trigger distribution via JobDispatcher
+        const { JobDispatcher } = await import('../websocket/JobDispatcher');
+        JobDispatcher.distributeJobs();
+      } else {
+        console.log('[JobQueue] No unfinished/stuck jobs found in database to recover.');
+      }
+    } catch (err: any) {
+      console.error('[JobQueue] Error during startup crash recovery:', err.message);
+    }
+  }
 }

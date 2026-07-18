@@ -176,7 +176,7 @@ export class WebSocketCoordinator {
             const job = JobQueue.getJob(jobId);
             if (job) {
               try {
-                await (RenderEngine as any).registerRenderedFile(
+                await RenderEngine.registerRenderedFile(
                   job.userId,
                   job.projectId,
                   job.projectName,

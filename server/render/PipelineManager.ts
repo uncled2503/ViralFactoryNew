@@ -401,7 +401,7 @@ export class PipelineManager {
         debugInfo
       );
       
-      await (RenderEngine as any).registerRenderedFile(
+      await RenderEngine.registerRenderedFile(
         job.userId, 
         job.projectId, 
         job.projectName, 

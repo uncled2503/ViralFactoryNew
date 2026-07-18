@@ -431,6 +431,22 @@ export class RedisService {
   // CACHE INTERFACE
   // ==========================================
 
+  static async incrAndExpire(key: string, ttlSeconds: number): Promise<number> {
+    this.metrics.commandsProcessed++;
+    if (this.isAvailable() && this.client) {
+      try {
+        const count = await this.client.incr(key);
+        if (count === 1) {
+          await this.client.expire(key, ttlSeconds);
+        }
+        return count;
+      } catch (err: any) {
+        this.handleRedisError(err, 'incrAndExpire');
+      }
+    }
+    return 0;
+  }
+
   static async get(key: string): Promise<string | null> {
     this.metrics.commandsProcessed++;
     if (this.isAvailable() && this.client) {

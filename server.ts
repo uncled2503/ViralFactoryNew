@@ -5,8 +5,10 @@ import compression from 'compression';
 import { createServer as createViteServer } from 'vite';
 import { StorageManager } from './server/render/Storage';
 import { JobQueue } from './server/render/JobQueue';
+import { RenderEngine } from './server/render/RenderEngine';
 import { WorkerWebSocketServer } from './server/render/WorkerWebSocketServer';
 import { adminRouter } from './server/routes/admin';
+import { adminAuthMiddleware } from './server/middlewares/adminAuth';
 import { publicApiLimiter, adminApiLimiter } from './server/middlewares/rateLimiter';
 import { JobTimeoutMonitor } from './server/render/JobTimeoutMonitor';
 import { RedisService } from './server/services/RedisService';
@@ -122,6 +124,28 @@ async function startServer() {
     res.json(await WorkerWebSocketServer.getWorkers());
   });
 
+  const BACKEND_PLAN_LIMITS: Record<string, { maxProjects: number; maxTemplates: number; maxVideosPerMonth: number; maxStorageMB: number }> = {
+    Free: { maxProjects: 1, maxTemplates: 1, maxVideosPerMonth: 5, maxStorageMB: 500 },
+    Starter: { maxProjects: 3, maxTemplates: 5, maxVideosPerMonth: 300, maxStorageMB: 2048 },
+    Pro: { maxProjects: 99999, maxTemplates: 99999, maxVideosPerMonth: 1200, maxStorageMB: 102400 },
+    Business: { maxProjects: 99999, maxTemplates: 99999, maxVideosPerMonth: 4000, maxStorageMB: 10240 }
+  };
+
+  function parseSizeToMB(sizeStr: string | number): number {
+    if (typeof sizeStr === 'number') return sizeStr;
+    if (!sizeStr) return 0;
+    const cleaned = sizeStr.toLowerCase().replace(/,/g, '.').trim();
+    const value = parseFloat(cleaned);
+    if (isNaN(value)) return 0;
+    if (cleaned.includes('gb')) {
+      return value * 1024;
+    }
+    if (cleaned.includes('kb')) {
+      return value / 1024;
+    }
+    return value; // default is MB
+  }
+
   // GET /api/render/signed-upload-url
   app.get('/api/render/signed-upload-url', async (req, res) => {
     const { folder, filename, contentType } = req.query;
@@ -140,6 +164,35 @@ async function startServer() {
     }
 
     try {
+      // 1. Auth check
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Identificação de usuário ausente ou inválida.' });
+        return;
+      }
+
+      // 2. Load user and validate status & storage limits
+      const dbData = await LocalDbMutex.loadDb();
+      const userInDb = (dbData.saas_users || []).find((u: any) => u.id === authUser.userId);
+      
+      if (userInDb) {
+        if (userInDb.status === 'suspended' && userInDb.email !== 'mouragabriel2011@gmail.com') {
+          res.status(403).json({ error: 'Sua conta está suspensa pelo administrador.' });
+          return;
+        }
+
+        const userTier = userInDb.subscription_tier || userInDb.subscription || 'Free';
+        const limits = BACKEND_PLAN_LIMITS[userTier] || BACKEND_PLAN_LIMITS.Free;
+        const storageUsedMB = userInDb.storage_used_mb !== undefined ? userInDb.storage_used_mb : (userInDb.storageUsedMB || 0);
+        
+        const isBypassUser = authUser.userId === '00000000-0000-0000-0000-000000000001' || userInDb.email === 'mouragabriel2011@gmail.com';
+
+        if (storageUsedMB >= limits.maxStorageMB && !isBypassUser) {
+          res.status(403).json({ error: `Espaço de armazenamento esgotado para o plano ${userTier}.` });
+          return;
+        }
+      }
+
       const uploadUrl = await SupabaseStorageService.getUploadSignedUrl(
         destFolder,
         destFilename,
@@ -358,7 +411,7 @@ async function startServer() {
   });
 
   // Create a Render Job
-  app.post('/api/render/job', (req, res) => {
+  app.post('/api/render/job', async (req, res) => {
     const { userId, projectId, projectName, templateId, templateName, duration, variables } = req.body;
 
     if (!userId || !projectId || !projectName || !templateId) {
@@ -367,6 +420,39 @@ async function startServer() {
     }
 
     try {
+      const dbData = await LocalDbMutex.loadDb();
+      const userInDb = (dbData.saas_users || []).find((u: any) => u.id === userId);
+      
+      if (!userInDb) {
+        res.status(404).json({ error: 'Usuário não encontrado no banco de dados.' });
+        return;
+      }
+
+      if (userInDb.status === 'suspended' && userInDb.email !== 'mouragabriel2011@gmail.com') {
+        res.status(403).json({ error: 'Sua conta está suspensa pelo administrador.' });
+        return;
+      }
+
+      const userTier = userInDb.subscription_tier || userInDb.subscription || 'Free';
+      const limits = BACKEND_PLAN_LIMITS[userTier] || BACKEND_PLAN_LIMITS.Free;
+
+      // Check current rendered videos count
+      const usageCurrent = userInDb.usage_current !== undefined ? userInDb.usage_current : (userInDb.usageCurrent || 0);
+      
+      // Prevent parallel render request limit-bypass by checking active running/queued tasks in queue
+      const activeQueuedJobsCount = JobQueue.getUserJobs(userId).filter(
+        j => j.status !== 'Completed' && j.status !== 'Failed' && j.status !== 'Canceled'
+      ).length;
+
+      const isBypassUser = userId === '00000000-0000-0000-0000-000000000001' || userInDb.email === 'mouragabriel2011@gmail.com';
+
+      if (usageCurrent + activeQueuedJobsCount >= limits.maxVideosPerMonth && !isBypassUser) {
+        res.status(403).json({ 
+          error: `Limite de renderizações atingido. Seu plano (${userTier}) permite até ${limits.maxVideosPerMonth} renderizações mensais. Você já tem ${usageCurrent} concluídas e ${activeQueuedJobsCount} em andamento.` 
+        });
+        return;
+      }
+
       const job = JobQueue.createJob({
         userId,
         projectId,
@@ -377,6 +463,17 @@ async function startServer() {
         variables: variables || {}
       });
 
+      // Immediately persist the queued status in the database for cross-node visibility and crash recovery
+      await RenderEngine.saveDbStatus(
+        job.id,
+        'queued',
+        0,
+        undefined,
+        undefined,
+        undefined,
+        [`[SYSTEM] Job registrado com sucesso e aguardando processamento.`]
+      ).catch(err => console.error(`[Job Submission] Failed persisting queued status for job ${job.id}:`, err.message));
+
       res.status(201).json({ success: true, job });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to submit rendering job' });
@@ -384,54 +481,47 @@ async function startServer() {
   });
 
   // Test Render Engine endpoint
-  app.post('/api/admin/test-render', async (req, res) => {
+  app.post('/api/admin/test-render', adminAuthMiddleware, async (req, res) => {
     try {
-      const dbPath = path.join(process.cwd(), 'public', 'storage', 'db.json');
-      const parentDir = path.dirname(dbPath);
-      if (!fs.existsSync(parentDir)) {
-        fs.mkdirSync(parentDir, { recursive: true });
-      }
-
-      // Read or init local db
-      const dbData = fs.existsSync(dbPath) ? JSON.parse(fs.readFileSync(dbPath, 'utf8')) : {};
-      if (!dbData.projects) dbData.projects = [];
-      if (!dbData.templates) dbData.templates = [];
-
       const testUserId = req.body.userId || 'usr-admin-test';
       const testProjectId = 'prj-test-engine';
       const testTemplateId = 'tpl-test-engine';
 
-      // Upsert test project
-      const projIndex = dbData.projects.findIndex((p: any) => p.id === testProjectId);
-      const testProjectObj = {
-        id: testProjectId,
-        user_id: testUserId,
-        name: "Projeto Temporário de Teste",
-        presetId: "tiktok",
-        variables: {
-          brandColor: "#0f172a"
+      // Use LocalDbMutex to run the updates inside a safe database lock to prevent file corruption
+      await LocalDbMutex.runLocked((dbData) => {
+        if (!dbData.projects) dbData.projects = [];
+        if (!dbData.templates) dbData.templates = [];
+
+        // Upsert test project
+        const projIndex = dbData.projects.findIndex((p: any) => p.id === testProjectId);
+        const testProjectObj = {
+          id: testProjectId,
+          user_id: testUserId,
+          name: "Projeto Temporário de Teste",
+          presetId: "tiktok",
+          variables: {
+            brandColor: "#0f172a"
+          }
+        };
+        if (projIndex !== -1) {
+          dbData.projects[projIndex] = testProjectObj;
+        } else {
+          dbData.projects.push(testProjectObj);
         }
-      };
-      if (projIndex !== -1) {
-        dbData.projects[projIndex] = testProjectObj;
-      } else {
-        dbData.projects.push(testProjectObj);
-      }
 
-      // Upsert test template
-      const tplIndex = dbData.templates.findIndex((t: any) => t.id === testTemplateId);
-      const testTemplateObj = {
-        id: testTemplateId,
-        name: "Template Temporário de Teste",
-        defaultDuration: 5
-      };
-      if (tplIndex !== -1) {
-        dbData.templates[tplIndex] = testTemplateObj;
-      } else {
-        dbData.templates.push(testTemplateObj);
-      }
-
-      fs.writeFileSync(dbPath, JSON.stringify(dbData, null, 2));
+        // Upsert test template
+        const tplIndex = dbData.templates.findIndex((t: any) => t.id === testTemplateId);
+        const testTemplateObj = {
+          id: testTemplateId,
+          name: "Template Temporário de Teste",
+          defaultDuration: 5
+        };
+        if (tplIndex !== -1) {
+          dbData.templates[tplIndex] = testTemplateObj;
+        } else {
+          dbData.templates.push(testTemplateObj);
+        }
+      });
 
       // Define variables for the 5-second video, text layer and image layer
       const variables = {
@@ -531,31 +621,179 @@ async function startServer() {
   });
 
   // Query specific job status
-  app.get('/api/render/job/:id', (req, res) => {
-    const job = JobQueue.getJob(req.params.id);
-    if (!job) {
-      res.status(404).json({ error: 'Job not found' });
-      return;
+  app.get('/api/render/job/:id', async (req, res) => {
+    try {
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Identificação de usuário ausente ou inválida.' });
+        return;
+      }
+
+      let job = JobQueue.getJob(req.params.id);
+      
+      // Fallback 1: Check Redis cache for horizontal scaling compatibility
+      if (!job && RedisService.isAvailable()) {
+        try {
+          const cached = await RedisService.get(`job:state:${req.params.id}`);
+          if (cached) {
+            job = JSON.parse(cached);
+          }
+        } catch (err: any) {
+          console.error('[Job Status API] Redis fetch failed:', err.message);
+        }
+      }
+
+      // Fallback 2: Check persistent database to locate job owned by another instance
+      if (!job) {
+        try {
+          const dbData = await LocalDbMutex.loadDb();
+          const task = (dbData.rendering_tasks || []).find((t: any) => t && t.id === req.params.id);
+          if (task) {
+            job = {
+              id: task.id,
+              userId: task.user_id || task.userId,
+              projectId: task.project_id || task.projectId,
+              projectName: task.project_name || task.projectName || 'Project',
+              templateId: task.template_id || task.templateId,
+              templateName: task.template_name || task.templateName || 'Template',
+              status: task.status === 'completed' ? 'Completed' : task.status === 'failed' ? 'Failed' : task.status === 'queued' ? 'Queued' : 'Rendering',
+              progress: task.progress || 0,
+              duration: task.duration || '0:30',
+              createdAt: task.created_at || task.createdAt,
+              completedAt: task.completed_at,
+              error: task.error_message,
+              logs: task.logs,
+              debugInfo: task.debug_info,
+              variables: task.variables || {}
+            } as any;
+          }
+        } catch (err: any) {
+          console.error('[Job Status API] DB fetch failed:', err.message);
+        }
+      }
+
+      if (!job) {
+        res.status(404).json({ error: 'Job not found' });
+        return;
+      }
+
+      // Enforce strict tenant isolation / authorization check
+      const isBypassUser = authUser.userId === '00000000-0000-0000-0000-000000000001' || authUser.email === 'mouragabriel2011@gmail.com';
+      if (job.userId !== authUser.userId && !isBypassUser) {
+        res.status(403).json({ error: 'Não autorizado. Este job não pertence à sua conta.' });
+        return;
+      }
+
+      res.json(job);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
-    res.json(job);
   });
 
   // Query all user jobs
-  app.get('/api/render/jobs/:userId', (req, res) => {
-    const jobs = JobQueue.getUserJobs(req.params.userId);
-    res.json(jobs);
+  app.get('/api/render/jobs/:userId', async (req, res) => {
+    try {
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Identificação de usuário ausente ou inválida.' });
+        return;
+      }
+
+      // Enforce authorization
+      const isBypassUser = authUser.userId === '00000000-0000-0000-0000-000000000001' || authUser.email === 'mouragabriel2011@gmail.com';
+      if (req.params.userId !== authUser.userId && !isBypassUser) {
+        res.status(403).json({ error: 'Não autorizado. Você não pode listar os jobs de outro usuário.' });
+        return;
+      }
+
+      // Load from database to ensure multi-node consistent state
+      const dbData = await LocalDbMutex.loadDb();
+      const dbTasks = (dbData.rendering_tasks || []).filter(
+        (t: any) => t && (t.user_id === req.params.userId || t.userId === req.params.userId)
+      );
+
+      // Map DB tasks to RenderJob format
+      const jobs = dbTasks.map((task: any) => ({
+        id: task.id,
+        userId: task.user_id || task.userId,
+        projectId: task.project_id || task.projectId,
+        projectName: task.project_name || task.projectName,
+        templateId: task.template_id || task.templateId,
+        templateName: task.template_name || task.templateName,
+        status: task.status === 'completed' ? 'Completed' : task.status === 'failed' ? 'Failed' : task.status === 'queued' ? 'Queued' : 'Rendering',
+        progress: task.progress || 0,
+        duration: task.duration || '0:30',
+        createdAt: task.created_at || task.createdAt,
+        completedAt: task.completed_at,
+        error: task.error_message,
+        logs: task.logs,
+        debugInfo: task.debug_info,
+        variables: task.variables || {}
+      })).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      res.json(jobs);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // Cancel a queued job
-  app.post('/api/render/job/:id/cancel', (req, res) => {
-    const job = JobQueue.getJob(req.params.id);
-    if (!job) {
-      res.status(404).json({ error: 'Job not found' });
-      return;
+  app.post('/api/render/job/:id/cancel', async (req, res) => {
+    try {
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Identificação de usuário ausente ou inválida.' });
+        return;
+      }
+
+      // Try local memory first
+      let job = JobQueue.getJob(req.params.id);
+
+      // Fallback: Check DB if not found locally
+      if (!job) {
+        const dbData = await LocalDbMutex.loadDb();
+        const task = (dbData.rendering_tasks || []).find((t: any) => t && t.id === req.params.id);
+        if (task) {
+          job = {
+            id: task.id,
+            userId: task.user_id || task.userId,
+            projectId: task.project_id || task.projectId,
+            projectName: task.project_name || task.projectName,
+            templateId: task.template_id || task.templateId,
+            status: task.status === 'completed' ? 'Completed' : task.status === 'failed' ? 'Failed' : task.status === 'queued' ? 'Queued' : 'Preparing'
+          } as any;
+        }
+      }
+
+      if (!job) {
+        res.status(404).json({ error: 'Job not found' });
+        return;
+      }
+
+      const isBypassUser = authUser.userId === '00000000-0000-0000-0000-000000000001' || authUser.email === 'mouragabriel2011@gmail.com';
+      if (job.userId !== authUser.userId && !isBypassUser) {
+        res.status(403).json({ error: 'Não autorizado. Você só pode cancelar seus próprios jobs.' });
+        return;
+      }
+
+      // Update state in memory (if present)
+      JobQueue.cancelJob(req.params.id);
+
+      // Persist the cancellation state to the DB immediately
+      await RenderEngine.saveDbStatus(
+        req.params.id,
+        'failed',
+        0,
+        undefined,
+        undefined,
+        'Renderização cancelada pelo usuário.',
+        [`[SYSTEM] Renderização cancelada pelo usuário.`]
+      ).catch(err => console.error('[Job Cancellation] DB update failed:', err.message));
+
+      res.json({ success: true, message: 'Job cancellation requested' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
-    
-    JobQueue.cancelJob(req.params.id);
-    res.json({ success: true, message: 'Job cancellation requested' });
   });
 
   // Helper to extract authenticated user from Authorization Bearer token (Supabase Auth)
@@ -666,19 +904,75 @@ async function startServer() {
           return Array.from(map.values());
         };
 
-        // 1. Sync current user profile safely
-        if (req.body.saas_users) {
-          const incomingProfile = req.body.saas_users.filter((u: any) => u && u.id === userId);
-          dbData.saas_users = mergeById(dbData.saas_users, incomingProfile);
-          dbData.users = dbData.saas_users;
-        }
-        if (req.body.users) {
-          const incomingProfile = req.body.users.filter((u: any) => u && u.id === userId);
-          dbData.users = mergeById(dbData.users, incomingProfile);
-          dbData.saas_users = dbData.users;
+        const existingUser = (dbData.saas_users || []).find((u: any) => u.id === userId);
+
+        // 1. Suspension check
+        if (existingUser && existingUser.status === 'suspended' && existingUser.email !== 'mouragabriel2011@gmail.com') {
+          throw new Error('SUSPENDED_ACCOUNT');
         }
 
-        // 2. Sync Projects with Scoped Overwrite (Deletes & Updates) & Concurrency Guard
+        const userTier = existingUser?.subscription_tier || existingUser?.subscription || 'Free';
+        const limits = BACKEND_PLAN_LIMITS[userTier] || BACKEND_PLAN_LIMITS.Free;
+        const isBypassUser = userId === '00000000-0000-0000-0000-000000000001' || existingUser?.email === 'mouragabriel2011@gmail.com';
+
+        // 2. Profile Sanitization & Merging (PREVENTS SPOOFING TIER, ROLE, OR STATUS VIA SYNC!)
+        if (req.body.saas_users || req.body.users) {
+          const incomingList = req.body.saas_users || req.body.users || [];
+          const incomingProfile = incomingList.find((u: any) => u && u.id === userId);
+          if (incomingProfile) {
+            if (!existingUser) {
+              // Creating user record for the first time
+              const newUserObj = {
+                id: userId,
+                name: incomingProfile.name || '',
+                email: incomingProfile.email || '',
+                company: incomingProfile.company || '',
+                role: 'user', // force standard user role
+                avatar_url: incomingProfile.avatar_url || incomingProfile.avatarUrl || '',
+                avatarUrl: incomingProfile.avatar_url || incomingProfile.avatarUrl || '',
+                subscription_tier: 'Free',
+                subscription: 'Free',
+                status: 'active',
+                usage_current: 0,
+                usageCurrent: 0,
+                usage_limit: 5,
+                usageLimit: 5,
+                storage_used_mb: 0,
+                storageUsedMB: 0,
+                templates_used: 0,
+                templatesUsed: 0,
+                projects_active: 0,
+                projectsActive: 0,
+                created_at: new Date().toISOString()
+              };
+              if (!dbData.saas_users) dbData.saas_users = [];
+              dbData.saas_users.push(newUserObj);
+              dbData.users = dbData.saas_users;
+            } else {
+              // Edit existing user - only safe fields allowed
+              if (incomingProfile.name !== undefined) existingUser.name = incomingProfile.name;
+              if (incomingProfile.company !== undefined) existingUser.company = incomingProfile.company;
+              if (incomingProfile.avatar_url !== undefined) {
+                existingUser.avatar_url = incomingProfile.avatar_url;
+                existingUser.avatarUrl = incomingProfile.avatar_url;
+              }
+              if (incomingProfile.avatarUrl !== undefined) {
+                existingUser.avatar_url = incomingProfile.avatarUrl;
+                existingUser.avatarUrl = incomingProfile.avatarUrl;
+              }
+              // Prevent profile overrides of sensitive fields from client sync payload
+              existingUser.role = existingUser.role || 'user';
+              existingUser.subscription_tier = existingUser.subscription_tier || existingUser.subscription || 'Free';
+              existingUser.subscription = existingUser.subscription_tier;
+              existingUser.status = existingUser.status || 'active';
+            }
+          }
+        }
+
+        const activeUser = (dbData.saas_users || []).find((u: any) => u.id === userId);
+
+        // 3. Sync & Validate Projects limit
+        let activeProjectsCount = 0;
         if (req.body.projects) {
           const incomingUserProjects = req.body.projects
             .filter((p: any) => p && (p.userId === userId || p.user_id === userId || !p.userId))
@@ -687,7 +981,6 @@ async function startServer() {
           const otherUsersProjects = (dbData.projects || [])
             .filter((p: any) => p && p.userId !== userId && p.user_id !== userId);
 
-          // Merge user projects with backend state, resolving worker status conflicts
           const existingUserProjects = (dbData.projects || [])
             .filter((p: any) => p && (p.userId === userId || p.user_id === userId));
 
@@ -727,12 +1020,25 @@ async function startServer() {
             };
           });
 
+          activeProjectsCount = resolvedUserProjects.filter((p: any) => p && p.status !== 'completed' && p.status !== 'failed').length;
+          if (activeProjectsCount > limits.maxProjects && !isBypassUser) {
+            throw new Error('LIMIT_PROJECTS_EXCEEDED');
+          }
+
           dbData.projects = [...otherUsersProjects, ...resolvedUserProjects];
+        } else {
+          const userProjects = (dbData.projects || []).filter((p: any) => p && (p.userId === userId || p.user_id === userId));
+          activeProjectsCount = userProjects.filter((p: any) => p && p.status !== 'completed' && p.status !== 'failed').length;
         }
 
-        // 3. Sync Templates with Owner restriction
+        if (activeUser) {
+          activeUser.projects_active = activeProjectsCount;
+          activeUser.projectsActive = activeProjectsCount;
+        }
+
+        // 4. Sync & Validate Templates limit
+        let totalTemplatesCount = 0;
         if (req.body.templates) {
-          // Regular users can only modify/create templates owned by them
           const incomingUserTemplates = req.body.templates
             .filter((t: any) => t && (t.userId === userId || t.user_id === userId || !t.userId))
             .map((t: any) => ({ ...t, userId, user_id: userId }));
@@ -744,10 +1050,24 @@ async function startServer() {
             .filter((t: any) => t && (t.userId === userId || t.user_id === userId));
 
           const mergedUserTemplates = mergeById(existingUserTemplates, incomingUserTemplates);
+          
+          totalTemplatesCount = mergedUserTemplates.length;
+          if (totalTemplatesCount > limits.maxTemplates && !isBypassUser) {
+            throw new Error('LIMIT_TEMPLATES_EXCEEDED');
+          }
+
           dbData.templates = [...otherTemplates, ...mergedUserTemplates];
+        } else {
+          const userTemplates = (dbData.templates || []).filter((t: any) => t && (t.userId === userId || t.user_id === userId));
+          totalTemplatesCount = userTemplates.length;
         }
 
-        // 4. Sync Rendering Tasks with Concurrency Guard
+        if (activeUser) {
+          activeUser.templates_used = totalTemplatesCount;
+          activeUser.templatesUsed = totalTemplatesCount;
+        }
+
+        // 5. Sync Rendering Tasks with Concurrency Guard
         if (req.body.rendering_tasks) {
           const incomingUserTasks = req.body.rendering_tasks
             .filter((t: any) => t && (t.userId === userId || t.user_id === userId || !t.userId))
@@ -793,12 +1113,12 @@ async function startServer() {
           dbData.rendering_tasks = [...otherUsersTasks, ...resolvedUserTasks];
         }
 
-        // 5. Sync Storage Folders with perfect Tenant Isolation at Folder/File level
+        // 6. Sync Storage Folders with perfect Tenant Isolation and Validate disk size limits
+        let totalStorageMB = 0;
+        const standardFolderIds = ['fld-uploads', 'fld-templates', 'fld-logos', 'fld-videos', 'fld-rendered', 'uploads', 'templates', 'rendered'];
+
         if (req.body.storage_folders) {
           if (!dbData.storage_folders) dbData.storage_folders = [];
-
-          // Standard folder IDs
-          const standardFolderIds = ['fld-uploads', 'fld-templates', 'fld-logos', 'fld-videos', 'fld-rendered', 'uploads', 'templates', 'rendered'];
 
           // Separate other users' custom folders
           const otherUsersCustomFolders = dbData.storage_folders
@@ -843,22 +1163,74 @@ async function startServer() {
             return targetFolder;
           });
 
+          // Calculate total space in standard and custom folders
+          resolvedStandardFolders.forEach((folder: any) => {
+            (folder.files || []).forEach((file: any) => {
+              if (file && (file.userId === userId || file.user_id === userId)) {
+                totalStorageMB += parseSizeToMB(file.size || file.fileSize || 0);
+              }
+            });
+          });
+
+          mergedUserCustomFolders.forEach((folder: any) => {
+            (folder.files || []).forEach((file: any) => {
+              totalStorageMB += parseSizeToMB(file.size || file.fileSize || 0);
+            });
+          });
+
+          if (totalStorageMB > limits.maxStorageMB && !isBypassUser) {
+            throw new Error('LIMIT_STORAGE_EXCEEDED');
+          }
+
           // Set complete set of storage folders
           dbData.storage_folders = [
             ...resolvedStandardFolders,
             ...otherUsersCustomFolders,
             ...mergedUserCustomFolders
           ];
+        } else {
+          // Calculate existing storage usage count
+          if (dbData.storage_folders) {
+            dbData.storage_folders.forEach((folder: any) => {
+              const isStandard = standardFolderIds.includes(folder.id);
+              if (isStandard) {
+                (folder.files || []).forEach((file: any) => {
+                  if (file && (file.userId === userId || file.user_id === userId)) {
+                    totalStorageMB += parseSizeToMB(file.size || 0);
+                  }
+                });
+              } else if (folder.userId === userId || folder.user_id === userId) {
+                (folder.files || []).forEach((file: any) => {
+                  totalStorageMB += parseSizeToMB(file.size || 0);
+                });
+              }
+            });
+          }
         }
 
-        // 6. DISCARD client invoices to prevent financial/payment spoofing
+        if (activeUser) {
+          activeUser.storage_used_mb = parseFloat(totalStorageMB.toFixed(2));
+          activeUser.storageUsedMB = parseFloat(totalStorageMB.toFixed(2));
+        }
+
+        // 7. DISCARD client invoices to prevent financial/payment spoofing
         // Invoices can only be added/edited by backend webhook triggers or administrators.
       });
 
       res.json({ success: true });
     } catch (e: any) {
       console.error('[Sync POST Error]:', e);
-      res.status(500).json({ error: e.message });
+      if (e.message === 'SUSPENDED_ACCOUNT') {
+        res.status(403).json({ error: 'Sua conta está suspensa pelo proprietário do SaaS.' });
+      } else if (e.message === 'LIMIT_PROJECTS_EXCEEDED') {
+        res.status(403).json({ error: 'Limite de Projetos Atingido. Faça upgrade do seu plano para liberar projetos ilimitados.' });
+      } else if (e.message === 'LIMIT_TEMPLATES_EXCEEDED') {
+        res.status(403).json({ error: 'Limite de Templates Atingido. Faça upgrade do seu plano para liberar templates ilimitados.' });
+      } else if (e.message === 'LIMIT_STORAGE_EXCEEDED') {
+        res.status(403).json({ error: 'Espaço em Disco Esgotado. Exclua arquivos na aba de Armazenamento para liberar espaço ou faça upgrade.' });
+      } else {
+        res.status(500).json({ error: e.message });
+      }
     }
   });
 
@@ -1160,6 +1532,7 @@ async function startServer() {
   });
 
   WorkerWebSocketServer.init(server);
+  await JobQueue.recoverJobsFromDb().catch(err => console.error('[Startup Recovery] Failed:', err.message));
   JobTimeoutMonitor.start();
 }
 

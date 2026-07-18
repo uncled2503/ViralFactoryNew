@@ -259,7 +259,7 @@ export class RenderEngine {
   /**
    * Registers a completed output inside rendered videos registry
    */
-  private static async registerRenderedFile(userId: string, projectId: string, name: string, url: string) {
+  public static async registerRenderedFile(userId: string, projectId: string, name: string, url: string) {
     const sizeMb = StorageManager.getFileSizeMB(path.join(process.cwd(), 'public', url));
     const timestamp = new Date().toISOString();
 
@@ -285,7 +285,7 @@ export class RenderEngine {
       if (!renderedFolder) {
         renderedFolder = {
           id: 'fld-rendered',
-          name: 'Vídos Renderizados',
+          name: 'Vídeos Renderizados',
           path: '/rendered',
           description: 'Vídeos finais prontos para publicação',
           files: []
