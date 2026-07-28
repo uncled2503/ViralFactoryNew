@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import Redis, { RedisOptions } from 'ioredis';
 import { EventEmitter } from 'events';
 
 export interface RedisMetrics {
@@ -15,20 +15,35 @@ export class RedisService {
   private static client: Redis | null = null;
   private static subscriber: Redis | null = null;
   private static localEmitter = new EventEmitter();
+
+  // Active channel subscription tracking for resubscription on reconnect
+  private static subscribedChannels = new Set<string>();
+  private static channelHandlers = new Map<string, Set<(message: string) => void>>();
+
+  // Fallback storage
   private static fallbackCache = new Map<string, { value: string; expiresAt?: number }>();
-  private static fallbackQueues = new Map<string, any[]>();
+  private static fallbackQueues = new Map<string, unknown[]>();
   private static fallbackWorkers = new Map<string, any>();
-  
+
+  // Service state
   private static status: 'connected' | 'disconnected' | 'connecting' | 'fallback' = 'disconnected';
   private static circuitState: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
   private static consecutiveFailures = 0;
   private static readonly FAILURE_THRESHOLD = 3;
-  private static reconnectTimer: NodeJS.Timeout | null = null;
-  
-  // Custom configurable interval for testing (default: 30 seconds)
+
+  private static lastCircuitOpenTime = 0;
+  private static readonly CIRCUIT_COOLDOWN_MS = 15000; // 15s cooldown before probing HALF_OPEN
+
+  private static healthCheckTimer: NodeJS.Timeout | null = null;
+  private static shutdownHooksRegistered = false;
+
+  private static lastLatencyMs = -1;
+  private static lastConnectionChangeTime = Date.now();
+
+  // Configurable reconnect interval for testing / fallback (default: 30s)
   public static reconnectIntervalMs = 30000;
 
-  // Single flag to completely disable fallback in production
+  // Flag for production fallback behavior
   private static readonly ALLOW_PRODUCTION_FALLBACK = true;
 
   private static metrics: RedisMetrics = {
@@ -42,58 +57,70 @@ export class RedisService {
   };
 
   /**
-   * Initializes the Redis connection, handles Upstash TLS option, and runs non-blocking validation.
+   * Initializes the Redis service, builds clients, registers event listeners and health checks.
    */
-  static init(): void {
-    if (this.client) return; // Already initialized
-
-    const redisEnabled = process.env.REDIS_ENABLED !== 'false';
-    if (!redisEnabled) {
-      console.log('[RedisService] Redis is explicitly disabled via REDIS_ENABLED=false. Skipping connection.');
-      this.status = 'fallback';
-      this.circuitState = 'OPEN';
-      console.log('[RedisService] REDIS_FALLBACK_ENABLED');
+  public static init(): void {
+    if (this.client) {
+      console.log('[Redis] RedisService is already initialized.');
       return;
     }
 
-    console.log('[RedisService] Initializing Redis connection setup...');
+    const redisEnabled = process.env.REDIS_ENABLED !== 'false';
+    if (!redisEnabled) {
+      console.log('[Redis] Redis is explicitly disabled via REDIS_ENABLED=false.');
+      this.status = 'fallback';
+      this.circuitState = 'OPEN';
+      console.log('[Redis] Falling back to Memory');
+      return;
+    }
+
+    console.log('[Redis] Initializing Redis connection...');
     this.status = 'connecting';
     this.consecutiveFailures = 0;
 
+    this.setupShutdownHooks();
+
     try {
-      this.rebuildClients();
-      this.setupEvents();
-      
-      // Perform non-blocking async connection check
-      this.validateConnection().catch(err => {
-        console.error('[RedisService] Non-blocking validation error:', err.message);
+      this.buildClients();
+      this.startHealthCheckLoop();
+
+      // Non-blocking wait for ready state
+      this.waitForReady(this.client, 5000).then((isReady) => {
+        if (isReady) {
+          console.log('[Redis] Initial connection ready.');
+        } else {
+          console.warn('[Redis] Initial connection attempt timed out. Remaining in fallback mode.');
+          this.tripCircuit('initial_connection_timeout');
+        }
       });
-    } catch (err: any) {
-      console.error('[RedisService] Failed to initialize Redis client instances:', err.message);
-      this.tripCircuit('creation_error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Redis] Failed to initialize clients: ${msg}`);
+      this.tripCircuit('init_exception');
     }
   }
 
   /**
-   * Builds the Redis client instances respecting the priority of REDIS_URL and TLS configuration.
+   * Builds connection configuration options for ioredis with full Upstash & TLS support.
    */
-  private static rebuildClients(): void {
+  private static parseConnectionOptions(): { url?: string; options: RedisOptions } {
     let redisUrl = process.env.REDIS_URL ? process.env.REDIS_URL.trim() : undefined;
+
     if (redisUrl) {
-      // Strip outer double or single quotes if they got parsed literally
-      if ((redisUrl.startsWith('"') && redisUrl.endsWith('"')) || 
-          (redisUrl.startsWith("'") && redisUrl.endsWith("'"))) {
+      // Strip quotes if present
+      if (
+        (redisUrl.startsWith('"') && redisUrl.endsWith('"')) ||
+        (redisUrl.startsWith("'") && redisUrl.endsWith("'"))
+      ) {
         redisUrl = redisUrl.slice(1, -1).trim();
+      }
+      if (redisUrl === '' || redisUrl === 'undefined' || redisUrl === 'null') {
+        redisUrl = undefined;
       }
     }
 
-    // Fall back if URL is empty, "undefined", "null", or lacks a valid redis protocol scheme
-    if (redisUrl === '' || redisUrl === 'undefined' || redisUrl === 'null') {
-      redisUrl = undefined;
-    }
-
     if (redisUrl && !redisUrl.startsWith('redis://') && !redisUrl.startsWith('rediss://')) {
-      console.warn(`[RedisService] Ignoring invalid REDIS_URL scheme: "${redisUrl}". Falling back to host/port config.`);
+      console.warn(`[Redis] Ignoring invalid REDIS_URL scheme: "${redisUrl}". Falling back to host/port.`);
       redisUrl = undefined;
     }
 
@@ -102,122 +129,244 @@ export class RedisService {
     const redisPassword = process.env.REDIS_PASSWORD || undefined;
     const isTls = process.env.REDIS_TLS === 'true' || (redisUrl ? redisUrl.startsWith('rediss://') : false);
 
-    const commonOptions: any = {
+    const commonOptions: RedisOptions = {
       maxRetriesPerRequest: null,
-      enableOfflineQueue: false, // Fail fast to trip the Circuit Breaker instead of buffering stale requests
+      enableOfflineQueue: false, // Fail fast so commands are not executed when disconnected
+      lazyConnect: false,
+      keepAlive: 5000, // Send TCP keepalive packets every 5s to maintain active serverless/Upstash connections
       retryStrategy: (times: number) => {
-        const delay = Math.min(times * 100, 3000);
-        console.warn(`[RedisService] REDIS_RECONNECTING (attempt #${times} in ${delay}ms)`);
+        if (process.env.REDIS_ENABLED === 'false') return null;
+        const delay = Math.min(times * 200, 3000);
+        console.warn(`[Redis] Reconnecting... (attempt #${times} in ${delay}ms)`);
         return delay;
-      }
+      },
+      reconnectOnError: (err: Error) => {
+        const targetErrors = ['READONLY', 'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED'];
+        if (targetErrors.some((e) => err.message.includes(e))) {
+          console.warn(`[Redis] Forcing reconnect due to error: ${err.message}`);
+          return true;
+        }
+        return false;
+      },
     };
 
     if (isTls) {
-      commonOptions.tls = { rejectUnauthorized: false };
+      let servername = redisHost;
+      if (redisUrl) {
+        try {
+          const parsed = new URL(redisUrl);
+          servername = parsed.hostname;
+        } catch {
+          // fallback to redisHost
+        }
+      }
+      commonOptions.tls = {
+        rejectUnauthorized: false,
+        servername,
+      };
     }
 
     if (redisUrl) {
-      this.client = new Redis(redisUrl, commonOptions);
-      this.subscriber = new Redis(redisUrl, commonOptions);
+      return { url: redisUrl, options: commonOptions };
+    }
+
+    const configOptions: RedisOptions = {
+      ...commonOptions,
+      host: redisHost,
+      port: redisPort,
+    };
+    if (redisPassword) {
+      configOptions.password = redisPassword;
+    }
+
+    return { options: configOptions };
+  }
+
+  /**
+   * Instantiates Redis client and subscriber instances.
+   */
+  private static buildClients(): void {
+    const { url, options } = this.parseConnectionOptions();
+
+    if (url) {
+      this.client = new Redis(url, options);
+      this.subscriber = new Redis(url, options);
     } else {
-      const connectionConfig: any = {
-        host: redisHost,
-        port: redisPort,
-        ...commonOptions
-      };
-      if (redisPassword) {
-        connectionConfig.password = redisPassword;
-      }
-      this.client = new Redis(connectionConfig);
-      this.subscriber = new Redis(connectionConfig);
+      this.client = new Redis(options);
+      this.subscriber = new Redis(options);
     }
+
+    this.attachEvents(this.client, 'main');
+    this.attachEvents(this.subscriber, 'subscriber');
   }
 
   /**
-   * Sets up connection event handlers and subscriber routing.
+   * Attaches ioredis event listeners for clean state management and detailed logging.
    */
-  private static setupEvents(): void {
-    if (!this.client || !this.subscriber) return;
-
-    this.client.on('error', (err) => {
-      if (this.circuitState === 'CLOSED') {
-        console.error('[RedisService] Client error event:', err.message);
-        this.tripCircuit('client_error_event');
-      } else {
-        // Expected under fallback or offline mode
-        console.log('[RedisService] Client socket event (offline):', err.message);
-      }
+  private static attachEvents(redisInstance: Redis, role: 'main' | 'subscriber'): void {
+    redisInstance.on('connect', () => {
+      console.log(`[Redis] ${role === 'main' ? 'Main' : 'Subscriber'} Connecting...`);
     });
 
-    this.subscriber.on('error', (err) => {
-      if (this.circuitState === 'CLOSED') {
-        console.error('[RedisService] Subscriber error event:', err.message);
-      } else {
-        // Expected under fallback or offline mode
-        console.log('[RedisService] Subscriber socket event (offline):', err.message);
-      }
-    });
+    redisInstance.on('ready', () => {
+      console.log(`[Redis] ${role === 'main' ? 'Main' : 'Subscriber'} Ready`);
 
-    this.subscriber.on('message', (channel, message) => {
-      this.metrics.messagesReceived++;
-      this.localEmitter.emit(`redis:${channel}`, message);
-    });
-  }
-
-  /**
-   * Performs an asynchronous validation of the connection.
-   */
-  private static async validateConnection(): Promise<void> {
-    if (!this.client) return;
-    try {
-      // Validate with a PING command and 2-second timeout
-      const pingResult = await Promise.race([
-        this.client.ping(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 2000))
-      ]);
-
-      if (pingResult === 'PONG') {
+      if (role === 'main') {
         this.status = 'connected';
-        this.circuitState = 'CLOSED';
+        this.metrics.connectionChanges++;
         this.consecutiveFailures = 0;
-        console.log('[RedisService] REDIS_CONNECTED');
-        if (this.reconnectTimer) {
-          clearInterval(this.reconnectTimer);
-          this.reconnectTimer = null;
+        this.lastConnectionChangeTime = Date.now();
+
+        if (this.circuitState !== 'CLOSED') {
+          this.circuitState = 'CLOSED';
+          console.log('[Redis] Circuit CLOSED');
+          console.log('[Redis] Redis recovered');
         }
-      } else {
-        throw new Error(`Unexpected ping response: ${pingResult}`);
+
+        this.syncAfterReconnection().catch((err) => {
+          console.error(`[Redis] Error during post-reconnect synchronization: ${err.message}`);
+        });
+      } else if (role === 'subscriber') {
+        this.resubscribeChannels().catch((err) => {
+          console.error(`[Redis] Error resubscribing channels: ${err.message}`);
+        });
       }
-    } catch (err: any) {
-      console.error('[RedisService] Validation check failed:', err.message);
-      this.tripCircuit('validation_failed');
+    });
+
+    redisInstance.on('error', (err: Error) => {
+      const isTransientReset =
+        err.message.includes('ECONNRESET') ||
+        err.message.includes('ETIMEDOUT') ||
+        err.message.includes('EPIPE') ||
+        err.message.includes('ECONNREFUSED');
+
+      if (isTransientReset) {
+        console.warn(`[Redis] ${role === 'main' ? 'Main' : 'Subscriber'} socket reset (${err.message}). Auto-reconnecting...`);
+      } else {
+        console.error(`[Redis] ${role === 'main' ? 'Main' : 'Subscriber'} error: ${err.message}`);
+      }
+    });
+
+    redisInstance.on('close', () => {
+      console.log(`[Redis] ${role === 'main' ? 'Main' : 'Subscriber'} connection closed`);
+    });
+
+    redisInstance.on('reconnecting', () => {
+      console.log(`[Redis] ${role === 'main' ? 'Main' : 'Subscriber'} Reconnecting...`);
+    });
+
+    redisInstance.on('end', () => {
+      console.log(`[Redis] ${role === 'main' ? 'Main' : 'Subscriber'} connection ended`);
+      if (role === 'main' && this.status === 'connected') {
+        this.status = 'disconnected';
+        this.metrics.connectionChanges++;
+        this.lastConnectionChangeTime = Date.now();
+      }
+    });
+
+    if (role === 'subscriber') {
+      redisInstance.on('message', (channel: string, message: string) => {
+        this.metrics.messagesReceived++;
+        this.localEmitter.emit(`redis:${channel}`, message);
+      });
     }
   }
 
   /**
-   * Trips the Circuit Breaker to OPEN state, enabling memory fallback.
+   * Helper that waits for a client to reach 'ready' status without throwing.
+   */
+  public static async waitForReady(client: Redis | null, timeoutMs = 5000): Promise<boolean> {
+    if (!client) return false;
+    if (client.status === 'ready') return true;
+
+    return new Promise<boolean>((resolve) => {
+      let timer: NodeJS.Timeout | null = null;
+
+      const onReady = () => {
+        cleanup();
+        resolve(true);
+      };
+
+      const onError = () => {
+        cleanup();
+        resolve(false);
+      };
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        client.removeListener('ready', onReady);
+        client.removeListener('error', onError);
+        client.removeListener('end', onError);
+      };
+
+      timer = setTimeout(() => {
+        cleanup();
+        resolve(client.status === 'ready');
+      }, timeoutMs);
+
+      client.once('ready', onReady);
+      client.once('error', onError);
+      client.once('end', onError);
+    });
+  }
+
+  /**
+   * Returns true only when client instance exists, status is 'ready', and circuit breaker is NOT OPEN.
+   */
+  private static isClientReady(client: Redis | null): boolean {
+    return client !== null && client.status === 'ready' && this.circuitState !== 'OPEN';
+  }
+
+  /**
+   * Public health indicator.
+   */
+  public static isAvailable(): boolean {
+    return this.isClientReady(this.client) && this.status === 'connected' && this.circuitState === 'CLOSED';
+  }
+
+  /**
+   * Public connection status.
+   */
+  public static getConnectionStatus(): 'connected' | 'disconnected' | 'connecting' | 'fallback' {
+    return this.status;
+  }
+
+  /**
+   * Handles consecutive failure count and trips the Circuit Breaker to OPEN state.
+   */
+  private static handleRedisError(err: Error, operation: string): void {
+    console.error(`[Redis] Redis operation "${operation}" failed: ${err.message}`);
+    this.consecutiveFailures++;
+
+    if (this.consecutiveFailures >= this.FAILURE_THRESHOLD && this.circuitState === 'CLOSED') {
+      this.tripCircuit(`failure_on_${operation}`);
+    }
+  }
+
+  /**
+   * Trips the Circuit Breaker to OPEN state and engages fallback.
    */
   private static tripCircuit(reason: string): void {
     if (this.circuitState === 'OPEN') return;
-    this.circuitState = 'OPEN';
-    
-    console.warn(`[RedisService] REDIS_CIRCUIT_OPEN`);
-    console.warn(`[RedisService] REDIS_DISCONNECTED`);
-    this.switchToFallback(reason);
 
-    this.startReconnectionTimer();
+    this.circuitState = 'OPEN';
+    this.lastCircuitOpenTime = Date.now();
+    console.warn(`[Redis] Circuit OPEN (Reason: ${reason})`);
+    console.warn('[Redis] REDIS_DISCONNECTED');
+
+    this.switchToFallback();
   }
 
   /**
-   * Safe transition into memory-backed fallback mode.
+   * Safely switches application mode to memory fallback.
    */
-  private static switchToFallback(reason: string): void {
+  private static switchToFallback(): void {
     if (this.status === 'fallback') return;
 
     if (process.env.NODE_ENV === 'production') {
-      console.warn('[RedisService] WARNING: Redis is unavailable in production!');
+      console.warn('[Redis] WARNING: Redis is unavailable in production!');
       if (!this.ALLOW_PRODUCTION_FALLBACK) {
-        console.error('[RedisService] Fallback is disabled in production. Operations will fail.');
+        console.error('[Redis] Fallback is disabled in production.');
         this.status = 'disconnected';
         return;
       }
@@ -226,70 +375,155 @@ export class RedisService {
     this.status = 'fallback';
     this.metrics.fallbackCount++;
     this.metrics.connectionChanges++;
-    console.log(`[RedisService] REDIS_FALLBACK_ENABLED`);
+    this.lastConnectionChangeTime = Date.now();
+    console.log('[Redis] Falling back to Memory');
   }
 
   /**
-   * Periodically attempts self-healing background reconnections without restarting the server.
+   * Starts non-blocking periodic health checks.
    */
-  private static startReconnectionTimer(): void {
-    if (this.reconnectTimer) return;
+  private static startHealthCheckLoop(): void {
+    if (this.healthCheckTimer) return;
 
-    this.reconnectTimer = setInterval(async () => {
-      console.log('[RedisService] REDIS_RECONNECTING');
-      try {
-        if (this.client) {
-          try { this.client.disconnect(); } catch {}
-          this.client = null;
+    this.healthCheckTimer = setInterval(async () => {
+      await this.runHealthCheck();
+    }, 15000); // Check every 15s
+  }
+
+  /**
+   * Runs an active health check ping and manages Circuit Breaker states (CLOSED, OPEN, HALF_OPEN).
+   */
+  public static async runHealthCheck(): Promise<{
+    status: string;
+    redisConnected: boolean;
+    circuitState: string;
+    latencyMs: number;
+    metrics: RedisMetrics;
+  }> {
+    const now = Date.now();
+
+    if (this.circuitState === 'OPEN') {
+      // Check if cooldown has passed to attempt HALF_OPEN state
+      if (now - this.lastCircuitOpenTime >= this.CIRCUIT_COOLDOWN_MS) {
+        console.log('[Redis] Circuit HALF_OPEN (probing connection...)');
+        this.circuitState = 'HALF_OPEN';
+
+        if (this.client && (this.client.status === 'close' || this.client.status === 'end')) {
+          this.client.connect().catch(() => {});
         }
-        if (this.subscriber) {
-          try { this.subscriber.disconnect(); } catch {}
-          this.subscriber = null;
-        }
+      }
+    }
 
-        this.rebuildClients();
-        this.setupEvents();
+    if (this.client) {
+      if (this.circuitState === 'HALF_OPEN' && this.client.status !== 'ready') {
+        // Wait up to 2000ms for client to reach ready state before probing ping
+        await this.waitForReady(this.client, 2000);
+      }
 
-        if (this.client) {
-          const pingResult = await Promise.race([
+      if (this.client.status === 'ready') {
+        try {
+          const start = Date.now();
+          const pingRes = await Promise.race([
             this.client.ping(),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 2000))
+            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('Ping timeout')), 3000)),
           ]);
 
-          if (pingResult === 'PONG') {
-            this.circuitState = 'CLOSED';
-            this.status = 'connected';
-            this.consecutiveFailures = 0;
-            
-            console.log('[RedisService] REDIS_RECONNECTED');
-            console.log('[RedisService] REDIS_CIRCUIT_CLOSED');
-            console.log('[RedisService] REDIS_FALLBACK_DISABLED');
+          if (pingRes === 'PONG') {
+            this.lastLatencyMs = Date.now() - start;
+            console.log(`[Redis] Ping ${this.lastLatencyMs}ms`);
 
-            if (this.reconnectTimer) {
-              clearInterval(this.reconnectTimer);
-              this.reconnectTimer = null;
+            if (this.circuitState === 'OPEN' || this.circuitState === 'HALF_OPEN') {
+              this.circuitState = 'CLOSED';
+              this.status = 'connected';
+              this.consecutiveFailures = 0;
+              console.log('[Redis] Circuit CLOSED');
+              console.log('[Redis] Redis recovered');
             }
 
-            // Sync state across cluster
-            await this.syncAfterReconnection();
-          } else {
-            throw new Error(`Unexpected ping answer: ${pingResult}`);
+            return {
+              status: 'UP',
+              redisConnected: true,
+              circuitState: this.circuitState,
+              latencyMs: this.lastLatencyMs,
+              metrics: { ...this.metrics },
+            };
           }
-        } else {
-          throw new Error('Client reconstruction returned null');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[Redis] Health check ping failed: ${msg}`);
+          this.handleRedisError(new Error(msg), 'health_check');
         }
-      } catch (err: any) {
-        console.log(`[RedisService] Reconnection check: Redis server is still offline (${err.message}). Remaining in fallback.`);
       }
-    }, this.reconnectIntervalMs);
+    }
+
+    return {
+      status: this.status === 'connected' ? 'UP' : this.status === 'fallback' ? 'FALLBACK_UP' : 'DOWN',
+      redisConnected: this.isClientReady(this.client),
+      circuitState: this.circuitState,
+      latencyMs: -1,
+      metrics: { ...this.metrics },
+    };
   }
 
   /**
-   * Synchronizes active workers, progress queues, and pending jobs to avoid duplication.
+   * Exposes structured health check metrics for admin routes.
+   */
+  public static healthCheck(): {
+    status: string;
+    redisConnected: boolean;
+    circuitState: string;
+    metrics: RedisMetrics;
+  } {
+    const isOk = this.isAvailable();
+    return {
+      status: isOk ? 'UP' : this.status === 'fallback' ? 'FALLBACK_UP' : 'DOWN',
+      redisConnected: isOk,
+      circuitState: this.circuitState,
+      metrics: { ...this.metrics },
+    };
+  }
+
+  /**
+   * Returns current performance and volume metrics.
+   */
+  public static getMetrics(): RedisMetrics {
+    return { ...this.metrics };
+  }
+
+  /**
+   * Force manual reconnection, tearing down sockets cleanly and re-initializing.
+   */
+  public static forceReconnect(): void {
+    console.log('[Redis] Forcing manual reconnection...');
+    this.disposeClients();
+    this.status = 'disconnected';
+    this.circuitState = 'CLOSED';
+    this.consecutiveFailures = 0;
+    this.init();
+  }
+
+  /**
+   * Resubscribes all tracked channels when the subscriber connection is ready.
+   */
+  private static async resubscribeChannels(): Promise<void> {
+    if (!this.isClientReady(this.subscriber) || this.subscribedChannels.size === 0) return;
+
+    const channels = Array.from(this.subscribedChannels);
+    try {
+      await this.subscriber!.subscribe(...channels);
+      console.log(`[Redis] Re-subscribed to ${channels.length} channels: ${channels.join(', ')}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Redis] Failed to re-subscribe to channels: ${msg}`);
+    }
+  }
+
+  /**
+   * Synchronizes cluster state (workers, pending queues, jobs) post reconnection.
    */
   private static async syncAfterReconnection(): Promise<void> {
-    if (!this.client) return;
-    console.log('[RedisService] Starting post-reconnection cluster state synchronization...');
+    if (!this.isClientReady(this.client)) return;
+    console.log('[Redis] Starting post-reconnection cluster state synchronization...');
 
     // 1. Sync Active Workers
     try {
@@ -313,153 +547,117 @@ export class RedisService {
           ip: stats.ip || '0.0.0.0',
           cpuUsage: stats.cpuUsage || 0,
           ramUsage: stats.ramUsage || 0,
-          uptimeSeconds: stats.uptimeSeconds || 0
+          uptimeSeconds: stats.uptimeSeconds || 0,
+          lastHeartbeat: Date.now(),
         };
-        await this.client.hset('cluster:workers', worker.id, JSON.stringify({
-          ...payload,
-          lastHeartbeat: Date.now()
-        }));
+        await this.client!.hset('cluster:workers', worker.id, JSON.stringify(payload));
       }
-      console.log(`[RedisService] Synchronized ${localWorkers.length} active workers into cluster hash.`);
-    } catch (err: any) {
-      console.error('[RedisService] Error synchronizing active workers:', err.message);
+      if (localWorkers.length > 0) {
+        console.log(`[Redis] Synchronized ${localWorkers.length} active workers into cluster hash.`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Redis] Error synchronizing active workers: ${msg}`);
     }
 
     // 2. Sync Progress Queues (fallbackQueues)
     try {
       for (const [queueName, items] of this.fallbackQueues.entries()) {
         if (items.length > 0) {
-          console.log(`[RedisService] Synchronizing progress queue "${queueName}" with ${items.length} backlog entries.`);
+          console.log(`[Redis] Synchronizing progress queue "${queueName}" with ${items.length} entries.`);
           for (const item of items) {
-            await this.client.rpush(queueName, JSON.stringify(item));
+            await this.client!.rpush(queueName, JSON.stringify(item));
           }
-          items.length = 0; // Clear the backlog
+          items.length = 0;
         }
       }
-    } catch (err: any) {
-      console.error('[RedisService] Error synchronizing progress queues:', err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Redis] Error synchronizing progress queues: ${msg}`);
     }
 
-    // 3. Sync Active/Pending Jobs to avoid duplication across other coordinators
+    // 3. Sync Active Jobs
     try {
       const { JobQueue } = await import('../render/JobQueue');
-      const activeJobs = JobQueue.getAllJobs().filter((j: any) => 
-        j.status !== 'Completed' && j.status !== 'Failed' && j.status !== 'Canceled'
+      const activeJobs = JobQueue.getAllJobs().filter(
+        (j: { status: string }) => j.status !== 'Completed' && j.status !== 'Failed' && j.status !== 'Canceled'
       );
       for (const job of activeJobs) {
         const key = `job:status:${job.id}`;
-        await this.client.set(key, JSON.stringify({
-          id: job.id,
-          status: job.status,
-          progress: job.progress,
-          userId: job.userId,
-          projectId: job.projectId,
-          templateId: job.templateId,
-          updatedAt: Date.now()
-        }), 'EX', 3600);
+        await this.client!.set(
+          key,
+          JSON.stringify({
+            id: job.id,
+            status: job.status,
+            progress: job.progress,
+            userId: job.userId,
+            projectId: job.projectId,
+            templateId: job.templateId,
+            updatedAt: Date.now(),
+          }),
+          'EX',
+          3600
+        );
       }
-      console.log(`[RedisService] Synchronized ${activeJobs.length} active jobs to prevent duplication.`);
-    } catch (err: any) {
-      console.error('[RedisService] Error synchronizing active jobs:', err.message);
+      if (activeJobs.length > 0) {
+        console.log(`[Redis] Synchronized ${activeJobs.length} active jobs to prevent duplication.`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Redis] Error synchronizing active jobs: ${msg}`);
     }
-  }
-
-  /**
-   * Tracks consecutive Redis failures and trips the Circuit Breaker if threshold is exceeded.
-   */
-  private static handleRedisError(err: any, operation: string): void {
-    console.error(`[RedisService] Redis operation "${operation}" failed:`, err.message);
-    this.consecutiveFailures++;
-    if (this.consecutiveFailures >= this.FAILURE_THRESHOLD && this.circuitState === 'CLOSED') {
-      this.tripCircuit(`failure_on_${operation}`);
-    }
-  }
-
-  /**
-   * Restores Redis from fallback manually.
-   */
-  static forceReconnect(): void {
-    console.log('[RedisService] Forcing manual reconnection...');
-    if (this.client) {
-      try { this.client.disconnect(); } catch {}
-      this.client = null;
-    }
-    if (this.subscriber) {
-      try { this.subscriber.disconnect(); } catch {}
-      this.subscriber = null;
-    }
-    this.status = 'disconnected';
-    this.circuitState = 'CLOSED';
-    this.consecutiveFailures = 0;
-    this.init();
-  }
-
-  /**
-   * Returns whether Redis is fully connected and available.
-   */
-  static isAvailable(): boolean {
-    return this.status === 'connected' && this.circuitState === 'CLOSED';
-  }
-
-  /**
-   * Returns current connection status.
-   */
-  static getConnectionStatus(): 'connected' | 'disconnected' | 'connecting' | 'fallback' {
-    return this.status;
-  }
-
-  /**
-   * Returns current health check object.
-   */
-  static healthCheck(): { status: string; redisConnected: boolean; metrics: RedisMetrics } {
-    const isOk = this.status === 'connected';
-    return {
-      status: isOk ? 'UP' : this.status === 'fallback' ? 'FALLBACK_UP' : 'DOWN',
-      redisConnected: isOk,
-      metrics: { ...this.metrics }
-    };
-  }
-
-  /**
-   * Returns performance and load metrics.
-   */
-  static getMetrics(): RedisMetrics {
-    return { ...this.metrics };
   }
 
   // ==========================================
   // CACHE INTERFACE
   // ==========================================
 
-  static async incrAndExpire(key: string, ttlSeconds: number): Promise<number> {
+  public static async incrAndExpire(key: string, ttlSeconds: number): Promise<number> {
     this.metrics.commandsProcessed++;
-    if (this.isAvailable() && this.client) {
+
+    if (this.isClientReady(this.client)) {
       try {
-        const count = await this.client.incr(key);
+        const count = await this.client!.incr(key);
         if (count === 1) {
-          await this.client.expire(key, ttlSeconds);
+          await this.client!.expire(key, ttlSeconds);
         }
         return count;
-      } catch (err: any) {
-        this.handleRedisError(err, 'incrAndExpire');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'incrAndExpire');
       }
     }
-    return 0;
+
+    // Memory Fallback for Rate Limiter
+    const cached = this.fallbackCache.get(key);
+    const now = Date.now();
+    let currentVal = 0;
+
+    if (cached && (!cached.expiresAt || now <= cached.expiresAt)) {
+      currentVal = parseInt(cached.value, 10) || 0;
+    }
+
+    currentVal++;
+    const expiresAt = now + ttlSeconds * 1000;
+    this.fallbackCache.set(key, { value: String(currentVal), expiresAt });
+    return currentVal;
   }
 
-  static async get(key: string): Promise<string | null> {
+  public static async get(key: string): Promise<string | null> {
     this.metrics.commandsProcessed++;
-    if (this.isAvailable() && this.client) {
+
+    if (this.isClientReady(this.client)) {
       try {
-        const val = await this.client.get(key);
+        const val = await this.client!.get(key);
         if (val !== null) {
           this.metrics.cacheHits++;
         } else {
           this.metrics.cacheMisses++;
         }
         return val;
-      } catch (err: any) {
-        this.handleRedisError(err, 'get');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'get');
       }
     }
 
@@ -467,32 +665,37 @@ export class RedisService {
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return null;
     }
+
     const cached = this.fallbackCache.get(key);
     if (!cached) {
       this.metrics.cacheMisses++;
       return null;
     }
+
     if (cached.expiresAt && Date.now() > cached.expiresAt) {
       this.fallbackCache.delete(key);
       this.metrics.cacheMisses++;
       return null;
     }
+
     this.metrics.cacheHits++;
     return cached.value;
   }
 
-  static async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+  public static async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
     this.metrics.commandsProcessed++;
-    if (this.isAvailable() && this.client) {
+
+    if (this.isClientReady(this.client)) {
       try {
         if (ttlSeconds) {
-          await this.client.set(key, value, 'EX', ttlSeconds);
+          await this.client!.set(key, value, 'EX', ttlSeconds);
         } else {
-          await this.client.set(key, value);
+          await this.client!.set(key, value);
         }
         return;
-      } catch (err: any) {
-        this.handleRedisError(err, 'set');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'set');
       }
     }
 
@@ -500,40 +703,43 @@ export class RedisService {
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return;
     }
+
     const expiresAt = ttlSeconds ? Date.now() + ttlSeconds * 1000 : undefined;
     this.fallbackCache.set(key, { value, expiresAt });
   }
 
-  static async del(key: string): Promise<void> {
+  public static async del(key: string): Promise<void> {
     this.metrics.commandsProcessed++;
-    if (this.isAvailable() && this.client) {
+
+    if (this.isClientReady(this.client)) {
       try {
-        await this.client.del(key);
+        await this.client!.del(key);
         return;
-      } catch (err: any) {
-        this.handleRedisError(err, 'del');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'del');
       }
     }
 
-    // Fallback Mode
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return;
     }
     this.fallbackCache.delete(key);
   }
 
-  static async flushAll(): Promise<void> {
+  public static async flushAll(): Promise<void> {
     this.metrics.commandsProcessed++;
-    if (this.isAvailable() && this.client) {
+
+    if (this.isClientReady(this.client)) {
       try {
-        await this.client.flushall();
+        await this.client!.flushall();
         return;
-      } catch (err: any) {
-        this.handleRedisError(err, 'flushall');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'flushall');
       }
     }
 
-    // Fallback Mode
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return;
     }
@@ -544,229 +750,348 @@ export class RedisService {
   // PUB/SUB INTERFACE
   // ==========================================
 
-  static async publish(channel: string, message: string): Promise<number> {
+  public static async publish(channel: string, message: string): Promise<number> {
     this.metrics.commandsProcessed++;
     this.metrics.publishes++;
-    
-    // Always propagate to local handlers for cluster resilience and standalone consistency
+
+    // Local in-process broadcast for local subscribers
     this.localEmitter.emit(`redis:${channel}`, message);
 
-    if (this.isAvailable() && this.client) {
+    if (this.isClientReady(this.client)) {
       try {
-        const count = await this.client.publish(channel, message);
-        return count;
-      } catch (err: any) {
-        this.handleRedisError(err, 'publish');
+        return await this.client!.publish(channel, message);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'publish');
       }
     }
 
     return 1;
   }
 
-  static async subscribe(channel: string, callback: (message: string) => void): Promise<void> {
-    const handler = (msg: string) => callback(msg);
-    this.localEmitter.on(`redis:${channel}`, handler);
+  public static async subscribe(channel: string, callback: (message: string) => void): Promise<void> {
+    if (!this.channelHandlers.has(channel)) {
+      this.channelHandlers.set(channel, new Set());
+    }
 
-    if (this.isAvailable() && this.subscriber) {
+    const handlerSet = this.channelHandlers.get(channel)!;
+    handlerSet.add(callback);
+
+    const eventName = `redis:${channel}`;
+    this.localEmitter.on(eventName, callback);
+
+    this.subscribedChannels.add(channel);
+
+    if (this.isClientReady(this.subscriber)) {
       try {
-        await this.subscriber.subscribe(channel);
-      } catch (err: any) {
-        this.handleRedisError(err, 'subscribe');
+        await this.subscriber!.subscribe(channel);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'subscribe');
       }
     }
   }
 
-  static async unsubscribe(channel: string): Promise<void> {
-    this.localEmitter.removeAllListeners(`redis:${channel}`);
+  public static async unsubscribe(channel: string, callback?: (message: string) => void): Promise<void> {
+    const eventName = `redis:${channel}`;
 
-    if (this.isAvailable() && this.subscriber) {
+    if (callback) {
+      this.localEmitter.removeListener(eventName, callback);
+      const handlerSet = this.channelHandlers.get(channel);
+      if (handlerSet) {
+        handlerSet.delete(callback);
+        if (handlerSet.size === 0) {
+          this.channelHandlers.delete(channel);
+          this.subscribedChannels.delete(channel);
+        }
+      }
+    } else {
+      this.localEmitter.removeAllListeners(eventName);
+      this.channelHandlers.delete(channel);
+      this.subscribedChannels.delete(channel);
+    }
+
+    if (!this.subscribedChannels.has(channel) && this.isClientReady(this.subscriber)) {
       try {
-        await this.subscriber.unsubscribe(channel);
-      } catch (err: any) {
-        this.handleRedisError(err, 'unsubscribe');
+        await this.subscriber!.unsubscribe(channel);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'unsubscribe');
       }
     }
   }
 
   // ==========================================
-  // PROGRESS QUEUE INTERFACE
+  // QUEUE INTERFACE
   // ==========================================
 
-  static async pushQueue(queueName: string, data: any): Promise<void> {
+  public static async pushQueue(queueName: string, data: unknown): Promise<void> {
     this.metrics.commandsProcessed++;
-    if (this.isAvailable() && this.client) {
+
+    if (this.isClientReady(this.client)) {
       try {
-        await this.client.rpush(queueName, JSON.stringify(data));
+        await this.client!.rpush(queueName, JSON.stringify(data));
         return;
-      } catch (err: any) {
-        this.handleRedisError(err, 'rpush');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'rpush');
       }
     }
 
-    // Fallback Mode
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return;
     }
+
     if (!this.fallbackQueues.has(queueName)) {
       this.fallbackQueues.set(queueName, []);
     }
     this.fallbackQueues.get(queueName)!.push(data);
   }
 
-  static async popQueue(queueName: string): Promise<any | null> {
+  public static async popQueue(queueName: string): Promise<unknown | null> {
     this.metrics.commandsProcessed++;
-    if (this.isAvailable() && this.client) {
+
+    if (this.isClientReady(this.client)) {
       try {
-        const item = await this.client.lpop(queueName);
+        const item = await this.client!.lpop(queueName);
         return item ? JSON.parse(item) : null;
-      } catch (err: any) {
-        this.handleRedisError(err, 'lpop');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'lpop');
       }
     }
 
-    // Fallback Mode
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return null;
     }
+
     const q = this.fallbackQueues.get(queueName);
     if (!q || q.length === 0) return null;
     return q.shift();
   }
 
-  static async getQueueLength(queueName: string): Promise<number> {
+  public static async getQueueLength(queueName: string): Promise<number> {
     this.metrics.commandsProcessed++;
-    if (this.isAvailable() && this.client) {
+
+    if (this.isClientReady(this.client)) {
       try {
-        return await this.client.llen(queueName);
-      } catch (err: any) {
-        this.handleRedisError(err, 'llen');
+        return await this.client!.llen(queueName);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'llen');
       }
     }
 
-    // Fallback Mode
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return 0;
     }
+
     const q = this.fallbackQueues.get(queueName);
     return q ? q.length : 0;
   }
 
   // ==========================================
-  // COORDINATION INTERFACE
+  // CLUSTER COORDINATION INTERFACE
   // ==========================================
 
-  static async registerWorkerInCluster(workerId: string, metadata: any): Promise<void> {
+  public static async registerWorkerInCluster(workerId: string, metadata: any): Promise<void> {
     this.metrics.commandsProcessed++;
     const payload = {
       ...metadata,
-      lastHeartbeat: Date.now()
+      lastHeartbeat: Date.now(),
     };
 
-    if (this.isAvailable() && this.client) {
+    if (this.isClientReady(this.client)) {
       try {
-        await this.client.hset('cluster:workers', workerId, JSON.stringify(payload));
+        await this.client!.hset('cluster:workers', workerId, JSON.stringify(payload));
         return;
-      } catch (err: any) {
-        this.handleRedisError(err, 'hset');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'hset');
       }
     }
 
-    // Fallback Mode
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return;
     }
+
     this.fallbackWorkers.set(workerId, payload);
   }
 
-  static async updateWorkerHeartbeatInCluster(workerId: string, stats: any): Promise<void> {
+  public static async updateWorkerHeartbeatInCluster(
+    workerId: string,
+    stats: any
+  ): Promise<void> {
     this.metrics.commandsProcessed++;
     let currentMetadata: any = {};
 
-    if (this.isAvailable() && this.client) {
+    if (this.isClientReady(this.client)) {
       try {
-        const raw = await this.client.hget('cluster:workers', workerId);
+        const raw = await this.client!.hget('cluster:workers', workerId);
         if (raw) currentMetadata = JSON.parse(raw);
-        
+
         const updated = {
           ...currentMetadata,
           ...stats,
-          lastHeartbeat: Date.now()
+          lastHeartbeat: Date.now(),
         };
-        await this.client.hset('cluster:workers', workerId, JSON.stringify(updated));
+        await this.client!.hset('cluster:workers', workerId, JSON.stringify(updated));
         return;
-      } catch (err: any) {
-        this.handleRedisError(err, 'hget_hset');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'hget_hset');
       }
     }
 
-    // Fallback Mode
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return;
     }
+
     currentMetadata = this.fallbackWorkers.get(workerId) || {};
     const updatedFallback = {
       ...currentMetadata,
       ...stats,
-      lastHeartbeat: Date.now()
+      lastHeartbeat: Date.now(),
     };
     this.fallbackWorkers.set(workerId, updatedFallback);
   }
 
-  static async removeWorkerFromCluster(workerId: string): Promise<void> {
+  public static async removeWorkerFromCluster(workerId: string): Promise<void> {
     this.metrics.commandsProcessed++;
-    if (this.isAvailable() && this.client) {
+
+    if (this.isClientReady(this.client)) {
       try {
-        await this.client.hdel('cluster:workers', workerId);
+        await this.client!.hdel('cluster:workers', workerId);
         return;
-      } catch (err: any) {
-        this.handleRedisError(err, 'hdel');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'hdel');
       }
     }
 
-    // Fallback Mode
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return;
     }
+
     this.fallbackWorkers.delete(workerId);
   }
 
-  static async getClusterWorkers(): Promise<Map<string, any>> {
+  public static async getClusterWorkers(): Promise<Map<string, any>> {
     this.metrics.commandsProcessed++;
     const result = new Map<string, any>();
 
-    if (this.isAvailable() && this.client) {
+    if (this.isClientReady(this.client)) {
       try {
-        const rawHash = await this.client.hgetall('cluster:workers');
+        const rawHash = await this.client!.hgetall('cluster:workers');
         const now = Date.now();
+
         for (const [id, valueStr] of Object.entries(rawHash)) {
           try {
             const parsed = JSON.parse(valueStr);
-            // Purge silent worker after 30 seconds
-            if (now - parsed.lastHeartbeat > 30000) {
-              await this.client.hdel('cluster:workers', id);
+            const lastHeartbeat = typeof parsed.lastHeartbeat === 'number' ? parsed.lastHeartbeat : 0;
+
+            if (now - lastHeartbeat > 30000) {
+              await this.client!.hdel('cluster:workers', id);
             } else {
               result.set(id, parsed);
             }
-          } catch {}
+          } catch {
+            // ignore invalid JSON
+          }
         }
         return result;
-      } catch (err: any) {
-        this.handleRedisError(err, 'hgetall');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.handleRedisError(new Error(msg), 'hgetall');
       }
     }
 
-    // Fallback Mode
     if (process.env.NODE_ENV === 'production' && !this.ALLOW_PRODUCTION_FALLBACK) {
       return result;
     }
+
     const now = Date.now();
     for (const [id, parsed] of this.fallbackWorkers.entries()) {
-      if (now - parsed.lastHeartbeat > 30000) {
+      const lastHeartbeat = typeof parsed.lastHeartbeat === 'number' ? parsed.lastHeartbeat : 0;
+      if (now - lastHeartbeat > 30000) {
         this.fallbackWorkers.delete(id);
       } else {
         result.set(id, parsed);
       }
     }
+
     return result;
+  }
+
+  // ==========================================
+  // SHUTDOWN & DISPOSAL
+  // ==========================================
+
+  private static disposeClients(): void {
+    if (this.client) {
+      try {
+        this.client.disconnect();
+      } catch {
+        // ignore
+      }
+      this.client = null;
+    }
+
+    if (this.subscriber) {
+      try {
+        this.subscriber.disconnect();
+      } catch {
+        // ignore
+      }
+      this.subscriber = null;
+    }
+  }
+
+  public static async dispose(): Promise<void> {
+    console.log('[Redis] Shutting down RedisService...');
+
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
+
+    this.localEmitter.removeAllListeners();
+    this.subscribedChannels.clear();
+    this.channelHandlers.clear();
+
+    if (this.subscriber) {
+      try {
+        await this.subscriber.quit();
+      } catch {
+        this.subscriber.disconnect();
+      }
+      this.subscriber = null;
+    }
+
+    if (this.client) {
+      try {
+        await this.client.quit();
+      } catch {
+        this.client.disconnect();
+      }
+      this.client = null;
+    }
+
+    this.status = 'disconnected';
+    this.circuitState = 'CLOSED';
+    console.log('[Redis] Shutdown complete.');
+  }
+
+  private static setupShutdownHooks(): void {
+    if (this.shutdownHooksRegistered) return;
+    this.shutdownHooksRegistered = true;
+
+    const onShutdown = async (signal: string) => {
+      console.log(`[Redis] Received ${signal}, disposing RedisService...`);
+      await this.dispose();
+    };
+
+    process.once('SIGINT', () => onShutdown('SIGINT'));
+    process.once('SIGTERM', () => onShutdown('SIGTERM'));
   }
 }
