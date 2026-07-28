@@ -21,7 +21,7 @@ import {
   UserSubscription,
   Invoice,
 } from '../types';
-import { PLAN_LIMITS_MAP, PLANS_DETAILS } from '../config/plans';
+import { PLAN_LIMITS_MAP, PLANS_DETAILS, getPlanLimits } from '../config/plans';
 import {
   INITIAL_PROJECTS,
   INITIAL_TEMPLATES,
@@ -581,8 +581,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       });
 
-      let limitsConfig: PlanLimits = { ...PLAN_LIMITS_MAP[loadedUser.subscription] };
-      if (loadedUser.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com') {
+      const baseLimits = getPlanLimits(loadedUser?.subscription);
+      let limitsConfig: PlanLimits = { ...baseLimits };
+      const userEmail = (loadedUser?.email || '').toLowerCase().trim();
+      const isMasterAdmin = userEmail === 'mouragabriel2011@gmail.com';
+      if (isMasterAdmin) {
         limitsConfig = {
           maxVideosPerMonth: 999999,
           maxTemplates: 999999,
@@ -596,14 +599,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           hasTeamManagement: true,
         };
       }
+      const maxStorageVal = limitsConfig?.maxStorageMB ?? 500;
+      const usageCount = loadedUser?.usageCurrent ?? 0;
       const isolatedStats: SystemStats = {
-        totalVideosRendered: loadedUser.usageCurrent,
-        totalRenderingMinutes: loadedUser.usageCurrent * 2, // 2 minutes per rendering
+        totalVideosRendered: usageCount,
+        totalRenderingMinutes: usageCount * 2, // 2 minutes per rendering
         activeTemplates: loadedTemplates.length,
         activeProjects: loadedProjects.length,
-        storageUsed: loadedUser.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com' 
+        storageUsed: isMasterAdmin 
           ? `${totalStorageMB.toFixed(1)} MB / Ilimitado`
-          : `${totalStorageMB.toFixed(1)} MB / ${(limitsConfig.maxStorageMB).toLocaleString('pt-BR')} MB`,
+          : `${totalStorageMB.toFixed(1)} MB / ${maxStorageVal.toLocaleString('pt-BR')} MB`,
         renderSuccessRate: 100
       };
       setStats(isolatedStats);
@@ -679,7 +684,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    const limits = PLAN_LIMITS_MAP[user.subscription];
+    const limits = getPlanLimits(user.subscription);
 
     if (type === 'projects') {
       const activeProjectsCount = projects.filter(p => p.status !== 'completed' && p.status !== 'failed').length;
@@ -781,7 +786,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             subscription: plan,
             status: 'active',
             usageCurrent: 0,
-            usageLimit: PLAN_LIMITS_MAP[plan].maxVideosPerMonth,
+            usageLimit: getPlanLimits(plan).maxVideosPerMonth,
             storageUsedMB: 0,
             templatesUsed: 0,
             projectsActive: 0,

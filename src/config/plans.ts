@@ -15,6 +15,12 @@ export interface PlanConfig {
   features: string[];
 }
 
+export function getPlanLimits(tier?: string): PlanLimits {
+  if (!tier) return PLAN_LIMITS_MAP.Free;
+  const normalizedTier = tier.charAt(0).toUpperCase() + tier.slice(1).toLowerCase();
+  return PLAN_LIMITS_MAP[normalizedTier as PlanTier] || PLAN_LIMITS_MAP[tier as PlanTier] || PLAN_LIMITS_MAP.Free;
+}
+
 export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
   Free: {
     maxVideosPerMonth: 5,

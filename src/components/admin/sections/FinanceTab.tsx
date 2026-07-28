@@ -109,7 +109,7 @@ export const FinanceTab: React.FC = () => {
             <DollarSign className="w-4 h-4 text-emerald-400" />
           </div>
           <div>
-            <h3 className="text-2xl font-black text-white tracking-tight">R$ {totalRevenue.toLocaleString('pt-BR')}</h3>
+            <h3 className="text-2xl font-black text-white tracking-tight">R$ {(totalRevenue || 0).toLocaleString('pt-BR')}</h3>
             <p className="text-[10px] text-slate-500 font-mono">Líquido de taxas Stripe acumuladas</p>
           </div>
         </div>
@@ -120,7 +120,7 @@ export const FinanceTab: React.FC = () => {
             <TrendingUp className="w-4 h-4 text-pink-400" />
           </div>
           <div>
-            <h3 className="text-2xl font-black text-white tracking-tight">R$ {calculatedLtv.toLocaleString('pt-BR')}</h3>
+            <h3 className="text-2xl font-black text-white tracking-tight">R$ {(calculatedLtv || 0).toLocaleString('pt-BR')}</h3>
             <p className="text-[10px] text-slate-500 font-mono">Valor médio gerado por usuário ativo</p>
           </div>
         </div>

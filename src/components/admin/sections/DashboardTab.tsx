@@ -112,9 +112,9 @@ export const DashboardTab: React.FC = () => {
             </div>
           </div>
           <div className="space-y-1">
-            <h3 className="text-2xl font-black text-white tracking-tight">R$ {metrics.mrr.toLocaleString('pt-BR')}</h3>
+            <h3 className="text-2xl font-black text-white tracking-tight">R$ {(metrics?.mrr || 0).toLocaleString('pt-BR')}</h3>
             <p className="text-[10px] text-slate-500 font-mono">
-              ARR ESTIMADO: <span className="text-emerald-400">R$ {metrics.arr.toLocaleString('pt-BR')}</span>
+              ARR ESTIMADO: <span className="text-emerald-400">R$ {(metrics?.arr || 0).toLocaleString('pt-BR')}</span>
             </p>
           </div>
           <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-semibold font-mono">

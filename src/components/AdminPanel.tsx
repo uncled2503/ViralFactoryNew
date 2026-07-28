@@ -149,7 +149,7 @@ export const AdminPanel: React.FC = () => {
           </div>
           <div>
             <p className="text-xs font-mono text-gray-500 uppercase tracking-wider">MRR Projetado</p>
-            <h3 className="text-2xl font-bold text-emerald-400 mt-1">R$ {calculatedMRR.toLocaleString('pt-BR')},00</h3>
+            <h3 className="text-2xl font-bold text-emerald-400 mt-1">R$ {(calculatedMRR || 0).toLocaleString('pt-BR')},00</h3>
             <p className="text-[10px] text-gray-400 mt-1">
               Receita mensal simulada recorrente
             </p>

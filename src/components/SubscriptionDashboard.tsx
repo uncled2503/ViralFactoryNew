@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { PLANS_DETAILS, PLAN_LIMITS_MAP } from '../config/plans';
+import { PLANS_DETAILS, PLAN_LIMITS_MAP, getPlanLimits } from '../config/plans';
 import { PlanTier, BillingCycle, PlanLimits } from '../types';
 import { 
   CreditCard, 
@@ -62,7 +62,7 @@ export const SubscriptionDashboard: React.FC = () => {
     hasPrivateTemplates: true,
     hasApiAccess: true,
     hasTeamManagement: true,
-  } : PLAN_LIMITS_MAP[user.subscription];
+  } : getPlanLimits(user.subscription);
 
   // Calculations for display
   const totalStorageMB = user.storageUsedMB || 0;
