@@ -36,6 +36,7 @@ import { RenderService } from '../services/RenderService';
 import { SubscriptionService } from '../services/SubscriptionService';
 import { StorageService } from '../services/StorageService';
 import { PaymentService } from '../services/PaymentService';
+import { isAdminRole } from '../utils/rbac';
 
 export type TabName = 'dashboard' | 'projects' | 'templates' | 'renderings' | 'storage' | 'subscription' | 'admin' | 'help' | 'profile-settings';
 
@@ -584,8 +585,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const baseLimits = getPlanLimits(loadedUser?.subscription);
       let limitsConfig: PlanLimits = { ...baseLimits };
       const userEmail = (loadedUser?.email || '').toLowerCase().trim();
-      const isMasterAdmin = userEmail === 'mouragabriel2011@gmail.com';
-      if (isMasterAdmin) {
+      const userRole = loadedUser?.role;
+      const isAdminUser = isAdminRole(userRole) || userEmail === 'mouragabriel2011@gmail.com';
+      if (isAdminUser) {
         limitsConfig = {
           maxVideosPerMonth: 999999,
           maxTemplates: 999999,
@@ -599,14 +601,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           hasTeamManagement: true,
         };
       }
-      const maxStorageVal = limitsConfig?.maxStorageMB ?? 500;
+      const maxStorageVal = Number(limitsConfig?.maxStorageMB) || 500;
       const usageCount = loadedUser?.usageCurrent ?? 0;
       const isolatedStats: SystemStats = {
         totalVideosRendered: usageCount,
         totalRenderingMinutes: usageCount * 2, // 2 minutes per rendering
         activeTemplates: loadedTemplates.length,
         activeProjects: loadedProjects.length,
-        storageUsed: isMasterAdmin 
+        storageUsed: isAdminUser 
           ? `${totalStorageMB.toFixed(1)} MB / Ilimitado`
           : `${totalStorageMB.toFixed(1)} MB / ${maxStorageVal.toLocaleString('pt-BR')} MB`,
         renderSuccessRate: 100
@@ -667,8 +669,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): boolean => {
     if (!user) return false;
 
-    // Special bypass: if the user is the SaaS Owner, they have absolutely infinite limits
-    if (user.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com') {
+    // Special bypass: if the user is an admin or master owner, they have infinite limits
+    if (isAdminRole(user.role) || user.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com') {
       return true;
     }
 
