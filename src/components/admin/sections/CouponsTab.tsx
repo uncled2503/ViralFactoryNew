@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Ticket, Plus, Trash2, RefreshCw } from 'lucide-react';
+import { adminFetch } from '../../../utils/api';
 
 interface CouponsTabProps {
   showToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -32,7 +33,7 @@ export const CouponsTab: React.FC<CouponsTabProps> = ({ showToast }) => {
   const fetchCoupons = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/coupons');
+      const res = await adminFetch('/api/admin/coupons');
       if (res.ok) {
         const data = await res.json();
         setCoupons(data);
@@ -54,7 +55,7 @@ export const CouponsTab: React.FC<CouponsTabProps> = ({ showToast }) => {
     
     try {
       // Create via system settings or a dummy post which is integrated
-      const res = await fetch('/api/admin/settings', {
+      const res = await adminFetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { adminFetch } from '../../../utils/api';
 import { 
   Cpu, 
   RefreshCw, 
@@ -61,16 +62,16 @@ export const RenderFarmTab: React.FC<RenderFarmTabProps> = ({ showToast }) => {
 
   const fetchData = async () => {
     try {
-      const wRes = await fetch('/api/admin/workers');
+      const wRes = await adminFetch('/api/admin/workers');
       if (wRes.ok) {
         setWorkers(await wRes.json());
       }
-      const jRes = await fetch('/api/admin/jobs');
+      const jRes = await adminFetch('/api/admin/jobs');
       if (jRes.ok) {
         setJobs(await jRes.json());
       }
       
-      const asRes = await fetch('/api/admin/autoscaling');
+      const asRes = await adminFetch('/api/admin/autoscaling');
       if (asRes.ok) {
         const data = await asRes.json();
         setAutoScaleData(data);
@@ -107,7 +108,7 @@ export const RenderFarmTab: React.FC<RenderFarmTabProps> = ({ showToast }) => {
     e.preventDefault();
     setIsSavingConfig(true);
     try {
-      const res = await fetch('/api/admin/autoscaling/config', {
+      const res = await adminFetch('/api/admin/autoscaling/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(scalingConfig)
@@ -129,7 +130,7 @@ export const RenderFarmTab: React.FC<RenderFarmTabProps> = ({ showToast }) => {
     setIsScalingUp(true);
     showToast("Provisionando novo nó elástico no cluster...", "info");
     try {
-      const res = await fetch('/api/admin/autoscaling/scale-up', {
+      const res = await adminFetch('/api/admin/autoscaling/scale-up', {
         method: 'POST'
       });
       const data = await res.json();
@@ -150,7 +151,7 @@ export const RenderFarmTab: React.FC<RenderFarmTabProps> = ({ showToast }) => {
     setIsScalingDown(true);
     showToast("Localizando nó ocioso para desprovisionar...", "info");
     try {
-      const res = await fetch('/api/admin/autoscaling/scale-down', {
+      const res = await adminFetch('/api/admin/autoscaling/scale-down', {
         method: 'POST'
       });
       const data = await res.json();
@@ -171,7 +172,7 @@ export const RenderFarmTab: React.FC<RenderFarmTabProps> = ({ showToast }) => {
     if (!window.confirm("Deseja realmente limpar o histórico de métricas e logs de auto scaling?")) return;
     setIsClearing(true);
     try {
-      const res = await fetch('/api/admin/autoscaling/clear', {
+      const res = await adminFetch('/api/admin/autoscaling/clear', {
         method: 'POST'
       });
       if (res.ok) {
@@ -189,7 +190,7 @@ export const RenderFarmTab: React.FC<RenderFarmTabProps> = ({ showToast }) => {
     setIsTesting(true);
     showToast("Iniciando validação do motor FFmpeg em tempo real...", "info");
     try {
-      const response = await fetch('/api/admin/test-render', {
+      const response = await adminFetch('/api/admin/test-render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: 'usr-admin-test' })

@@ -167,6 +167,7 @@ export class SupabaseDbService {
         company: u.company || '',
         role: u.role || 'user',
         avatar_url: u.avatarUrl || u.avatar_url || '',
+        subscription: u.subscription || u.subscription_tier || 'Free',
         subscription_tier: u.subscription || u.subscription_tier || 'Free',
         status: u.status || 'active',
         usage_current: u.usageCurrent || u.usage_current || 0,

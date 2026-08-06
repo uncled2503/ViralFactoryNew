@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { LifeBuoy, Mail, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
+import { adminFetch } from '../../../utils/api';
 
 interface SupportTabProps {
   showToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -39,7 +40,7 @@ export const SupportTab: React.FC<SupportTabProps> = ({ showToast }) => {
   const fetchSupportData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/support');
+      const res = await adminFetch('/api/admin/support');
       if (res.ok) {
         const data = await res.json();
         setTickets(data.tickets || []);

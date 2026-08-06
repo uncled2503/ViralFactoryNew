@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { HardDrive, RefreshCw, AlertCircle, Trash2 } from 'lucide-react';
+import { adminFetch } from '../../../utils/api';
 
 interface StorageTabProps {
   showToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -25,7 +26,7 @@ export const StorageTab: React.FC<StorageTabProps> = ({ showToast }) => {
   const fetchStorageData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/storage');
+      const res = await adminFetch('/api/admin/storage');
       if (res.ok) {
         const data = await res.json();
         setStats(data.stats);

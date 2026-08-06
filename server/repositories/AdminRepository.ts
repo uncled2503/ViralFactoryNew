@@ -48,7 +48,10 @@ function mapFrontendUserToDbUser(u: any): any {
   if (u.company !== undefined) dbUser.company = u.company;
   if (u.role !== undefined) dbUser.role = u.role;
   if (u.avatarUrl !== undefined) dbUser.avatar_url = u.avatarUrl;
-  if (u.subscription !== undefined) dbUser.subscription_tier = u.subscription;
+  if (u.subscription !== undefined) {
+    dbUser.subscription_tier = u.subscription;
+    dbUser.subscription = u.subscription;
+  }
   if (u.status !== undefined) dbUser.status = u.status;
   if (u.usageCurrent !== undefined) dbUser.usage_current = u.usageCurrent;
   if (u.usageLimit !== undefined) dbUser.usage_limit = u.usageLimit;

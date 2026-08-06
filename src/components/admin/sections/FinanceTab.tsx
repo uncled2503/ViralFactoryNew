@@ -14,6 +14,7 @@ import {
   Search, 
   RefreshCw
 } from 'lucide-react';
+import { adminFetch } from '../../../utils/api';
 
 interface Invoice {
   id: string;
@@ -35,7 +36,7 @@ export const FinanceTab: React.FC = () => {
   const fetchPayments = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/payments');
+      const res = await adminFetch('/api/admin/payments');
       if (res.ok) {
         const data = await res.json();
         const invoiceList = Array.isArray(data) ? data : (data.invoices || []);

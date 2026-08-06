@@ -18,6 +18,9 @@ export class UserService {
       const data = await db.findOne<UserModel>(this.TABLE, { id: userId });
       if (!data) return null;
 
+      const subRaw = (data as any).subscription || (data as any).subscription_tier || 'Free';
+      const subFormatted = subRaw.charAt(0).toUpperCase() + subRaw.slice(1).toLowerCase();
+
       return {
         id: data.id,
         name: data.name,
@@ -25,7 +28,8 @@ export class UserService {
         company: data.company,
         role: data.role as any,
         avatarUrl: data.avatar_url,
-        subscription: data.subscription as any,
+        subscription: subFormatted as any,
+        subscription_tier: subFormatted,
         status: data.status as any,
         usageCurrent: data.usage_current,
         usageLimit: data.usage_limit,
@@ -49,6 +53,9 @@ export class UserService {
       if (!data || data.length === 0) return null;
 
       const matched = data[0];
+      const subRaw = (matched as any).subscription || (matched as any).subscription_tier || 'Free';
+      const subFormatted = subRaw.charAt(0).toUpperCase() + subRaw.slice(1).toLowerCase();
+
       return {
         id: matched.id,
         name: matched.name,
@@ -56,7 +63,8 @@ export class UserService {
         company: matched.company,
         role: matched.role as any,
         avatarUrl: matched.avatar_url,
-        subscription: matched.subscription as any,
+        subscription: subFormatted as any,
+        subscription_tier: subFormatted,
         status: matched.status as any,
         usageCurrent: matched.usage_current,
         usageLimit: matched.usage_limit,

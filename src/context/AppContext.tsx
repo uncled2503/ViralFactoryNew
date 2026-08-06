@@ -37,6 +37,7 @@ import { SubscriptionService } from '../services/SubscriptionService';
 import { StorageService } from '../services/StorageService';
 import { PaymentService } from '../services/PaymentService';
 import { isAdminRole } from '../utils/rbac';
+import { adminFetch } from '../utils/api';
 
 export type TabName = 'dashboard' | 'projects' | 'templates' | 'renderings' | 'storage' | 'subscription' | 'admin' | 'help' | 'profile-settings';
 
@@ -128,11 +129,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [user, setUserState] = useState<User | null>(null);
   const normalizeUser = (u: User | null): User | null => {
     if (!u) return null;
-    const tierRaw = u.subscription || 'Free';
-    const subscription = (tierRaw.charAt(0).toUpperCase() + tierRaw.slice(1).toLowerCase()) as PlanTier;
+    const isMasterOwner =
+      u.email?.toLowerCase().trim() === 'mouragabriel2011@gmail.com' ||
+      u.role === 'SaaS_Owner' ||
+      (u.role as string) === 'owner' ||
+      u.role === 'SUPER_ADMIN' ||
+      u.role === 'OWNER' ||
+      (u.role as string) === 'saas_owner';
+
+    const role = isMasterOwner ? 'SaaS_Owner' : (u.role || 'Membro');
+    const rawTier = (u as any).subscription_tier || u.subscription || (u as any).subscriptionTier || 'Free';
+    const tierFormatted = rawTier.charAt(0).toUpperCase() + rawTier.slice(1).toLowerCase();
+    const subscription = (['Free', 'Starter', 'Pro', 'Business'].includes(tierFormatted) ? tierFormatted : 'Free') as PlanTier;
+
     return {
       ...u,
-      subscription: ['Free', 'Starter', 'Pro', 'Business'].includes(subscription) ? subscription : 'Free'
+      role: role as any,
+      subscription,
+      subscription_tier: subscription,
+      usageLimit: isMasterOwner ? 999999 : (u.usageLimit || getPlanLimits(subscription, role, u.email).maxVideosPerMonth)
     };
   };
   const setUser = (u: User | null) => {
@@ -283,16 +298,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     if (!user) return;
-    const isAdmin = user.role === 'admin' || user.role === 'owner' || user.role === 'SaaS_Owner';
+    const isAdmin = isAdminRole(user.role, user.email);
     if (isAdmin) {
       const loadAdminDatasets = async () => {
         try {
-          const res = await fetch('/api/admin/users');
+          const res = await adminFetch('/api/admin/users');
           if (res.ok) {
             const data = await res.json();
             setAllUsers(data);
           }
-          const jobsRes = await fetch('/api/admin/jobs');
+          const jobsRes = await adminFetch('/api/admin/jobs');
           if (jobsRes.ok) {
             const jobsData = await jobsRes.json();
             setRenderingTasks(jobsData);
@@ -582,11 +597,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       });
 
-      const baseLimits = getPlanLimits(loadedUser?.subscription);
+      const baseLimits = getPlanLimits(loadedUser?.subscription, loadedUser?.role, loadedUser?.email);
       let limitsConfig: PlanLimits = { ...baseLimits };
       const userEmail = (loadedUser?.email || '').toLowerCase().trim();
       const userRole = loadedUser?.role;
-      const isAdminUser = isAdminRole(userRole);
+      const isAdminUser = isAdminRole(userRole, userEmail);
       if (isAdminUser) {
         limitsConfig = {
           maxVideosPerMonth: 999999,
@@ -670,7 +685,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!user) return false;
 
     // Special bypass: if the user is an admin or master owner, they have infinite limits
-    if (isAdminRole(user.role)) {
+    if (isAdminRole(user.role, user.email)) {
       return true;
     }
 
@@ -686,7 +701,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    const limits = getPlanLimits(user.subscription);
+    const limits = getPlanLimits(user.subscription, user.role, user.email);
 
     if (type === 'projects') {
       const activeProjectsCount = projects.filter(p => p.status !== 'completed' && p.status !== 'failed').length;
@@ -1713,13 +1728,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adminUpdateUser = async (userId: string, updates: Partial<User>) => {
     try {
-      const res = await fetch(`/api/admin/users/${userId}`, {
+      const res = await adminFetch(`/api/admin/users/${userId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
       });
       if (res.ok) {
-        const uRes = await fetch('/api/admin/users');
+        const uRes = await adminFetch('/api/admin/users');
         if (uRes.ok) {
           const data = await uRes.json();
           setAllUsers(data);
@@ -1739,11 +1753,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adminDeleteUser = async (userId: string) => {
     try {
-      const res = await fetch(`/api/admin/users/${userId}`, {
+      const res = await adminFetch(`/api/admin/users/${userId}`, {
         method: 'DELETE'
       });
       if (res.ok) {
-        const uRes = await fetch('/api/admin/users');
+        const uRes = await adminFetch('/api/admin/users');
         if (uRes.ok) {
           const data = await uRes.json();
           setAllUsers(data);

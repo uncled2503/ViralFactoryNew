@@ -4,6 +4,7 @@
  */
 
 import { PlanTier, PlanLimits } from '../types';
+import { isAdminRole } from '../utils/rbac';
 
 export interface PlanConfig {
   tier: PlanTier;
@@ -15,7 +16,22 @@ export interface PlanConfig {
   features: string[];
 }
 
-export function getPlanLimits(tier?: string): PlanLimits {
+export function getPlanLimits(tier?: string, role?: string, email?: string): PlanLimits {
+  if (isAdminRole(role, email)) {
+    return {
+      maxVideosPerMonth: 999999,
+      maxTemplates: 999999,
+      maxProjects: 999999,
+      maxStorageMB: 999999,
+      renderPriority: 'maximum',
+      hasAutoSubtitles: true,
+      hasMultiFormatExport: true,
+      hasPrivateTemplates: true,
+      hasApiAccess: true,
+      hasTeamManagement: true,
+    };
+  }
+
   if (!tier) return PLAN_LIMITS_MAP.Free;
   const normalizedTier = tier.charAt(0).toUpperCase() + tier.slice(1).toLowerCase();
   return PLAN_LIMITS_MAP[normalizedTier as PlanTier] || PLAN_LIMITS_MAP[tier as PlanTier] || PLAN_LIMITS_MAP.Free;
@@ -24,9 +40,9 @@ export function getPlanLimits(tier?: string): PlanLimits {
 export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
   Free: {
     maxVideosPerMonth: 5,
-    maxTemplates: 10,
-    maxProjects: 10,
-    maxStorageMB: 1000,
+    maxTemplates: 1,
+    maxProjects: 1,
+    maxStorageMB: 500,
     renderPriority: 'normal',
     hasAutoSubtitles: false,
     hasMultiFormatExport: false,
@@ -36,8 +52,8 @@ export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
   },
   Starter: {
     maxVideosPerMonth: 300,
-    maxTemplates: 5,
-    maxProjects: 3,
+    maxTemplates: 30,
+    maxProjects: 30,
     maxStorageMB: 2048, // 2 GB
     renderPriority: 'normal',
     hasAutoSubtitles: false,

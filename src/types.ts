@@ -74,6 +74,7 @@ export interface Refund {
 
 export type UserRole = 
   | 'SUPER_ADMIN' 
+  | 'SAAS_OWNER'
   | 'OWNER'
   | 'ADMIN' 
   | 'SUPORTE' 
@@ -88,8 +89,13 @@ export type UserRole =
   | 'CLIENT_OWNER' 
   | 'CLIENT_MEMBER'
   | 'SaaS_Owner' // compatibility
+  | 'saas_owner'
+  | 'owner'
+  | 'admin'
+  | 'super_admin'
   | 'Administrador' // compatibility
-  | 'Membro'; // compatibility
+  | 'Membro' // compatibility
+  | 'user';
 
 export type Permission = 
   | 'MANAGE_USERS' 
@@ -116,6 +122,7 @@ export interface User {
   role: UserRole;
   avatarUrl?: string;
   subscription: PlanTier;
+  subscription_tier?: string;
   status: 'active' | 'suspended';
   usageCurrent: number; // videos renderizados no mês
   usageLimit: number; // limite de vídeos renderizados no mês

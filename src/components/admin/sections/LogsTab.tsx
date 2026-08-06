@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Terminal, Search, RefreshCw, Clock, Filter } from 'lucide-react';
+import { adminFetch } from '../../../utils/api';
 
 interface AuditLog {
   id: string;
@@ -25,7 +26,7 @@ export const LogsTab: React.FC = () => {
   const fetchAuditLogs = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/audit-logs');
+      const res = await adminFetch('/api/admin/audit-logs');
       if (res.ok) {
         const data = await res.json();
         setAuditLogs(data);

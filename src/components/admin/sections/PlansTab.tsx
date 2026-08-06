@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Layers, Check, Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
+import { adminFetch } from '../../../utils/api';
 
 interface CustomPlan {
   id: string;
@@ -28,7 +29,7 @@ export const PlansTab: React.FC = () => {
   const fetchPlans = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/settings');
+      const res = await adminFetch('/api/admin/settings');
       if (res.ok) {
         const settings = await res.json();
         const customPlansItem = settings.find((s: any) => s.key === 'saas_custom_plans');
@@ -59,7 +60,7 @@ export const PlansTab: React.FC = () => {
     ];
 
     try {
-      const res = await fetch('/api/admin/settings', {
+      const res = await adminFetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

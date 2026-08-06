@@ -17,6 +17,7 @@ import {
   ArrowUpRight
 } from 'lucide-react';
 import { isSupabaseConfigured } from '../../../services/dbClient';
+import { adminFetch } from '../../../utils/api';
 
 export const DashboardTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -26,7 +27,7 @@ export const DashboardTab: React.FC = () => {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/dashboard');
+      const res = await adminFetch('/api/admin/dashboard');
       if (!res.ok) {
         throw new Error('Falha ao comunicar com o servidor.');
       }

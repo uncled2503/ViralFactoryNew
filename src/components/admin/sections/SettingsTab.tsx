@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Settings, Key, Mail, ShieldAlert, RefreshCw, CheckCircle } from 'lucide-react';
+import { adminFetch } from '../../../utils/api';
 
 interface SettingsTabProps {
   showToast: (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -27,7 +28,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
   const fetchSettings = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/settings');
+      const res = await adminFetch('/api/admin/settings');
       if (res.ok) {
         const data = await res.json();
         // Match settings items
@@ -61,17 +62,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
   const handleSaveConfigs = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetch('/api/admin/settings', {
+      await adminFetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: 'saas_name', value: saasName })
       });
-      await fetch('/api/admin/settings', {
+      await adminFetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: 'saas_email', value: saasEmail })
       });
-      await fetch('/api/admin/settings', {
+      await adminFetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: 'stripe_secret_key', value: stripeSecretKey })
@@ -88,7 +89,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ showToast }) => {
     const nextFlags = { ...flags, [key]: !flags[key] };
     setFlags(nextFlags);
     try {
-      await fetch('/api/admin/settings', {
+      await adminFetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: 'feature_flags', value: JSON.stringify(nextFlags) })
