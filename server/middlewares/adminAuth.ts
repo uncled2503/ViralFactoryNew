@@ -45,22 +45,13 @@ export async function adminAuthMiddleware(req: Request, res: Response, next: Nex
     const user = users.find((u: any) => u.id === userId);
 
     if (!user) {
-      // Allow bypass for the master system owner ID or email if database is initializing
-      const isBypass = userId === '00000000-0000-0000-0000-000000000001' || email === 'mouragabriel2011@gmail.com';
-      if (isBypass) {
-        (req as any).adminName = 'Gabriel Moura (Bypass)';
-        (req as any).adminRole = 'owner';
-        return next();
-      }
-      res.status(403).json({ error: 'Acesso negado. Usuário administrativo não encontrado.' });
+      res.status(403).json({ error: 'Acesso negado. Usuário não encontrado no banco de dados.' });
       return;
     }
 
-    // Normalized check for administrative roles
+    // Normalized check for administrative roles strictly based on user's assigned role
     const userRole = (user.role || '').toLowerCase();
-    const isAdmin = ['owner', 'saas_owner', 'admin', 'super_admin'].includes(userRole) || 
-                    user.id === '00000000-0000-0000-0000-000000000001' || 
-                    user.email === 'mouragabriel2011@gmail.com';
+    const isAdmin = ['owner', 'saas_owner', 'admin', 'super_admin', 'gerente', 'suporte', 'financeiro', 'moderador'].includes(userRole);
 
     if (!isAdmin) {
       res.status(403).json({ error: 'Acesso negado. Esta área é restrita para administradores.' });

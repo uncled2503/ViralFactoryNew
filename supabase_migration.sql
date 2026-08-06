@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS saas_users (
     role VARCHAR(50) DEFAULT 'user',
     avatar_url TEXT DEFAULT '',
     subscription_tier VARCHAR(50) DEFAULT 'Starter',
+    subscription VARCHAR(50) DEFAULT 'Starter',
     status VARCHAR(50) DEFAULT 'active',
     usage_current INT DEFAULT 0 CHECK (usage_current >= 0),
     usage_limit INT DEFAULT 5 CHECK (usage_limit >= 0),
@@ -53,6 +54,9 @@ CREATE TABLE IF NOT EXISTS saas_users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now())
 );
+
+-- Ensure backwards compatibility if saas_users already exists
+ALTER TABLE saas_users ADD COLUMN IF NOT EXISTS subscription VARCHAR(50) DEFAULT 'Starter';
 
 -- Seed Master SaaS Owner User
 INSERT INTO saas_users (id, name, email, company, role, subscription_tier, status, usage_limit, storage_used_mb)
@@ -383,18 +387,23 @@ FROM saas_invoices;
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.saas_users (id, email, name, role, subscription_tier, status)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
-    'user',
-    'Starter',
-    'active'
-  )
-  ON CONFLICT (id) DO UPDATE SET
-    email = EXCLUDED.email,
-    updated_at = NOW();
+  BEGIN
+    INSERT INTO public.saas_users (id, email, name, role, subscription_tier, status)
+    VALUES (
+      NEW.id,
+      NEW.email,
+      COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+      'user',
+      'Starter',
+      'active'
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      email = EXCLUDED.email,
+      updated_at = NOW();
+  EXCEPTION WHEN OTHERS THEN
+    -- Impede que falhas na tabela saas_users bloqueiem a criação do usuário no Supabase Auth
+    RAISE WARNING 'Erro ao sincronizar usuario com saas_users: %', SQLERRM;
+  END;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

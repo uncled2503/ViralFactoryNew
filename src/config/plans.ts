@@ -24,9 +24,9 @@ export function getPlanLimits(tier?: string): PlanLimits {
 export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
   Free: {
     maxVideosPerMonth: 5,
-    maxTemplates: 5,
-    maxProjects: 5,
-    maxStorageMB: 500,
+    maxTemplates: 10,
+    maxProjects: 10,
+    maxStorageMB: 1000,
     renderPriority: 'normal',
     hasAutoSubtitles: false,
     hasMultiFormatExport: false,

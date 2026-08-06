@@ -586,7 +586,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let limitsConfig: PlanLimits = { ...baseLimits };
       const userEmail = (loadedUser?.email || '').toLowerCase().trim();
       const userRole = loadedUser?.role;
-      const isAdminUser = isAdminRole(userRole) || userEmail === 'mouragabriel2011@gmail.com';
+      const isAdminUser = isAdminRole(userRole);
       if (isAdminUser) {
         limitsConfig = {
           maxVideosPerMonth: 999999,
@@ -670,7 +670,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!user) return false;
 
     // Special bypass: if the user is an admin or master owner, they have infinite limits
-    if (isAdminRole(user.role) || user.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com') {
+    if (isAdminRole(user.role)) {
       return true;
     }
 
@@ -1786,32 +1786,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adminResetSystem = useCallback((cleanMode: 'zero' | 'demo') => {
     if (cleanMode === 'zero') {
-      const currentAdmin = allUsers.find(u => u.id === 'usr-001') || {
-        id: 'usr-001',
-        name: 'Gabriel Moura',
-        email: 'mouragabriel2011@gmail.com',
-        company: 'Viral S.A.',
+      const currentAdmin = user || {
+        id: 'usr-current',
+        name: 'Administrador',
+        email: 'admin@sistema.com',
+        company: 'Empresa',
         role: 'SaaS_Owner',
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
-        subscription: 'Free',
+        subscription: 'Pro',
         status: 'active',
         usageCurrent: 0,
-        usageLimit: 5,
+        usageLimit: 100,
         storageUsedMB: 0,
         templatesUsed: 0,
-        projectsActive: 0,
-        subscriptionDetails: {
-          id: 'sub-001',
-          userId: 'usr-001',
-          tier: 'Free',
-          status: 'active',
-          billingCycle: 'monthly',
-          price: 0,
-          startDate: new Date().toISOString(),
-          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          cancelAtPeriodEnd: false,
-          autoRenew: true
-        }
+        projectsActive: 0
       };
 
       const freshUsers = [currentAdmin];

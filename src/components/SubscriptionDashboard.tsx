@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { PLANS_DETAILS, PLAN_LIMITS_MAP, getPlanLimits } from '../config/plans';
+import { isAdminRole } from '../utils/rbac';
 import { PlanTier, BillingCycle, PlanLimits } from '../types';
 import { 
   CreditCard, 
@@ -50,7 +51,7 @@ export const SubscriptionDashboard: React.FC = () => {
   if (!user) return null;
 
   const currentPlan = PLANS_DETAILS.find(p => p.tier === user.subscription) || PLANS_DETAILS[0];
-  const isOwner = user.email.toLowerCase().trim() === 'mouragabriel2011@gmail.com';
+  const isOwner = user.role === 'SaaS_Owner' || isAdminRole(user.role);
   const limits: PlanLimits = isOwner ? {
     maxVideosPerMonth: 999999,
     maxTemplates: 999999,

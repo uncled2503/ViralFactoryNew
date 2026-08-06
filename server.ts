@@ -176,7 +176,8 @@ async function startServer() {
       const userInDb = (dbData.saas_users || []).find((u: any) => u.id === authUser.userId);
       
       if (userInDb) {
-        if (userInDb.status === 'suspended' && userInDb.email !== 'mouragabriel2011@gmail.com') {
+        const isUnlimitedRole = ['owner', 'saas_owner', 'admin', 'super_admin'].includes((userInDb.role || '').toLowerCase());
+        if (userInDb.status === 'suspended' && !isUnlimitedRole) {
           res.status(403).json({ error: 'Sua conta está suspensa pelo administrador.' });
           return;
         }
@@ -184,10 +185,8 @@ async function startServer() {
         const userTier = userInDb.subscription_tier || userInDb.subscription || 'Free';
         const limits = BACKEND_PLAN_LIMITS[userTier] || BACKEND_PLAN_LIMITS.Free;
         const storageUsedMB = userInDb.storage_used_mb !== undefined ? userInDb.storage_used_mb : (userInDb.storageUsedMB || 0);
-        
-        const isBypassUser = authUser.userId === '00000000-0000-0000-0000-000000000001' || userInDb.email === 'mouragabriel2011@gmail.com';
 
-        if (storageUsedMB >= limits.maxStorageMB && !isBypassUser) {
+        if (storageUsedMB >= limits.maxStorageMB && !isUnlimitedRole) {
           res.status(403).json({ error: `Espaço de armazenamento esgotado para o plano ${userTier}.` });
           return;
         }
@@ -428,7 +427,9 @@ async function startServer() {
         return;
       }
 
-      if (userInDb.status === 'suspended' && userInDb.email !== 'mouragabriel2011@gmail.com') {
+      const isUnlimitedRole = ['owner', 'saas_owner', 'admin', 'super_admin'].includes((userInDb.role || '').toLowerCase());
+
+      if (userInDb.status === 'suspended' && !isUnlimitedRole) {
         res.status(403).json({ error: 'Sua conta está suspensa pelo administrador.' });
         return;
       }
@@ -444,9 +445,7 @@ async function startServer() {
         j => j.status !== 'Completed' && j.status !== 'Failed' && j.status !== 'Canceled'
       ).length;
 
-      const isBypassUser = userId === '00000000-0000-0000-0000-000000000001' || userInDb.email === 'mouragabriel2011@gmail.com';
-
-      if (usageCurrent + activeQueuedJobsCount >= limits.maxVideosPerMonth && !isBypassUser) {
+      if (usageCurrent + activeQueuedJobsCount >= limits.maxVideosPerMonth && !isUnlimitedRole) {
         res.status(403).json({ 
           error: `Limite de renderizações atingido. Seu plano (${userTier}) permite até ${limits.maxVideosPerMonth} renderizações mensais. Você já tem ${usageCurrent} concluídas e ${activeQueuedJobsCount} em andamento.` 
         });
@@ -678,8 +677,10 @@ async function startServer() {
       }
 
       // Enforce strict tenant isolation / authorization check
-      const isBypassUser = authUser.userId === '00000000-0000-0000-0000-000000000001' || authUser.email === 'mouragabriel2011@gmail.com';
-      if (job.userId !== authUser.userId && !isBypassUser) {
+      const dbDataForCheck = await LocalDbMutex.loadDb();
+      const currentAdminObj = (dbDataForCheck.saas_users || []).find((u: any) => u.id === authUser.userId);
+      const isAuthAdmin = currentAdminObj && ['owner', 'saas_owner', 'admin', 'super_admin'].includes((currentAdminObj.role || '').toLowerCase());
+      if (job.userId !== authUser.userId && !isAuthAdmin) {
         res.status(403).json({ error: 'Não autorizado. Este job não pertence à sua conta.' });
         return;
       }
@@ -700,14 +701,13 @@ async function startServer() {
       }
 
       // Enforce authorization
-      const isBypassUser = authUser.userId === '00000000-0000-0000-0000-000000000001' || authUser.email === 'mouragabriel2011@gmail.com';
-      if (req.params.userId !== authUser.userId && !isBypassUser) {
+      const dbData = await LocalDbMutex.loadDb();
+      const requestingUserObj = (dbData.saas_users || []).find((u: any) => u.id === authUser.userId);
+      const isReqAdmin = requestingUserObj && ['owner', 'saas_owner', 'admin', 'super_admin'].includes((requestingUserObj.role || '').toLowerCase());
+      if (req.params.userId !== authUser.userId && !isReqAdmin) {
         res.status(403).json({ error: 'Não autorizado. Você não pode listar os jobs de outro usuário.' });
         return;
       }
-
-      // Load from database to ensure multi-node consistent state
-      const dbData = await LocalDbMutex.loadDb();
       const dbTasks = (dbData.rendering_tasks || []).filter(
         (t: any) => t && (t.user_id === req.params.userId || t.userId === req.params.userId)
       );
@@ -770,8 +770,10 @@ async function startServer() {
         return;
       }
 
-      const isBypassUser = authUser.userId === '00000000-0000-0000-0000-000000000001' || authUser.email === 'mouragabriel2011@gmail.com';
-      if (job.userId !== authUser.userId && !isBypassUser) {
+      const dbDataCancel = await LocalDbMutex.loadDb();
+      const cancelUserObj = (dbDataCancel.saas_users || []).find((u: any) => u.id === authUser.userId);
+      const isCancelAdmin = cancelUserObj && ['owner', 'saas_owner', 'admin', 'super_admin'].includes((cancelUserObj.role || '').toLowerCase());
+      if (job.userId !== authUser.userId && !isCancelAdmin) {
         res.status(403).json({ error: 'Não autorizado. Você só pode cancelar seus próprios jobs.' });
         return;
       }
@@ -906,14 +908,15 @@ async function startServer() {
 
         const existingUser = (dbData.saas_users || []).find((u: any) => u.id === userId);
 
+        const isSyncAdmin = existingUser && ['owner', 'saas_owner', 'admin', 'super_admin'].includes((existingUser.role || '').toLowerCase());
+
         // 1. Suspension check
-        if (existingUser && existingUser.status === 'suspended' && existingUser.email !== 'mouragabriel2011@gmail.com') {
+        if (existingUser && existingUser.status === 'suspended' && !isSyncAdmin) {
           throw new Error('SUSPENDED_ACCOUNT');
         }
 
         const userTier = existingUser?.subscription_tier || existingUser?.subscription || 'Free';
         const limits = BACKEND_PLAN_LIMITS[userTier] || BACKEND_PLAN_LIMITS.Free;
-        const isBypassUser = userId === '00000000-0000-0000-0000-000000000001' || existingUser?.email === 'mouragabriel2011@gmail.com';
 
         // 2. Profile Sanitization & Merging (PREVENTS SPOOFING TIER, ROLE, OR STATUS VIA SYNC!)
         if (req.body.saas_users || req.body.users) {
@@ -1021,7 +1024,7 @@ async function startServer() {
           });
 
           activeProjectsCount = resolvedUserProjects.filter((p: any) => p && p.status !== 'completed' && p.status !== 'failed').length;
-          if (activeProjectsCount > limits.maxProjects && !isBypassUser) {
+          if (activeProjectsCount > limits.maxProjects && !isSyncAdmin) {
             throw new Error('LIMIT_PROJECTS_EXCEEDED');
           }
 
@@ -1052,7 +1055,7 @@ async function startServer() {
           const mergedUserTemplates = mergeById(existingUserTemplates, incomingUserTemplates);
           
           totalTemplatesCount = mergedUserTemplates.length;
-          if (totalTemplatesCount > limits.maxTemplates && !isBypassUser) {
+          if (totalTemplatesCount > limits.maxTemplates && !isSyncAdmin) {
             throw new Error('LIMIT_TEMPLATES_EXCEEDED');
           }
 
@@ -1178,7 +1181,7 @@ async function startServer() {
             });
           });
 
-          if (totalStorageMB > limits.maxStorageMB && !isBypassUser) {
+          if (totalStorageMB > limits.maxStorageMB && !isSyncAdmin) {
             throw new Error('LIMIT_STORAGE_EXCEEDED');
           }
 

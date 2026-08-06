@@ -6,11 +6,11 @@
 import { Template, Project, RenderingTask, StorageFolder, SystemStats, User } from './types';
 
 export const INITIAL_USER: User = {
-  id: 'usr-001',
-  name: 'Gabriel Moura',
-  email: 'mouragabriel2011@gmail.com',
-  company: 'Viral S.A.',
-  role: 'SaaS_Owner',
+  id: '',
+  name: 'Usuário',
+  email: '',
+  company: 'Minha Empresa',
+  role: 'Membro',
   avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
   subscription: 'Free',
   status: 'active',
@@ -18,19 +18,7 @@ export const INITIAL_USER: User = {
   usageLimit: 5,
   storageUsedMB: 0,
   templatesUsed: 0,
-  projectsActive: 0,
-  subscriptionDetails: {
-    id: 'sub-001',
-    userId: 'usr-001',
-    tier: 'Free',
-    status: 'active',
-    billingCycle: 'monthly',
-    price: 0,
-    startDate: new Date().toISOString(),
-    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    cancelAtPeriodEnd: false,
-    autoRenew: true
-  }
+  projectsActive: 0
 };
 
 export const INITIAL_TEMPLATES: Template[] = [];

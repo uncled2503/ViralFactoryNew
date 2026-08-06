@@ -65,9 +65,9 @@ export class SupabaseStorageService {
       try {
         const { data, error } = await this.supabase.storage.getBucket(bucket);
         if (error) {
-          const errMsg = error.message || '';
-          if (errMsg.toLowerCase().includes('signature') || errMsg.toLowerCase().includes('jwt') || errMsg.toLowerCase().includes('verification failed') || errMsg.toLowerCase().includes('invalid token')) {
-            console.log(`[SupabaseStorageService] Invalid service role key or signature error detected during bucket lookup (${errMsg}). Disabling Supabase Storage features and falling back to local.`);
+          const errMsg = (error.message || '').toLowerCase();
+          if (errMsg.includes('signature') || errMsg.includes('jwt') || errMsg.includes('verification failed') || errMsg.includes('invalid token') || errMsg.includes('fetch failed') || errMsg.includes('failed to fetch')) {
+            console.log(`[SupabaseStorageService] Connection or credential issue detected during bucket lookup (${error.message}). Disabling Supabase Storage and using local server fallback.`);
             this.supabase = null;
             return;
           }
@@ -78,25 +78,25 @@ export class SupabaseStorageService {
             public: false, // Default to private for secure signed URL operations
           });
           if (createError) {
-            const createErrMsg = createError.message || '';
-            if (createErrMsg.toLowerCase().includes('signature') || createErrMsg.toLowerCase().includes('jwt') || createErrMsg.toLowerCase().includes('verification failed') || createErrMsg.toLowerCase().includes('invalid token')) {
-              console.log(`[SupabaseStorageService] Invalid service role key or signature error detected during bucket creation (${createErrMsg}). Disabling Supabase Storage features and falling back to local.`);
+            const createErrMsg = (createError.message || '').toLowerCase();
+            if (createErrMsg.includes('signature') || createErrMsg.includes('jwt') || createErrMsg.includes('verification failed') || createErrMsg.includes('invalid token') || createErrMsg.includes('fetch failed') || createErrMsg.includes('failed to fetch')) {
+              console.log(`[SupabaseStorageService] Connection or credential issue detected during bucket creation (${createError.message}). Disabling Supabase Storage and using local server fallback.`);
               this.supabase = null;
               return;
             }
-            console.warn(`[SupabaseStorageService] Bucket "${bucket}" creation skipped (probably exists or lacking permissions):`, createError.message);
+            console.log(`[SupabaseStorageService] Bucket "${bucket}" creation info:`, createError.message);
           } else {
             console.log(`[SupabaseStorageService] Bucket "${bucket}" created successfully (private).`);
           }
         }
       } catch (err: any) {
-        const errMsg = err.message || '';
-        if (errMsg.toLowerCase().includes('signature') || errMsg.toLowerCase().includes('jwt') || errMsg.toLowerCase().includes('verification failed') || errMsg.toLowerCase().includes('invalid token')) {
-          console.log(`[SupabaseStorageService] Invalid service role key or signature error detected during bucket lookup catch (${errMsg}). Disabling Supabase Storage features and falling back to local.`);
+        const errMsg = (err.message || '').toLowerCase();
+        if (errMsg.includes('signature') || errMsg.includes('jwt') || errMsg.includes('verification failed') || errMsg.includes('invalid token') || errMsg.includes('fetch failed') || errMsg.includes('failed to fetch')) {
+          console.log(`[SupabaseStorageService] Connection error during bucket verification (${err.message}). Disabling Supabase Storage and using local server fallback.`);
           this.supabase = null;
           return;
         }
-        console.warn(`[SupabaseStorageService] Verification error for bucket "${bucket}":`, err.message);
+        console.log(`[SupabaseStorageService] Bucket "${bucket}" verification skipped:`, err.message);
       }
     }
   }

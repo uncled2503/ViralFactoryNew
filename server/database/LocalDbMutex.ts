@@ -22,24 +22,7 @@ export class LocalDbMutex {
       // Safe offline/test fallback inside memory
       if (this.cachedDbData === null) {
         this.cachedDbData = {
-          saas_users: [
-            {
-              id: '00000000-0000-0000-0000-000000000001',
-              name: 'Gabriel Moura',
-              email: 'mouragabriel2011@gmail.com',
-              company: 'Viral S.A.',
-              role: 'owner',
-              avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
-              subscription_tier: 'Pro',
-              status: 'active',
-              usage_current: 0,
-              usage_limit: 100,
-              storage_used_mb: 0,
-              templates_used: 0,
-              projects_active: 0,
-              created_at: new Date().toISOString()
-            }
-          ],
+          saas_users: [],
           users: [],
           projects: [],
           templates: [],
@@ -202,24 +185,7 @@ export class LocalDbMutex {
     if (!this.isLoaded || this.cachedDbData === null) {
       // Perform initial memory fallback
       this.cachedDbData = {
-        saas_users: [
-          {
-            id: '00000000-0000-0000-0000-000000000001',
-            name: 'Gabriel Moura',
-            email: 'mouragabriel2011@gmail.com',
-            company: 'Viral S.A.',
-            role: 'owner',
-            avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
-            subscription_tier: 'Pro',
-            status: 'active',
-            usage_current: 0,
-            usage_limit: 100,
-            storage_used_mb: 0,
-            templates_used: 0,
-            projects_active: 0,
-            created_at: new Date().toISOString()
-          }
-        ],
+        saas_users: [],
         users: [],
         projects: [],
         templates: [],

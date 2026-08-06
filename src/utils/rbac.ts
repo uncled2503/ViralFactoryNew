@@ -163,12 +163,13 @@ export function hasPermission(role: UserRole | undefined, permission: Permission
 /**
  * Checks if a user role is authorized as administrative
  */
-export function isAdminRole(role: UserRole | undefined): boolean {
+export function isAdminRole(role: UserRole | string | undefined): boolean {
   if (!role) return false;
+  const normalized = role.toString().trim().toUpperCase();
   return [
     'SUPER_ADMIN', 'OWNER', 'ADMIN', 'SUPORTE', 'FINANCEIRO', 'MARKETING', 'MODERADOR', 'ANALISTA', 'DESENVOLVEDOR',
-    'SUPPORT', 'FINANCE', 'MODERATOR', 'SaaS_Owner', 'Administrador'
-  ].includes(role);
+    'SUPPORT', 'FINANCE', 'MODERATOR', 'SAAS_OWNER', 'ADMINISTRADOR', 'GERENTE'
+  ].includes(normalized);
 }
 
 /**

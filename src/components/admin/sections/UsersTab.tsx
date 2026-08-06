@@ -24,7 +24,7 @@ import {
   AlertCircle,
   Plus
 } from 'lucide-react';
-import { User, PlanTier } from '../../../types';
+import { User, PlanTier, UserRole } from '../../../types';
 import { ROLE_DETAILS_MAP } from '../../../utils/rbac';
 import { PLANS_DETAILS } from '../../../config/plans';
 
@@ -94,6 +94,14 @@ export const UsersTab: React.FC<UsersTabProps> = ({
       });
     }
     showToast(`Plano de ${selectedUser?.name} alterado para ${newPlan}.`, 'success');
+  };
+
+  const handleUpdateRole = (userId: string, newRole: UserRole) => {
+    adminUpdateUser(userId, { role: newRole });
+    if (selectedUser?.id === userId) {
+      setSelectedUser({ ...selectedUser, role: newRole });
+    }
+    showToast(`Cargo de ${selectedUser?.name} alterado para ${newRole}.`, 'success');
   };
 
   const handleResetPassword = () => {
@@ -398,6 +406,24 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-900/30 border border-slate-900 rounded-2xl space-y-3">
+                    <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">Cargo & Permissões da Conta</h4>
+                    <select
+                      value={selectedUser.role}
+                      onChange={(e) => handleUpdateRole(selectedUser.id, e.target.value as UserRole)}
+                      className="w-full bg-slate-950 border border-slate-900 text-xs font-mono text-indigo-300 rounded-xl p-2.5 focus:outline-none focus:border-pink-500 cursor-pointer"
+                    >
+                      <option value="SaaS_Owner">👑 SaaS_Owner (Dono / Ilimitado)</option>
+                      <option value="SUPER_ADMIN">🛡️ SUPER_ADMIN (Super Administrador)</option>
+                      <option value="ADMIN">⚡ ADMIN (Administrador)</option>
+                      <option value="SUPORTE">🎧 SUPORTE (Atendimento Suporte)</option>
+                      <option value="FINANCEIRO">💰 FINANCEIRO (Gestor Financeiro)</option>
+                      <option value="MARKETING">🚀 MARKETING (Equipe Marketing)</option>
+                      <option value="MODERADOR">👁️ MODERADOR (Moderador Conteúdo)</option>
+                      <option value="Membro">👤 Membro (Usuário Padrão)</option>
+                    </select>
                   </div>
 
                   <div className="p-4 bg-slate-900/30 border border-slate-900 rounded-2xl flex items-center justify-between">

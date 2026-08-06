@@ -133,7 +133,7 @@ export const ProjectsManager: React.FC = () => {
 
   // Bulk Videos Loader Simulation
   const simulateBulkUpload = (amount: number) => {
-    if (!verifyAndTriggerLimitExceeded('projects')) {
+    if (!verifyAndTriggerLimitExceeded('videos')) {
       return;
     }
 
@@ -274,6 +274,7 @@ export const ProjectsManager: React.FC = () => {
   // Parallel Queue Render Simulation
   const startBatchRendering = () => {
     if (batchVideos.length === 0) return;
+    if (!verifyAndTriggerLimitExceeded('videos')) return;
 
     setStep('render-queue');
     setQueueStatus('running');
