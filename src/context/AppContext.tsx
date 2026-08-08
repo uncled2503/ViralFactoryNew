@@ -87,7 +87,7 @@ interface AppContextType {
   deleteTemplate: (id: string) => void;
   
   // Render System
-  triggerRender: (projectId: string, isSandbox?: boolean) => boolean;
+  triggerRender: (projectIdOrProject: string | Project, isSandbox?: boolean) => boolean;
   deleteRenderingTask: (id: string) => void;
   duplicateRenderingTask: (id: string) => void;
   
@@ -686,6 +686,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Special bypass: if the user is an admin or master owner, they have infinite limits
     if (isAdminRole(user.role, user.email)) {
+      console.log(`[Limit Check Bypass] Admin/Master user (${user.email} / ${user.role}) has infinite limits for '${type}'.`);
       return true;
     }
 
@@ -705,7 +706,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (type === 'projects') {
       const activeProjectsCount = projects.filter(p => p.status !== 'completed' && p.status !== 'failed').length;
-      if (activeProjectsCount >= limits.maxProjects) {
+      const isBlocked = activeProjectsCount >= limits.maxProjects;
+
+      console.warn(`
+================== [PROJECT CREATION LIMIT AUDIT LOG] ==================
+Função Responsável: verifyAndTriggerLimitExceeded
+Arquivo Responsável: /src/context/AppContext.tsx
+User ID: ${user.id}
+Email: ${user.email}
+Role: ${user.role}
+Plano: ${user.subscription}
+Projetos Ativos: ${activeProjectsCount}
+Limite Calculado: ${limits.maxProjects}
+Limite Utilizado: ${activeProjectsCount} / ${limits.maxProjects}
+Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
+=========================================================================
+`);
+
+      if (isBlocked) {
         setLimitError({
           type: 'projects',
           title: 'Limite de Projetos Atingido',
@@ -1198,13 +1216,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Trigger Render with limit check
-  const triggerRender = (projectId: string, isSandbox = false): boolean => {
+  const triggerRender = (projectIdOrProject: string | Project, isSandbox = false): boolean => {
     if (!verifyAndTriggerLimitExceeded('videos')) {
       return false;
     }
 
-    const project = projects.find(p => p.id === projectId);
+    let project: Project | undefined;
+    if (typeof projectIdOrProject === 'object' && projectIdOrProject !== null) {
+      project = projectIdOrProject;
+    } else {
+      project = projects.find(p => p.id === projectIdOrProject);
+    }
+
     if (!project) return false;
+    const projectId = project.id;
 
     const template = templates.find(t => t.id === project.templateId);
     const templateName = template ? template.name : 'Template Desconhecido';

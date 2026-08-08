@@ -225,7 +225,7 @@ export const DashboardOverview: React.FC = () => {
       );
 
       if (createdProject) {
-        const renderSuccess = triggerRender(createdProject.id);
+        const renderSuccess = triggerRender(createdProject);
         if (renderSuccess) {
           successCount++;
         } else {

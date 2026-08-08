@@ -181,7 +181,20 @@ class SupabaseDbClient implements IDatabaseClient {
     if (!supabaseClient) return null;
     const { data: inserted, error } = await supabaseClient.from(table).insert(data).select().maybeSingle();
     if (error) {
-      console.warn(`Insert error for ${table}:`, error.message);
+      const errAny = error as any;
+      if (errAny.status === 409 || error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('conflict') || error.message?.includes('already exists')) {
+        console.error(`
+================== [SUPABASE 409 CONFLICT AUDIT LOG] ==================
+Tabela: ${table}
+Operação: INSERT
+Constraint: ${error.code || 'N/A'}
+Chave Duplicada: ${error.message || error.details || 'N/A'}
+Payload Enviado: ${JSON.stringify(data, null, 2)}
+========================================================================
+`);
+      } else {
+        console.warn(`Insert error for ${table}:`, error.message);
+      }
       return null;
     }
     return inserted as T;
@@ -195,7 +208,20 @@ class SupabaseDbClient implements IDatabaseClient {
     });
     const { data: updated, error } = await query.select().maybeSingle();
     if (error) {
-      console.warn(`Update error for ${table}:`, error.message);
+      const errAny = error as any;
+      if (errAny.status === 409 || error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('conflict') || error.message?.includes('already exists')) {
+        console.error(`
+================== [SUPABASE 409 CONFLICT AUDIT LOG] ==================
+Tabela: ${table}
+Operação: UPDATE
+Constraint: ${error.code || 'N/A'}
+Chave Duplicada: ${error.message || error.details || 'N/A'}
+Payload Enviado: ${JSON.stringify(data, null, 2)}
+========================================================================
+`);
+      } else {
+        console.warn(`Update error for ${table}:`, error.message);
+      }
       return null;
     }
     return updated as T;
@@ -220,7 +246,25 @@ class SupabaseDbClient implements IDatabaseClient {
     const onConflict = conflictKeys.join(',');
     const { data: upserted, error } = await supabaseClient.from(table).upsert(data, { onConflict }).select().maybeSingle();
     if (error) {
-      console.warn(`Upsert error for ${table}:`, error.message);
+      const errAny = error as any;
+      if (errAny.status === 409 || error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('conflict') || error.message?.includes('already exists')) {
+        console.error(`
+================== [SUPABASE 409 CONFLICT AUDIT LOG] ==================
+Tabela: ${table}
+Operação: UPSERT
+Constraint: ${error.code || 'N/A'}
+Chave Duplicada: ${error.message || error.details || 'N/A'}
+Payload Enviado: ${JSON.stringify(data, null, 2)}
+========================================================================
+`);
+        // Fallback: try update by ID or first conflict key
+        const key = conflictKeys[0] || 'id';
+        if (data[key]) {
+          return this.update<T>(table, { [key]: data[key] }, data);
+        }
+      } else {
+        console.warn(`Upsert error for ${table}:`, error.message);
+      }
       return null;
     }
     return upserted as T;
