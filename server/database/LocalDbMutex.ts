@@ -1,5 +1,5 @@
 import { supabaseAdmin, isSupabaseConfigured } from './supabaseClient';
-import { toUUID, withRetry } from './SupabaseDbService';
+import { toUUID, toUUIDNullable, withRetry } from './SupabaseDbService';
 
 export class LocalDbMutex {
   private static queue: (() => Promise<void>)[] = [];
@@ -313,8 +313,10 @@ export class LocalDbMutex {
           const projectRecord = {
             id: toUUID(p.id),
             user_id: toUUID(p.userId || p.user_id),
+            template_id: toUUIDNullable(p.templateId || p.template_id),
             name: p.name || 'Untitled',
             description: p.description || '',
+            aspect: p.aspect || p.aspect_ratio || '16:9',
             aspect_ratio: p.aspect || p.aspect_ratio || '16:9',
             variables: p.variables || {},
             status: p.status || 'draft',
@@ -360,7 +362,7 @@ export class LocalDbMutex {
         for (const t of dbData.rendering_tasks) {
           const taskRecord = {
             id: toUUID(t.id),
-            project_id: toUUID(t.projectId || t.project_id),
+            project_id: toUUIDNullable(t.projectId || t.project_id),
             user_id: toUUID(t.userId || t.user_id),
             project_name: t.projectName || t.project_name || 'Project',
             template_name: t.templateName || t.template_name || 'Template',

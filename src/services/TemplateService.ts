@@ -6,6 +6,7 @@
 import { db } from './dbClient';
 import { Template } from '../types';
 import { TemplateModel } from './schema';
+import { safeUUID, safeUUIDNullable } from '../utils/uuid';
 
 export class TemplateService {
   private static TABLE = 'templates';
@@ -15,21 +16,21 @@ export class TemplateService {
    */
   static async getTemplates(userId: string): Promise<Template[] | null> {
     try {
+      const validUserId = safeUUID(userId);
       // Fetch user's templates
       const userTemplates = await db.findMany<TemplateModel>(
         this.TABLE,
-        { user_id: userId },
+        { user_id: validUserId },
         { orderBy: 'created_at', orderAsc: false }
       );
 
-      // Fetch public templates (with user_id null or is_public true)
+      // Fetch public templates
       const publicTemplates = await db.findMany<TemplateModel>(
         this.TABLE,
         { is_public: true },
         { orderBy: 'created_at', orderAsc: false }
       );
 
-      // Merge templates while preventing duplicates
       const uniqueTemplatesMap = new Map<string, TemplateModel>();
       [...publicTemplates, ...userTemplates].forEach(t => {
         uniqueTemplatesMap.set(t.id, t);
@@ -60,17 +61,20 @@ export class TemplateService {
    */
   static async upsertTemplate(userId: string, template: Template): Promise<boolean> {
     try {
+      const validTemplateId = safeUUID(template.id);
+      const validUserId = safeUUID(userId);
+
       const modelData: TemplateModel = {
-        id: template.id,
-        user_id: userId,
-        name: template.name,
-        description: template.description,
-        aspect: template.aspect,
+        id: validTemplateId,
+        user_id: validUserId,
+        name: template.name || 'Untitled Template',
+        description: template.description || '',
+        aspect: template.aspect || '16:9',
         bg_music_url: template.bgMusicUrl || undefined,
-        default_duration: template.defaultDuration,
-        scenes_count: template.scenesCount,
+        default_duration: template.defaultDuration || 30,
+        scenes_count: template.scenesCount || 1,
         layers: template.layers || [],
-        is_public: false, // User created templates are private by default
+        is_public: false,
         updated_at: new Date().toISOString(),
       };
 

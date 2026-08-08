@@ -6,6 +6,7 @@
 import { db } from './dbClient';
 import { Project } from '../types';
 import { ProjectModel } from './schema';
+import { safeUUID, safeUUIDNullable } from '../utils/uuid';
 
 export class ProjectService {
   private static TABLE = 'projects';
@@ -15,9 +16,10 @@ export class ProjectService {
    */
   static async getProjects(userId: string): Promise<Project[] | null> {
     try {
+      const validUserId = safeUUID(userId);
       const data = await db.findMany<ProjectModel>(
         this.TABLE,
-        { user_id: userId },
+        { user_id: validUserId },
         { orderBy: 'created_at', orderAsc: false }
       );
 
@@ -44,20 +46,23 @@ export class ProjectService {
    */
   static async upsertProject(userId: string, project: Project): Promise<boolean> {
     try {
+      const validProjectId = safeUUID(project.id);
+      const validUserId = safeUUID(userId);
+      const validTemplateId = safeUUIDNullable(project.templateId);
+
       const modelData: ProjectModel = {
-        id: project.id,
-        user_id: userId,
-        name: project.name,
-        description: project.description,
-        template_id: project.templateId,
-        status: project.status,
-        aspect: project.aspect,
-        variables: project.variables,
+        id: validProjectId,
+        user_id: validUserId,
+        name: project.name || 'Untitled Project',
+        description: project.description || '',
+        template_id: validTemplateId || undefined,
+        status: project.status || 'draft',
+        aspect: project.aspect || '16:9',
+        variables: project.variables || {},
         video_url: project.videoUrl || undefined,
         updated_at: new Date().toISOString(),
       };
 
-      // Add created_at if insert, otherwise let database set it or default
       if (project.createdAt) {
         modelData.created_at = project.createdAt;
       }

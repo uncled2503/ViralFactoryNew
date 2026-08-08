@@ -6,6 +6,7 @@
 import { db } from './dbClient';
 import { User } from '../types';
 import { UserModel } from './schema';
+import { safeUUID } from '../utils/uuid';
 
 export class UserService {
   private static TABLE = 'saas_users';
@@ -15,7 +16,8 @@ export class UserService {
    */
   static async getUser(userId: string): Promise<User | null> {
     try {
-      const data = await db.findOne<UserModel>(this.TABLE, { id: userId });
+      const validUserId = safeUUID(userId);
+      const data = await db.findOne<UserModel>(this.TABLE, { id: validUserId });
       if (!data) return null;
 
       const subRaw = (data as any).subscription || (data as any).subscription_tier || 'Free';
@@ -84,20 +86,23 @@ export class UserService {
    */
   static async upsertUser(user: User): Promise<boolean> {
     try {
+      const cleanEmail = user.email ? user.email.toLowerCase().trim() : '';
+      const validUserId = safeUUID(user.id);
+
       const modelData: UserModel = {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        company: user.company,
-        role: user.role,
-        avatar_url: user.avatarUrl,
-        subscription: user.subscription,
-        status: user.status,
-        usage_current: user.usageCurrent,
-        usage_limit: user.usageLimit,
-        storage_used_mb: user.storageUsedMB,
-        templates_used: user.templatesUsed,
-        projects_active: user.projectsActive,
+        id: validUserId,
+        name: user.name || 'Usuário',
+        email: cleanEmail,
+        company: user.company || '',
+        role: user.role || 'user',
+        avatar_url: user.avatarUrl || '',
+        subscription: user.subscription || 'Starter',
+        status: user.status || 'active',
+        usage_current: user.usageCurrent || 0,
+        usage_limit: user.usageLimit || 999999,
+        storage_used_mb: user.storageUsedMB || 0,
+        templates_used: user.templatesUsed || 0,
+        projects_active: user.projectsActive || 0,
         subscription_details: user.subscriptionDetails || null,
       };
 

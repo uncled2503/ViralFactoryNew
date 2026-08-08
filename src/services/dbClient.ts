@@ -181,20 +181,7 @@ class SupabaseDbClient implements IDatabaseClient {
     if (!supabaseClient) return null;
     const { data: inserted, error } = await supabaseClient.from(table).insert(data).select().maybeSingle();
     if (error) {
-      const errAny = error as any;
-      if (errAny.status === 409 || error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('conflict') || error.message?.includes('already exists')) {
-        console.error(`
-================== [SUPABASE 409 CONFLICT AUDIT LOG] ==================
-Tabela: ${table}
-Operação: INSERT
-Constraint: ${error.code || 'N/A'}
-Chave Duplicada: ${error.message || error.details || 'N/A'}
-Payload Enviado: ${JSON.stringify(data, null, 2)}
-========================================================================
-`);
-      } else {
-        console.warn(`Insert error for ${table}:`, error.message);
-      }
+      logSupabaseError(table, 'INSERT', error, data);
       return null;
     }
     return inserted as T;
@@ -208,20 +195,7 @@ Payload Enviado: ${JSON.stringify(data, null, 2)}
     });
     const { data: updated, error } = await query.select().maybeSingle();
     if (error) {
-      const errAny = error as any;
-      if (errAny.status === 409 || error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('conflict') || error.message?.includes('already exists')) {
-        console.error(`
-================== [SUPABASE 409 CONFLICT AUDIT LOG] ==================
-Tabela: ${table}
-Operação: UPDATE
-Constraint: ${error.code || 'N/A'}
-Chave Duplicada: ${error.message || error.details || 'N/A'}
-Payload Enviado: ${JSON.stringify(data, null, 2)}
-========================================================================
-`);
-      } else {
-        console.warn(`Update error for ${table}:`, error.message);
-      }
+      logSupabaseError(table, 'UPDATE', error, data);
       return null;
     }
     return updated as T;
@@ -235,7 +209,7 @@ Payload Enviado: ${JSON.stringify(data, null, 2)}
     });
     const { error } = await query;
     if (error) {
-      console.warn(`Delete error for ${table}:`, error.message);
+      logSupabaseError(table, 'DELETE', error, filter);
       return false;
     }
     return true;
@@ -243,32 +217,89 @@ Payload Enviado: ${JSON.stringify(data, null, 2)}
 
   async upsert<T>(table: string, data: Record<string, any>, conflictKeys: string[] = ['id']): Promise<T | null> {
     if (!supabaseClient) return null;
+
+    // Table-specific strategy for saas_users (handles both id PK and email UNIQUE constraint)
+    if (table === 'saas_users') {
+      const userId = data.id;
+      const userEmail = data.email ? String(data.email).toLowerCase().trim() : null;
+
+      // 1. Try to find by ID
+      if (userId) {
+        const existingById = await this.findOne<T>('saas_users', { id: userId });
+        if (existingById) {
+          return this.update<T>('saas_users', { id: userId }, data);
+        }
+      }
+
+      // 2. Try to find by Email
+      if (userEmail) {
+        const existingByEmail = await this.findOne<T>('saas_users', { email: userEmail });
+        if (existingByEmail) {
+          return this.update<T>('saas_users', { email: userEmail }, data);
+        }
+      }
+
+      // 3. Insert new user
+      return this.insert<T>('saas_users', data);
+    }
+
+    // Default upsert logic for other tables
     const onConflict = conflictKeys.join(',');
     const { data: upserted, error } = await supabaseClient.from(table).upsert(data, { onConflict }).select().maybeSingle();
     if (error) {
-      const errAny = error as any;
-      if (errAny.status === 409 || error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('conflict') || error.message?.includes('already exists')) {
-        console.error(`
-================== [SUPABASE 409 CONFLICT AUDIT LOG] ==================
-Tabela: ${table}
-Operação: UPSERT
-Constraint: ${error.code || 'N/A'}
-Chave Duplicada: ${error.message || error.details || 'N/A'}
-Payload Enviado: ${JSON.stringify(data, null, 2)}
-========================================================================
-`);
-        // Fallback: try update by ID or first conflict key
-        const key = conflictKeys[0] || 'id';
-        if (data[key]) {
-          return this.update<T>(table, { [key]: data[key] }, data);
+      logSupabaseError(table, 'UPSERT', error, data, onConflict);
+
+      // Fallback: Check existence and perform targeted update or insert
+      const primaryKey = conflictKeys[0] || 'id';
+      if (data[primaryKey]) {
+        const existing = await this.findOne<T>(table, { [primaryKey]: data[primaryKey] });
+        if (existing) {
+          return this.update<T>(table, { [primaryKey]: data[primaryKey] }, data);
         }
-      } else {
-        console.warn(`Upsert error for ${table}:`, error.message);
       }
       return null;
     }
     return upserted as T;
   }
+}
+
+function sanitizePayload(payload: any): any {
+  if (!payload || typeof payload !== 'object') return payload;
+  const clone = Array.isArray(payload) ? [...payload] : { ...payload };
+  const sensitiveKeys = ['password', 'secret', 'token', 'key', 'service_role_key', 'anon_key', 'cookie'];
+
+  for (const k of Object.keys(clone)) {
+    if (sensitiveKeys.some(sk => k.toLowerCase().includes(sk))) {
+      clone[k] = '[REDACTED]';
+    } else if (typeof clone[k] === 'object' && clone[k] !== null) {
+      clone[k] = sanitizePayload(clone[k]);
+    }
+  }
+  return clone;
+}
+
+function logSupabaseError(table: string, operation: string, error: any, payload?: any, onConflict?: string) {
+  const errAny = error as any;
+  const status = errAny?.status || errAny?.statusCode || (errAny?.code && !isNaN(Number(errAny.code)) ? errAny.code : 'N/A');
+  const pgCode = error?.code || 'N/A';
+  const message = error?.message || 'N/A';
+  const details = error?.details || 'N/A';
+  const hint = error?.hint || 'N/A';
+  const sanitized = payload ? sanitizePayload(payload) : 'N/A';
+
+  console.error(`
+================== [SUPABASE DIAGNOSTIC ERROR LOG] ==================
+Tabela: ${table}
+Operação: ${operation}
+HTTP Status: ${status}
+PostgreSQL Code: ${pgCode}
+Mensagem: ${message}
+Detalhes: ${details}
+Hint: ${hint}
+On Conflict: ${onConflict || 'N/A'}
+Payload Sanitizado: ${typeof sanitized === 'object' ? JSON.stringify(sanitized, null, 2) : sanitized}
+======================================================================
+`);
 }
 
 // Instantiate the appropriate database provider

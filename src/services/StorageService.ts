@@ -6,6 +6,7 @@
 import { db } from './dbClient';
 import { StorageFolder, StorageFile } from '../types';
 import { StorageFolderModel, UploadedVideoModel, RenderedVideoModel } from './schema';
+import { safeUUID, safeUUIDNullable } from '../utils/uuid';
 
 export class StorageService {
   private static FOLDERS_TABLE = 'storage_folders';
@@ -17,7 +18,8 @@ export class StorageService {
    */
   static async getFolders(userId: string): Promise<StorageFolder[] | null> {
     try {
-      const data = await db.findMany<StorageFolderModel>(this.FOLDERS_TABLE, { user_id: userId });
+      const validUserId = safeUUID(userId);
+      const data = await db.findMany<StorageFolderModel>(this.FOLDERS_TABLE, { user_id: validUserId });
       if (!data || data.length === 0) return null;
 
       return data.map(folder => ({
@@ -39,13 +41,15 @@ export class StorageService {
   static async upsertFolders(userId: string, folders: StorageFolder[]): Promise<boolean> {
     try {
       let allOk = true;
+      const validUserId = safeUUID(userId);
+
       for (const folder of folders) {
         const modelData: StorageFolderModel = {
-          id: folder.id,
-          user_id: userId,
-          name: folder.name,
-          path: folder.path,
-          description: folder.description,
+          id: safeUUID(folder.id),
+          user_id: validUserId,
+          name: folder.name || 'Nova Pasta',
+          path: folder.path || '/',
+          description: folder.description || '',
           files: folder.files || [],
         };
         const result = await db.upsert<StorageFolderModel>(this.FOLDERS_TABLE, modelData, ['id']);
@@ -65,8 +69,8 @@ export class StorageService {
     try {
       const sizeNum = parseFloat(file.size.replace(/[^0-9.]/g, '')) || 0;
       const modelData: UploadedVideoModel = {
-        id: file.id,
-        user_id: userId,
+        id: safeUUID(file.id),
+        user_id: safeUUID(userId),
         name: file.name,
         size_mb: sizeNum,
         url: file.url,
@@ -86,9 +90,9 @@ export class StorageService {
     try {
       const sizeNum = parseFloat(file.size.replace(/[^0-9.]/g, '')) || 0;
       const modelData: RenderedVideoModel = {
-        id: file.id,
-        user_id: userId,
-        project_id: projectId,
+        id: safeUUID(file.id),
+        user_id: safeUUID(userId),
+        project_id: safeUUIDNullable(projectId) || safeUUID(projectId),
         name: file.name,
         size_mb: sizeNum,
         url: file.url,

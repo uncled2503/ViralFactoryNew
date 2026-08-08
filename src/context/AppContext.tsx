@@ -38,6 +38,7 @@ import { StorageService } from '../services/StorageService';
 import { PaymentService } from '../services/PaymentService';
 import { isAdminRole } from '../utils/rbac';
 import { adminFetch, authenticatedFetch } from '../utils/api';
+import { generateUUID } from '../utils/uuid';
 
 export type TabName = 'dashboard' | 'projects' | 'templates' | 'renderings' | 'storage' | 'subscription' | 'admin' | 'help' | 'profile-settings';
 
@@ -1016,7 +1017,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       };
 
       const newProject: Project = {
-        id: `prj-${Math.random().toString(36).substr(2, 9)}`,
+        id: generateUUID(),
         name,
         description,
         templateId,
@@ -1237,7 +1238,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
     const displayProjectName = isSandbox ? `[Sandbox 3s] ${project.name}` : project.name;
     const displayDuration = isSandbox ? '0:03' : (template?.defaultDuration ? `0:${template.defaultDuration}` : '0:30');
 
-    const taskId = `rnd-${Math.random().toString(36).substr(2, 9)}`;
+    const taskId = generateUUID();
     const newTask: RenderingTask = {
       id: taskId,
       projectId,

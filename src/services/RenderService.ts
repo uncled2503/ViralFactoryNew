@@ -6,6 +6,7 @@
 import { db } from './dbClient';
 import { RenderingTask } from '../types';
 import { RenderJobModel, RenderLogModel } from './schema';
+import { safeUUID, safeUUIDNullable } from '../utils/uuid';
 
 export class RenderService {
   private static JOBS_TABLE = 'rendering_tasks';
@@ -16,9 +17,10 @@ export class RenderService {
    */
   static async getRenderingTasks(userId: string): Promise<RenderingTask[] | null> {
     try {
+      const validUserId = safeUUID(userId);
       const data = await db.findMany<RenderJobModel>(
         this.JOBS_TABLE,
-        { user_id: userId },
+        { user_id: validUserId },
         { orderBy: 'created_at', orderAsc: false }
       );
 
@@ -46,15 +48,19 @@ export class RenderService {
    */
   static async upsertRenderingTask(userId: string, task: RenderingTask): Promise<boolean> {
     try {
+      const validTaskId = safeUUID(task.id);
+      const validUserId = safeUUID(userId);
+      const validProjectId = safeUUIDNullable(task.projectId);
+
       const modelData: RenderJobModel = {
-        id: task.id,
-        project_id: task.projectId || undefined,
-        user_id: userId,
-        project_name: task.projectName,
-        template_name: task.templateName,
-        status: task.status,
-        progress: task.progress,
-        duration: task.duration,
+        id: validTaskId,
+        project_id: validProjectId || undefined,
+        user_id: validUserId,
+        project_name: task.projectName || 'Untitled Project',
+        template_name: task.templateName || 'Untitled Template',
+        status: task.status || 'queued',
+        progress: typeof task.progress === 'number' ? task.progress : 0,
+        duration: task.duration || '0:30',
         render_time: task.renderTime || undefined,
         output_url: task.outputUrl || undefined,
         completed_at: task.completedAt || undefined,

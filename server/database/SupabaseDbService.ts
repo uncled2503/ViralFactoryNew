@@ -13,11 +13,12 @@ const REPORT_PATH = path.join(process.cwd(), 'public', 'storage', 'migration_rep
  * Utility to convert any string ID to a deterministic, valid UUID v4 formatted string.
  */
 export function toUUID(str: string | null | undefined): string {
-  if (!str) return '00000000-0000-0000-0000-000000000000';
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)) {
-    return str;
+  if (!str || str.trim() === '') return crypto.randomUUID();
+  const clean = str.trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean)) {
+    return clean;
   }
-  const hash = crypto.createHash('md5').update(str).digest('hex');
+  const hash = crypto.createHash('md5').update(clean).digest('hex');
   return [
     hash.substring(0, 8),
     hash.substring(8, 12),
@@ -25,6 +26,20 @@ export function toUUID(str: string | null | undefined): string {
     hash.substring(16, 20),
     hash.substring(20, 32)
   ].join('-');
+}
+
+export function toUUIDNullable(str: string | null | undefined): string | null {
+  if (!str) return null;
+  const clean = str.trim();
+  if (
+    clean === '' ||
+    clean === 'null' ||
+    clean === 'undefined' ||
+    clean === '00000000-0000-0000-0000-000000000000'
+  ) {
+    return null;
+  }
+  return toUUID(clean);
 }
 
 /**
