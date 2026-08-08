@@ -128,10 +128,10 @@ async function startServer() {
   const BILLING_ENABLED = process.env.BILLING_ENABLED === 'true' || false;
 
   const BACKEND_PLAN_LIMITS: Record<string, { maxProjects: number; maxTemplates: number; maxVideosPerMonth: number; maxStorageMB: number }> = {
-    Free: { maxProjects: 1, maxTemplates: 1, maxVideosPerMonth: 5, maxStorageMB: 500 },
-    Starter: { maxProjects: 30, maxTemplates: 30, maxVideosPerMonth: 300, maxStorageMB: 2048 },
-    Pro: { maxProjects: 99999, maxTemplates: 99999, maxVideosPerMonth: 1200, maxStorageMB: 102400 },
-    Business: { maxProjects: 99999, maxTemplates: 99999, maxVideosPerMonth: 4000, maxStorageMB: 102400 }
+    Free: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 999999, maxStorageMB: 9999999 },
+    Starter: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 999999, maxStorageMB: 9999999 },
+    Pro: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 999999, maxStorageMB: 9999999 },
+    Business: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 999999, maxStorageMB: 9999999 }
   };
 
   function parseSizeToMB(sizeStr: string | number): number {

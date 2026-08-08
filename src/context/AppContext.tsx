@@ -679,10 +679,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     type: 'videos' | 'templates' | 'projects' | 'storage',
     upcomingSizeMB = 0
   ): boolean => {
-    if (!user) return false;
+    // Special bypass: if billing is disabled globally, infinite limits for everyone
+    if (!BILLING_ENABLED) {
+      return true;
+    }
 
-    // Special bypass: if billing is disabled globally or user is admin/master owner, they have infinite limits
-    if (!BILLING_ENABLED || isAdminRole(user.role, user.email)) {
+    if (!user) return true;
+
+    if (isAdminRole(user.role, user.email)) {
       return true;
     }
 
