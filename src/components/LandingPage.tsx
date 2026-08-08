@@ -40,18 +40,18 @@ import {
 } from 'lucide-react';
 
 const examplePages = [
-  { id: 1, image: '/fotos/02-uAy4VjXQ.webp', title: '@filosofia_ancestral', views: '1.4M views', category: 'Citações' },
-  { id: 2, image: '/fotos/03-B2jCMS6j.webp', title: '@dica_de_riqueza', views: '2.1M views', category: 'Finanças' },
-  { id: 3, image: '/fotos/04-BANhblpL.webp', title: '@rainha_das_novelas', views: '3.8M views', category: 'Cortes' },
-  { id: 4, image: '/fotos/06-BCOSIrKe.webp', title: '@mentalidade_oculta', views: '2.5M views', category: 'Motivação' },
-  { id: 5, image: '/fotos/07-xAqbZkQu.webp', title: '@cortes_de_series', views: '1.9M views', category: 'Cinema' },
-  { id: 6, image: '/fotos/08-DDZBl70i.webp', title: '@futebol_resenha', views: '4.1M views', category: 'Futebol' },
-  { id: 7, image: '/fotos/09-sQPdEBK6.webp', title: '@reflexao_diaria', views: '2.3M views', category: 'Poesia' },
-  { id: 8, image: '/fotos/10-D-kzC9r3.webp', title: '@curiosidade_global', views: '1.1M views', category: 'Curiosidades' },
-  { id: 9, image: '/fotos/11-Bd_y7XPb.webp', title: '@zicada_futebol', views: '1.7M views', category: 'Futebol' },
-  { id: 10, image: '/fotos/12-Bq0AnmXJ.webp', title: '@estetica_escura', views: '980K views', category: 'Estilo de Vida' },
-  { id: 11, image: '/fotos/13-_LniUGFI.webp', title: '@regras_devida', views: '2.9M views', category: 'Disciplina' },
-  { id: 12, image: '/fotos/14-CPvLg7dt.webp', title: '@sucesso_financeiro', views: '3.4M views', category: 'Negócios' }
+  { id: 1, image: '/assets/02-uAy4VjXQ.webp', title: '@filosofia_ancestral', views: '1.4M views', category: 'Citações' },
+  { id: 2, image: '/assets/03-B2jCMS6j.webp', title: '@dica_de_riqueza', views: '2.1M views', category: 'Finanças' },
+  { id: 3, image: '/assets/04-BANhblpL.webp', title: '@rainha_das_novelas', views: '3.8M views', category: 'Cortes' },
+  { id: 4, image: '/assets/06-BCOSIrKe.webp', title: '@mentalidade_oculta', views: '2.5M views', category: 'Motivação' },
+  { id: 5, image: '/assets/07-xAqbZkQu.webp', title: '@cortes_de_series', views: '1.9M views', category: 'Cinema' },
+  { id: 6, image: '/assets/08-DDZBl70i.webp', title: '@futebol_resenha', views: '4.1M views', category: 'Futebol' },
+  { id: 7, image: '/assets/09-sQPdEBK6.webp', title: '@reflexao_diaria', views: '2.3M views', category: 'Poesia' },
+  { id: 8, image: '/assets/10-D-kzC9r3.webp', title: '@curiosidade_global', views: '1.1M views', category: 'Curiosidades' },
+  { id: 9, image: '/assets/11-Bd_y7XPb.webp', title: '@zicada_futebol', views: '1.7M views', category: 'Futebol' },
+  { id: 10, image: '/assets/12-Bq0AnmXJ.webp', title: '@estetica_escura', views: '980K views', category: 'Estilo de Vida' },
+  { id: 11, image: '/assets/13-_LniUGFI.webp', title: '@regras_devida', views: '2.9M views', category: 'Disciplina' },
+  { id: 12, image: '/assets/14-CPvLg7dt.webp', title: '@sucesso_financeiro', views: '3.4M views', category: 'Negócios' }
 ];
 
 export const LandingPage: React.FC = () => {
@@ -299,7 +299,7 @@ export const LandingPage: React.FC = () => {
       role: 'Criadora de Conteúdo',
       company: 'Digital Creator',
       quote: 'O Viral Factory revolucionou nossa operação. Conseguimos criar 120 shorts personalizados para nossos clientes em menos de 15 minutos. A qualidade visual é simplesmente premium.',
-      avatar: '/fotos/taysecardoso.jpg',
+      avatar: '/assets/taysecardoso.jpg',
       rating: 5
     },
     {
@@ -307,7 +307,7 @@ export const LandingPage: React.FC = () => {
       role: 'Produtor e Gestor',
       company: 'Moraes Media',
       quote: 'Ter dezenas de vídeos prontos para a semana toda me salvou de um cansaço absurdo. O Viral Factory me dá o suporte ideal para dominar os algoritmos e crescer muito mais rápido.',
-      avatar: '/fotos/paulodeborbamoraes.jpg',
+      avatar: '/assets/paulodeborbamoraes.jpg',
       rating: 5
     },
     {
@@ -315,7 +315,7 @@ export const LandingPage: React.FC = () => {
       role: 'Head de Growth',
       company: 'Dorx Digital',
       quote: 'Antes levávamos dias editando vídeos manualmente para o TikTok e Reels. Hoje, montamos um template no editor e exportamos em lote de forma incrivelmente rápida e padronizada.',
-      avatar: '/fotos/rogeriodorx.jpg',
+      avatar: '/assets/rogeriodorx.jpg',
       rating: 5
     },
     {
@@ -323,7 +323,7 @@ export const LandingPage: React.FC = () => {
       role: 'Especialista em Social Media',
       company: 'Evellynn Agency',
       quote: 'A facilidade de programar as automações de legendas inteligentes com o Viral Factory decolou minhas visualizações. Consegui triplicar o engajamento sem precisar passar horas editando.',
-      avatar: '/fotos/studio.evellynn.jpg',
+      avatar: '/assets/studio.evellynn.jpg',
       rating: 5
     }
   ];

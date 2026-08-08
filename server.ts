@@ -124,6 +124,9 @@ async function startServer() {
     res.json(await WorkerWebSocketServer.getWorkers());
   });
 
+  // Flag single source of truth for temporary disabling of plans/limits
+  const BILLING_ENABLED = process.env.BILLING_ENABLED === 'true' || false;
+
   const BACKEND_PLAN_LIMITS: Record<string, { maxProjects: number; maxTemplates: number; maxVideosPerMonth: number; maxStorageMB: number }> = {
     Free: { maxProjects: 1, maxTemplates: 1, maxVideosPerMonth: 5, maxStorageMB: 500 },
     Starter: { maxProjects: 30, maxTemplates: 30, maxVideosPerMonth: 300, maxStorageMB: 2048 },
@@ -186,7 +189,7 @@ async function startServer() {
         const limits = BACKEND_PLAN_LIMITS[userTier] || BACKEND_PLAN_LIMITS.Free;
         const storageUsedMB = userInDb.storage_used_mb !== undefined ? userInDb.storage_used_mb : (userInDb.storageUsedMB || 0);
 
-        if (storageUsedMB >= limits.maxStorageMB && !isUnlimitedRole) {
+        if (BILLING_ENABLED && storageUsedMB >= limits.maxStorageMB && !isUnlimitedRole) {
           res.status(403).json({ error: `Espaço de armazenamento esgotado para o plano ${userTier}.` });
           return;
         }
@@ -445,7 +448,7 @@ async function startServer() {
         j => j.status !== 'Completed' && j.status !== 'Failed' && j.status !== 'Canceled'
       ).length;
 
-      if (usageCurrent + activeQueuedJobsCount >= limits.maxVideosPerMonth && !isUnlimitedRole) {
+      if (BILLING_ENABLED && usageCurrent + activeQueuedJobsCount >= limits.maxVideosPerMonth && !isUnlimitedRole) {
         res.status(403).json({ 
           error: `Limite de renderizações atingido. Seu plano (${userTier}) permite até ${limits.maxVideosPerMonth} renderizações mensais. Você já tem ${usageCurrent} concluídas e ${activeQueuedJobsCount} em andamento.` 
         });
@@ -941,8 +944,8 @@ async function startServer() {
               status: 'active',
               usage_current: incomingProfile.usage_current || incomingProfile.usageCurrent || 0,
               usageCurrent: incomingProfile.usage_current || incomingProfile.usageCurrent || 0,
-              usage_limit: isSyncAdmin ? 999999 : (limits.maxVideosPerMonth || 5),
-              usageLimit: isSyncAdmin ? 999999 : (limits.maxVideosPerMonth || 5),
+              usage_limit: (!BILLING_ENABLED || isSyncAdmin) ? 999999 : (limits.maxVideosPerMonth || 5),
+              usageLimit: (!BILLING_ENABLED || isSyncAdmin) ? 999999 : (limits.maxVideosPerMonth || 5),
               storage_used_mb: incomingProfile.storage_used_mb || incomingProfile.storageUsedMB || 0,
               storageUsedMB: incomingProfile.storage_used_mb || incomingProfile.storageUsedMB || 0,
               templates_used: 0,
@@ -1039,7 +1042,7 @@ async function startServer() {
           });
 
           activeProjectsCount = resolvedUserProjects.filter((p: any) => p && p.status !== 'completed' && p.status !== 'failed').length;
-          if (activeProjectsCount > limits.maxProjects && !isSyncAdmin) {
+          if (BILLING_ENABLED && activeProjectsCount > limits.maxProjects && !isSyncAdmin) {
             throw new Error('LIMIT_PROJECTS_EXCEEDED');
           }
 
@@ -1070,7 +1073,7 @@ async function startServer() {
           const mergedUserTemplates = mergeById(existingUserTemplates, incomingUserTemplates);
           
           totalTemplatesCount = mergedUserTemplates.length;
-          if (totalTemplatesCount > limits.maxTemplates && !isSyncAdmin) {
+          if (BILLING_ENABLED && totalTemplatesCount > limits.maxTemplates && !isSyncAdmin) {
             throw new Error('LIMIT_TEMPLATES_EXCEEDED');
           }
 
@@ -1196,7 +1199,7 @@ async function startServer() {
             });
           });
 
-          if (totalStorageMB > limits.maxStorageMB && !isSyncAdmin) {
+          if (BILLING_ENABLED && totalStorageMB > limits.maxStorageMB && !isSyncAdmin) {
             throw new Error('LIMIT_STORAGE_EXCEEDED');
           }
 

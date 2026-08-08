@@ -21,7 +21,7 @@ import {
   UserSubscription,
   Invoice,
 } from '../types';
-import { PLAN_LIMITS_MAP, PLANS_DETAILS, getPlanLimits } from '../config/plans';
+import { PLAN_LIMITS_MAP, PLANS_DETAILS, getPlanLimits, BILLING_ENABLED } from '../config/plans';
 import {
   INITIAL_PROJECTS,
   INITIAL_TEMPLATES,
@@ -37,7 +37,7 @@ import { SubscriptionService } from '../services/SubscriptionService';
 import { StorageService } from '../services/StorageService';
 import { PaymentService } from '../services/PaymentService';
 import { isAdminRole } from '../utils/rbac';
-import { adminFetch } from '../utils/api';
+import { adminFetch, authenticatedFetch } from '../utils/api';
 
 export type TabName = 'dashboard' | 'projects' | 'templates' | 'renderings' | 'storage' | 'subscription' | 'admin' | 'help' | 'profile-settings';
 
@@ -111,6 +111,7 @@ interface AppContextType {
 
   // SaaS Admin Area
   allUsers: User[];
+  refreshAdminData?: () => Promise<void>;
   adminUpdateUser: (userId: string, updates: Partial<User>) => void;
   adminDeleteUser: (userId: string) => void;
   impersonateUser?: (targetUser: User) => void;
@@ -296,29 +297,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  useEffect(() => {
+  const refreshAdminData = async () => {
     if (!user) return;
     const isAdmin = isAdminRole(user.role, user.email);
-    if (isAdmin) {
-      const loadAdminDatasets = async () => {
-        try {
-          const res = await adminFetch('/api/admin/users');
-          if (res.ok) {
-            const data = await res.json();
-            setAllUsers(data);
-          }
-          const jobsRes = await adminFetch('/api/admin/jobs');
-          if (jobsRes.ok) {
-            const jobsData = await jobsRes.json();
-            setRenderingTasks(jobsData);
-          }
-        } catch (err) {
-          console.warn('Failed to load admin datasets:', err);
-        }
-      };
-      loadAdminDatasets();
+    if (!isAdmin) return;
+    try {
+      const res = await adminFetch('/api/admin/users');
+      if (res.ok) {
+        const data = await res.json();
+        setAllUsers(data);
+      }
+      const jobsRes = await adminFetch('/api/admin/jobs');
+      if (jobsRes.ok) {
+        const jobsData = await jobsRes.json();
+        setRenderingTasks(jobsData);
+      }
+    } catch (err) {
+      console.warn('Failed to refresh admin datasets:', err);
     }
-  }, [user]);
+  };
 
   useEffect(() => {
     // If Supabase is configured, subscribe to auth state changes to keep sessions in sync
@@ -684,9 +681,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): boolean => {
     if (!user) return false;
 
-    // Special bypass: if the user is an admin or master owner, they have infinite limits
-    if (isAdminRole(user.role, user.email)) {
-      console.log(`[Limit Check Bypass] Admin/Master user (${user.email} / ${user.role}) has infinite limits for '${type}'.`);
+    // Special bypass: if billing is disabled globally or user is admin/master owner, they have infinite limits
+    if (!BILLING_ENABLED || isAdminRole(user.role, user.email)) {
       return true;
     }
 
@@ -1935,6 +1931,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
         limitError,
         clearLimitError,
         allUsers,
+        refreshAdminData,
         adminUpdateUser,
         adminDeleteUser,
         impersonateUser,

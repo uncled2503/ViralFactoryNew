@@ -34,10 +34,14 @@ export async function authenticatedFetch(url: string, options: RequestInit = {})
     }
   }
 
-  // 2. Fallback to localStorage cached user if x-user-id is still missing
+  // 2. Fallback to sessionStorage / localStorage cached user if x-user-id is still missing
   if (!headers['x-user-id']) {
     try {
-      const savedUserStr = localStorage.getItem('saas_user') || localStorage.getItem('vf_user');
+      const savedUserStr =
+        sessionStorage.getItem('vf_user') ||
+        sessionStorage.getItem('saas_user') ||
+        localStorage.getItem('vf_user') ||
+        localStorage.getItem('saas_user');
       if (savedUserStr) {
         const savedUser = JSON.parse(savedUserStr);
         if (savedUser?.id) headers['x-user-id'] = savedUser.id;

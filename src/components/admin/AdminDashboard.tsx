@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 
 // Import Modular Sections
@@ -32,11 +32,18 @@ interface AdminDashboardProps {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeMenu }) => {
   const { 
     allUsers, 
+    refreshAdminData,
     adminUpdateUser, 
     adminDeleteUser, 
     renderingTasks,
     impersonateUser 
   } = useApp();
+
+  useEffect(() => {
+    if (refreshAdminData) {
+      refreshAdminData();
+    }
+  }, []);
 
   // Toast alert manager
   const [toast, setToast] = useState<ToastState>({

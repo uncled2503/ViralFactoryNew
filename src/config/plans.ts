@@ -16,8 +16,10 @@ export interface PlanConfig {
   features: string[];
 }
 
+export const BILLING_ENABLED = false;
+
 export function getPlanLimits(tier?: string, role?: string, email?: string): PlanLimits {
-  if (isAdminRole(role, email)) {
+  if (!BILLING_ENABLED || isAdminRole(role, email)) {
     return {
       maxVideosPerMonth: 999999,
       maxTemplates: 999999,
