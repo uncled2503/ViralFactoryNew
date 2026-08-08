@@ -1,5 +1,6 @@
 /**
  * Utility functions for UUID validation, generation, and safe conversion
+ * Updated: Supabase UUID v4 compliance layer
  */
 
 export function isValidUUID(str?: string | null): boolean {
