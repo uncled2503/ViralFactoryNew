@@ -50,7 +50,15 @@ export class RenderService {
     try {
       const validTaskId = safeUUID(task.id);
       const validUserId = safeUUID(userId);
-      const validProjectId = safeUUIDNullable(task.projectId);
+      let validProjectId = safeUUIDNullable(task.projectId);
+
+      // Verify project exists in projects table to avoid foreign key constraint errors
+      if (validProjectId) {
+        const existingProject = await db.findOne('projects', { id: validProjectId });
+        if (!existingProject) {
+          validProjectId = null;
+        }
+      }
 
       const modelData: RenderJobModel = {
         id: validTaskId,

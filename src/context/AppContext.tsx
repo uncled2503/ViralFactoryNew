@@ -1289,7 +1289,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       }).catch(e => console.error('Failed to pre-sync DB', e));
 
       // Trigger Backend Render Pipeline
-      fetch('/api/render/job', {
+      authenticatedFetch('/api/render/job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1319,7 +1319,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
 
           // Poll progress
           const pollInterval = setInterval(() => {
-            fetch(`/api/render/job/${backendJobId}`)
+            authenticatedFetch(`/api/render/job/${backendJobId}`)
               .then(res => res.json())
               .then(job => {
                 if (job) {

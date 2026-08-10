@@ -48,7 +48,15 @@ export class ProjectService {
     try {
       const validProjectId = safeUUID(project.id);
       const validUserId = safeUUID(userId);
-      const validTemplateId = safeUUIDNullable(project.templateId);
+      let validTemplateId = safeUUIDNullable(project.templateId);
+
+      // Verify template exists in templates table to avoid foreign key constraint errors
+      if (validTemplateId) {
+        const existingTemplate = await db.findOne('templates', { id: validTemplateId });
+        if (!existingTemplate) {
+          validTemplateId = null;
+        }
+      }
 
       const modelData: ProjectModel = {
         id: validProjectId,
