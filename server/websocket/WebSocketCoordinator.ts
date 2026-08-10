@@ -75,6 +75,8 @@ export class WebSocketCoordinator {
           const parsed = JSON.parse(messageData);
           const { type, payload } = parsed;
 
+          console.log(`[COORDINATOR] Message received from worker "${registeredId || 'unregistered'}": type="${type}"`);
+
           // Guard against malformed JSON packets
           if (!type) {
             console.warn('[WebSocketCoordinator] Received packet without a type:', parsed);

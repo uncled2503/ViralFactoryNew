@@ -118,6 +118,9 @@ export class JobQueue {
     this.jobs.set(job.id, job);
     this.queue.push(job.id);
     
+    console.log('[TASK]');
+    console.log(`Task criada: ${job.id}`);
+
     this.emitter.emit('jobAdded', job);
     this.emitter.emit('queueChanged');
     return job;

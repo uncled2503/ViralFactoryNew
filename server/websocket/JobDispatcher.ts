@@ -14,7 +14,25 @@ export class JobDispatcher {
    * Evaluates the best available idle worker using hardware and telemetric scoring
    */
   private static findBestWorker(): WorkerConnection | null {
+    const allWorkers = WorkerRegistry.getAll();
     const idleWorkers = WorkerRegistry.getIdleWorkers();
+
+    console.log('[QUEUE]');
+    console.log(`Workers disponíveis: ${idleWorkers.length}`);
+
+    // Log detailed eligibility for all connected workers
+    allWorkers.forEach(w => {
+      const isConnected = w.socket.readyState === 1;
+      const isIdle = w.status === 'idle';
+      const isEligible = isConnected && isIdle;
+      
+      console.log(`[WORKER SELECTION] worker=${w.id} connected=${isConnected} ready=${isConnected} status=${w.status} busy=${w.status === 'busy'} lastHeartbeat=${w.lastHeartbeat} capacity=1 currentJobs=${w.currentJobId ? 1 : 0} health=ok capabilities=ffmpeg eligible=${isEligible}`);
+      if (!isEligible) {
+        const reason = !isConnected ? 'socket_not_open' : !isIdle ? 'worker_status_busy' : 'unknown';
+        console.log(`[WORKER SELECTION] worker=${w.id} eligible=false reason=${reason}`);
+      }
+    });
+
     if (idleWorkers.length === 0) return null;
 
     // Sort idle workers: lower CPU usage first, then more total RAM, then lower RAM usage
@@ -41,11 +59,20 @@ export class JobDispatcher {
         const nextJob = JobQueue.getNextJob();
         if (!nextJob) break;
 
+        console.log('[QUEUE]');
+        console.log(`Task detectada: ${nextJob.id}`);
+
         const bestWorker = this.findBestWorker();
         if (!bestWorker) {
           console.log('[JobDispatcher] Jobs are queued, but all workers are currently busy or offline.');
           break;
         }
+
+        console.log('[QUEUE]');
+        console.log(`Worker selecionado: ${bestWorker.id}`);
+
+        console.log('[QUEUE]');
+        console.log(`Task atribuída ao worker: ${bestWorker.id}`);
 
         console.log(`[JobDispatcher] Selected worker "${bestWorker.id}" to process Job ${nextJob.id}`);
         
@@ -129,6 +156,11 @@ export class JobDispatcher {
           };
 
           // Dispatch start_job down the WebSocket connection
+          console.log('[DISPATCH]');
+          console.log(`Enviando job ${nextJob.id} para ${bestWorker.id}`);
+          console.log('[DISPATCH]');
+          console.log(`WebSocket readyState: ${bestWorker.socket.readyState}`);
+
           const success = bestWorker.send('start_job', {
             jobId: nextJob.id,
             userId: nextJob.userId,
@@ -144,6 +176,9 @@ export class JobDispatcher {
           if (!success) {
             throw new Error(`Conexão perdida com o worker "${bestWorker.id}" ao tentar iniciar a renderização.`);
           }
+
+          console.log('[DISPATCH]');
+          console.log('Job enviado com sucesso');
 
           console.log(`[JobDispatcher] Sent start_job command successfully to "${bestWorker.id}" for Job ${nextJob.id}`);
 

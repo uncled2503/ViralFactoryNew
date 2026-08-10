@@ -152,10 +152,13 @@ function connect() {
   ws.on('message', async (rawData: WebSocket.RawData) => {
     try {
       const data = JSON.parse(rawData.toString());
-      console.log(`[WebSocket] Received Event Type: "${data.type}"`);
+      console.log('[WORKER]');
+      console.log(`Evento recebido: ${data.type}`);
       
       if (data.type === 'start_job') {
         const { jobId, layers, preset, duration, uploadUrls } = data.payload;
+        console.log('[WORKER]');
+        console.log(`Job recebido: ${jobId}`);
         await executeJob(jobId, layers, preset, duration, uploadUrls);
       } else if (data.type === 'abort_job') {
         const { jobId } = data.payload;

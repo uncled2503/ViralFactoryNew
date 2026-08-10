@@ -62,6 +62,7 @@ export class WorkerConnection {
       return false;
     }
     try {
+      console.log(`[WORKER DISPATCH] Sending event "${type}" to worker "${this.id}"`);
       this.socket.send(JSON.stringify({ type, payload }));
       return true;
     } catch (err: any) {
