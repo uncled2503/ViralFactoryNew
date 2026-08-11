@@ -100,7 +100,7 @@ export class UserService {
         status: user.status || 'active',
         usage_current: user.usageCurrent || 0,
         usage_limit: user.usageLimit || 999999,
-        storage_used_mb: user.storageUsedMB || 0,
+        storage_used_mb: Math.round(user.storageUsedMB || 0),
         templates_used: user.templatesUsed || 0,
         projects_active: user.projectsActive || 0,
         subscription_details: user.subscriptionDetails || null,

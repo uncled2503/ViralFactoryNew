@@ -21,7 +21,78 @@ export const INITIAL_USER: User = {
   projectsActive: 0
 };
 
-export const INITIAL_TEMPLATES: Template[] = [];
+export const INITIAL_TEMPLATES: Template[] = [
+  {
+    id: 'tmp-reels-subtitles',
+    name: 'Legendas Dinâmicas Neon',
+    description: 'Template ideal para Reels, TikTok e Shorts com legendas destacadas e barra de progresso.',
+    aspect: '9:16',
+    defaultDuration: 30,
+    scenesCount: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    layers: [
+      {
+        id: 'layer-video',
+        type: 'video',
+        x: 0,
+        y: 0,
+        width: 1080,
+        height: 1920,
+        order: 1,
+        placeholder: 'Vídeo Principal'
+      },
+      {
+        id: 'layer-subtitles',
+        type: 'subtitles',
+        x: 100,
+        y: 1400,
+        width: 880,
+        height: 200,
+        order: 10,
+        font: 'Montserrat',
+        size: 52,
+        color: '#FFFFFF',
+        weight: 'bold',
+        strokeEnabled: true,
+        strokeColor: '#000000',
+        strokeWidth: 4
+      }
+    ]
+  },
+  {
+    id: 'tmp-viral-split',
+    name: 'Corte Viral Top/Bottom',
+    description: 'Layout clássico com vídeo no topo e gameplay/loop satisfatório na base.',
+    aspect: '9:16',
+    defaultDuration: 30,
+    scenesCount: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    layers: [
+      {
+        id: 'layer-video-top',
+        type: 'video',
+        x: 0,
+        y: 0,
+        width: 1080,
+        height: 960,
+        order: 1,
+        placeholder: 'Vídeo do Topo'
+      },
+      {
+        id: 'layer-video-bottom',
+        type: 'video',
+        x: 0,
+        y: 960,
+        width: 1080,
+        height: 960,
+        order: 2,
+        placeholder: 'Gameplay/Fundo'
+      }
+    ]
+  }
+];
 
 export const INITIAL_PROJECTS: Project[] = [];
 

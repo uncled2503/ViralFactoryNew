@@ -89,13 +89,20 @@ export class JobDispatcher {
         try {
           // Compile project layouts, variables, and presets
           const projectData = await (RenderEngine as any).fetchProject(nextJob.projectId, nextJob.userId);
-          const templateData = await (RenderEngine as any).fetchTemplate(nextJob.templateId, nextJob.userId);
-
-          if (!projectData || !templateData) {
-            throw new Error(`Projeto ${nextJob.projectId} ou Template ${nextJob.templateId} não encontrado.`);
+          if (!projectData) {
+            throw new Error(`Projeto ${nextJob.projectId} não encontrado.`);
           }
 
-          const vars = nextJob.variables || projectData.variables || {};
+          const templateData = await (RenderEngine as any).fetchTemplate(nextJob.templateId, nextJob.userId);
+          if (!templateData) {
+            throw new Error(`Template ${nextJob.templateId} não encontrado.`);
+          }
+
+          if (!projectData.variables || Object.keys(projectData.variables).length === 0) {
+            projectData.variables = nextJob.variables || {};
+          }
+
+          const vars = { ...projectData.variables, ...(nextJob.variables || {}) };
           const baseTemplateJson = TemplateEngine.getTemplateJson(templateData, projectData);
           
           if (!baseTemplateJson) {

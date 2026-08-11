@@ -414,7 +414,7 @@ async function startServer() {
 
   // Create a Render Job
   app.post('/api/render/job', async (req, res) => {
-    const { userId, projectId, projectName, templateId, templateName, duration, variables } = req.body;
+    const { taskId, userId, projectId, projectName, templateId, templateName, duration, variables } = req.body;
 
     if (!userId || !projectId || !projectName || !templateId) {
       res.status(400).json({ error: 'Missing required render parameters' });
@@ -456,6 +456,7 @@ async function startServer() {
       }
 
       const job = JobQueue.createJob({
+        taskId,
         userId,
         projectId,
         projectName,
@@ -1230,8 +1231,8 @@ async function startServer() {
         }
 
         if (activeUser) {
-          activeUser.storage_used_mb = parseFloat(totalStorageMB.toFixed(2));
-          activeUser.storageUsedMB = parseFloat(totalStorageMB.toFixed(2));
+          activeUser.storage_used_mb = Math.round(totalStorageMB);
+          activeUser.storageUsedMB = Math.round(totalStorageMB);
         }
 
         // 7. DISCARD client invoices to prevent financial/payment spoofing

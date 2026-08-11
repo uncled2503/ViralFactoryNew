@@ -1,6 +1,81 @@
 import { supabaseAdmin, isSupabaseConfigured } from './supabaseClient';
 import { toUUID, toUUIDNullable, withRetry } from './SupabaseDbService';
 
+const BUILTIN_TEMPLATES = [
+  {
+    id: 'tmp-reels-subtitles',
+    name: 'Legendas Dinâmicas Neon',
+    description: 'Template ideal para Reels, TikTok e Shorts com legendas destacadas e barra de progresso.',
+    aspect: '9:16',
+    defaultDuration: 30,
+    scenesCount: 1,
+    backgroundImageUrl: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    layers: [
+      {
+        id: 'layer-video',
+        type: 'video',
+        x: 0,
+        y: 0,
+        width: 1080,
+        height: 1920,
+        order: 1,
+        placeholder: 'Vídeo Principal'
+      },
+      {
+        id: 'layer-subtitles',
+        type: 'subtitles',
+        x: 100,
+        y: 1400,
+        width: 880,
+        height: 200,
+        order: 10,
+        font: 'Montserrat',
+        size: 52,
+        color: '#FFFFFF',
+        weight: 'bold',
+        strokeEnabled: true,
+        strokeColor: '#000000',
+        strokeWidth: 4
+      }
+    ]
+  },
+  {
+    id: 'tmp-viral-split',
+    name: 'Corte Viral Top/Bottom',
+    description: 'Layout clássico com vídeo no topo e gameplay/loop satisfatório na base.',
+    aspect: '9:16',
+    defaultDuration: 30,
+    scenesCount: 1,
+    backgroundImageUrl: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    layers: [
+      {
+        id: 'layer-video-top',
+        type: 'video',
+        x: 0,
+        y: 0,
+        width: 1080,
+        height: 960,
+        order: 1,
+        placeholder: 'Vídeo do Topo'
+      },
+      {
+        id: 'layer-video-bottom',
+        type: 'video',
+        x: 0,
+        y: 960,
+        width: 1080,
+        height: 960,
+        order: 2,
+        placeholder: 'Gameplay/Fundo'
+      }
+    ]
+  }
+];
+
 export class LocalDbMutex {
   private static queue: (() => Promise<void>)[] = [];
   private static isProcessing = false;
@@ -142,6 +217,13 @@ export class LocalDbMutex {
       const audit_logs = (auditRes && auditRes.data) ? auditRes.data : [];
       const invoices = (invoicesRes && invoicesRes.data) ? invoicesRes.data : [];
 
+      const existingTplIds = new Set(templates.map((t: any) => t.id));
+      for (const bt of BUILTIN_TEMPLATES) {
+        if (!existingTplIds.has(bt.id)) {
+          templates.push(bt);
+        }
+      }
+
       this.cachedDbData = {
         saas_users,
         users: saas_users,
@@ -163,7 +245,7 @@ export class LocalDbMutex {
         saas_users: [],
         users: [],
         projects: [],
-        templates: [],
+        templates: [...BUILTIN_TEMPLATES],
         rendering_tasks: [],
         storage_folders: [],
         settings: [],
@@ -188,7 +270,7 @@ export class LocalDbMutex {
         saas_users: [],
         users: [],
         projects: [],
-        templates: [],
+        templates: [...BUILTIN_TEMPLATES],
         rendering_tasks: [],
         storage_folders: [],
         support_tickets: [],

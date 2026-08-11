@@ -197,9 +197,10 @@ export interface Template {
   scenesCount: number;
   layers: {
     id: string;
-    type: 'text' | 'image' | 'audio' | 'overlay';
-    name: string;
-    defaultValue: string;
+    type: 'text' | 'image' | 'audio' | 'overlay' | 'video' | 'subtitles' | 'background' | string;
+    name?: string;
+    defaultValue?: string;
+    [key: string]: any;
   }[];
 }
 

@@ -45,22 +45,31 @@ export class RenderEngine {
 
     let project: any = null;
     if (supabase) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('projects')
         .select('*')
         .eq('id', projectId)
         .eq('user_id', userId)
         .maybeSingle();
-      if (!error && data) project = data;
+      if (data) project = data;
+
+      if (!project) {
+        const { data: dataById } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('id', projectId)
+          .maybeSingle();
+        if (dataById) project = dataById;
+      }
     }
 
     if (!project) {
-      project = this.getLocalDbItem('projects', { id: projectId, user_id: userId });
+      project = this.getLocalDbItem('projects', { id: projectId });
     }
 
     if (project) {
       try {
-        await RedisService.set(cacheKey, JSON.stringify(project), 60); // Cache for 60 seconds
+        await RedisService.set(cacheKey, JSON.stringify(project), 60);
       } catch (err) {
         console.error('[RenderEngine] Cache write error for project:', err);
       }
@@ -84,12 +93,12 @@ export class RenderEngine {
 
     let template: any = null;
     if (supabase) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('templates')
         .select('*')
         .eq('id', templateId)
         .maybeSingle();
-      if (!error && data) template = data;
+      if (data) template = data;
     }
 
     if (!template) {
@@ -98,7 +107,7 @@ export class RenderEngine {
 
     if (template) {
       try {
-        await RedisService.set(cacheKey, JSON.stringify(template), 60); // Cache for 60 seconds
+        await RedisService.set(cacheKey, JSON.stringify(template), 60);
       } catch (err) {
         console.error('[RenderEngine] Cache write error for template:', err);
       }
@@ -114,7 +123,11 @@ export class RenderEngine {
       const dbData = LocalDbMutex.getDbDataSync();
       const items = dbData[table] || [];
       return items.find((item: any) => 
-        Object.entries(filters).every(([key, val]) => item[key] === val)
+        Object.entries(filters).every(([key, val]) => {
+          if (!val) return true;
+          const altKey = key === 'user_id' ? 'userId' : key === 'userId' ? 'user_id' : key;
+          return item[key] === val || item[altKey] === val;
+        })
       ) || null;
     } catch {
       return null;

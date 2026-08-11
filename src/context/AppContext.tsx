@@ -1293,6 +1293,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          taskId,
           userId: user.id,
           projectId,
           projectName: displayProjectName,
@@ -1397,8 +1398,9 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
         }
       })
       .catch(err => {
-        console.error('Render trigger API submission failed, falling back to local simulation:', err);
-        showToast('Utilizando motor de renderização local.', 'info');
+        console.error('Render trigger API submission failed:', err);
+        showToast(`Falha ao enviar renderização: ${err.message || 'Erro no servidor'}`, 'error');
+        setRenderingTasks(prevTasks => prevTasks.map(t => t.id === taskId ? { ...t, status: 'failed', errorMessage: err.message } : t));
       });
     }
 

@@ -85,6 +85,7 @@ export class JobQueue {
   }
 
   static createJob(params: {
+    taskId?: string;
     userId: string;
     projectId: string;
     projectName: string;
@@ -100,8 +101,11 @@ export class JobQueue {
     const tier = user?.subscription_tier || 'Starter';
     const priority = tier === 'Business' ? 'high' : tier === 'Pro' ? 'medium' : 'low';
 
+    const isValidUUID = (str?: string) => str ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) : false;
+    const jobId = isValidUUID(params.taskId) ? params.taskId! : crypto.randomUUID();
+
     const job: RenderJob = {
-      id: `job-${Math.random().toString(36).substring(2, 9)}`,
+      id: jobId,
       userId: params.userId,
       projectId: params.projectId,
       projectName: params.projectName,

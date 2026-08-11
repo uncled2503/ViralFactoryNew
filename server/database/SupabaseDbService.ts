@@ -187,7 +187,7 @@ export class SupabaseDbService {
         status: u.status || 'active',
         usage_current: u.usageCurrent || u.usage_current || 0,
         usage_limit: u.usageLimit || u.usage_limit || 100,
-        storage_used_mb: u.storageUsedMB || u.storage_used_mb || 0,
+        storage_used_mb: Math.round(u.storageUsedMB || u.storage_used_mb || 0),
         templates_used: u.templatesUsed || u.templates_used || 0,
         projects_active: u.projectsActive || u.projects_active || 0,
         created_at: u.created_at || u.createdAt || new Date().toISOString()
