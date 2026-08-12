@@ -461,6 +461,24 @@ export class LocalDbMutex {
           };
 
           await withRetry(async () => {
+            if (taskRecord.project_id) {
+              const { data: projExists } = await supabaseAdmin!
+                .from('projects')
+                .select('id')
+                .eq('id', taskRecord.project_id)
+                .maybeSingle();
+
+              if (!projExists) {
+                await supabaseAdmin!.from('projects').upsert({
+                  id: taskRecord.project_id,
+                  user_id: taskRecord.user_id,
+                  name: taskRecord.project_name || 'Project',
+                  status: 'draft',
+                  created_at: new Date().toISOString()
+                }, { onConflict: 'id' });
+              }
+            }
+
             const { error } = await supabaseAdmin!
               .from('rendering_tasks')
               .upsert(taskRecord, { onConflict: 'id' });

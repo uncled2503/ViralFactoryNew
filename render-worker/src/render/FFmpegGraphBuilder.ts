@@ -221,13 +221,18 @@ export class FFmpegGraphBuilder {
         const strokeColor = layer.data?.styles?.strokeColor ?? layer.data?.strokeColor ?? 'black';
         const strokeWidth = layer.data?.styles?.strokeWidth ?? layer.data?.strokeWidth ?? 2;
 
-        let drawtextFilter = `drawtext=text='${escapedText}':fontcolor=${color}:fontsize=${size}:x='${xPos}':y='${compiledAnims.y}':alpha='${compiledAnims.alpha}':enable='between(t\\,${start}\\,${end})'`;
+        const formatColor = (c: string) => (c && c.startsWith('#') ? '0x' + c.slice(1) : c || 'white');
+        const fontCol = formatColor(color);
+        const shadowCol = formatColor(shadowColor);
+        const strokeCol = formatColor(strokeColor);
+
+        let drawtextFilter = `drawtext=text='${escapedText}':fontcolor='${fontCol}':fontsize=${size}:x='${xPos}':y='${compiledAnims.y}':alpha='${compiledAnims.alpha}':enable='between(t\\,${start}\\,${end})'`;
 
         if (shadowEnabled) {
-          drawtextFilter += `:shadowcolor=${shadowColor}:shadowx=${shadowOffsetX}:shadowy=${shadowOffsetY}`;
+          drawtextFilter += `:shadowcolor='${shadowCol}':shadowx=${shadowOffsetX}:shadowy=${shadowOffsetY}`;
         }
         if (strokeEnabled) {
-          drawtextFilter += `:borderw=${strokeWidth}:bordercolor=${strokeColor}`;
+          drawtextFilter += `:borderw=${strokeWidth}:bordercolor='${strokeCol}'`;
         }
 
         const textLabel = `[text_${layer.id}]`;
@@ -238,11 +243,14 @@ export class FFmpegGraphBuilder {
       } else if (type === 'progressbar') {
         const color = layer.data?.styles?.color ?? layer.data?.color ?? '#6366F1';
         const bgColor = layer.data?.styles?.bgColor ?? layer.data?.bgColor ?? '#1F2937';
+        const formatColor = (c: string) => (c && c.startsWith('#') ? '0x' + c.slice(1) : c || 'white');
+        const pbColor = formatColor(color);
+        const pbBgColor = formatColor(bgColor);
         const pbHeight = h || 10;
         const pbLabel = `[pb_${layer.id}]`;
 
-        const bgBox = `drawbox=y='${compiledAnims.y}':color=${bgColor}:width=iw:height=${pbHeight}:t=fill:enable='between(t\\,${start}\\,${end})'`;
-        const activeBox = `drawbox=y='${compiledAnims.y}':color=${color}:width=iw*clip((t-${start})/${layerDuration}\\,0\\,1):height=${pbHeight}:t=fill:enable='between(t\\,${start}\\,${end})'`;
+        const bgBox = `drawbox=y='${compiledAnims.y}':color='${pbBgColor}':width=iw:height=${pbHeight}:t=fill:enable='between(t\\,${start}\\,${end})'`;
+        const activeBox = `drawbox=y='${compiledAnims.y}':color='${pbColor}':width='iw*min(max((t-${start})/${layerDuration}\\,0)\\,1)':height=${pbHeight}:t=fill:enable='between(t\\,${start}\\,${end})'`;
 
         const progressSegment = `${ctx.currentLabel}${bgBox},${activeBox}${pbLabel}`;
 
@@ -250,11 +258,13 @@ export class FFmpegGraphBuilder {
         ctx.currentLabel = pbLabel;
       } else if (type === 'shape') {
         const color = layer.data?.styles?.color ?? layer.data?.color ?? '#FFFFFF';
+        const formatColor = (c: string) => (c && c.startsWith('#') ? '0x' + c.slice(1) : c || 'white');
+        const shapeColorFormatted = formatColor(color);
         const shapeType = layer.data?.styles?.shapeType ?? layer.data?.shapeType ?? 'rectangle';
         const shapeLabel = `[shape_${layer.id}]`;
 
         if (shapeType === 'rectangle') {
-          const shapeSegment = `${ctx.currentLabel}drawbox=x='${compiledAnims.x}':y='${compiledAnims.y}':w='${compiledAnims.scaleW}':h='${compiledAnims.scaleH}':color=${color}:t=fill:enable='between(t\\,${start}\\,${end})'${shapeLabel}`;
+          const shapeSegment = `${ctx.currentLabel}drawbox=x='${compiledAnims.x}':y='${compiledAnims.y}':w='${compiledAnims.scaleW}':h='${compiledAnims.scaleH}':color='${shapeColorFormatted}':t=fill:enable='between(t\\,${start}\\,${end})'${shapeLabel}`;
           filterSegments.push(shapeSegment);
           ctx.currentLabel = shapeLabel;
         }

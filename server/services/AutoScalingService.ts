@@ -36,7 +36,7 @@ export interface ScalingLog {
 export class AutoScalingService {
   private static config: ScalingConfig = {
     enabled: true,
-    minWorkers: 1,
+    minWorkers: 0,
     maxWorkers: 8,
     scaleUpThreshold: 2,
     scaleDownThreshold: 0,

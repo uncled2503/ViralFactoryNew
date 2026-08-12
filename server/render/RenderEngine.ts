@@ -11,6 +11,7 @@ import { OutputManager } from './OutputManager';
 import { PipelineManager } from './PipelineManager';
 import { LocalDbMutex } from '../database/LocalDbMutex';
 import { RedisService } from '../services/RedisService';
+import { toUUID } from '../database/SupabaseDbService';
 
 // Initialize server-side Supabase if config is provided
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
@@ -151,6 +152,7 @@ export class RenderEngine {
 
     if (supabase) {
       try {
+        const targetId = toUUID(jobId);
         const { error } = await supabase
           .from('rendering_tasks')
           .update({
@@ -163,14 +165,16 @@ export class RenderEngine {
             logs: logs,
             debug_info: debugInfo
           })
-          .eq('id', jobId);
+          .eq('id', targetId);
 
         if (!error && videoUrl) {
-          // Sync project status to completed
-          await supabase
-            .from('projects')
-            .update({ status: status === 'completed' ? 'completed' : 'rendering', video_url: videoUrl })
-            .eq('id', JobQueue.getJob(jobId)?.projectId);
+          const job = JobQueue.getJob(jobId);
+          if (job?.projectId) {
+            await supabase
+              .from('projects')
+              .update({ status: status === 'completed' ? 'completed' : 'rendering', video_url: videoUrl })
+              .eq('id', toUUID(job.projectId));
+          }
         }
       } catch (err) {
         console.warn('Supabase DB Sync failed in RenderEngine, saving to file:', err);

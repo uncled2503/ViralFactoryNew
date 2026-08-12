@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import WebSocket from 'ws';
 import dotenv from 'dotenv';
 import { AssetDownloader } from './downloader.js';
@@ -56,6 +56,72 @@ if (fs.existsSync(tempAssetsRoot)) {
   }
 }
 fs.mkdirSync(tempAssetsRoot, { recursive: true });
+
+/**
+ * Runs a standalone diagnostic suite using the worker's exact FFmpeg configuration
+ */
+function runFFmpegDiagnosticSuite() {
+  console.log('\n=====================================================');
+  console.log('🔍 RUNNING WORKER FFMPEG DIAGNOSTIC SUITE');
+  console.log('=====================================================');
+
+  const absFFmpegPath = path.resolve(FFMPEG_PATH);
+  console.log(`[Diagnostic] Executable Path: ${absFFmpegPath}`);
+  console.log(`[Diagnostic] Architecture:  ${process.arch}`);
+  console.log(`[Diagnostic] Platform:      ${process.platform}`);
+
+  try {
+    const verRes = spawnSync(FFMPEG_PATH, ['-version'], { encoding: 'utf8' });
+    const firstLine = (verRes.stdout || verRes.stderr || '').split('\n')[0];
+    console.log(`[Diagnostic] Version: ${firstLine}`);
+  } catch (err: any) {
+    console.error(`[Diagnostic] Failed executing -version:`, err.message);
+  }
+
+  try {
+    const encRes = spawnSync(FFMPEG_PATH, ['-hide_banner', '-encoders'], { encoding: 'utf8' });
+    const hasX264 = (encRes.stdout || '').includes('libx264');
+    console.log(`[Diagnostic] libx264 encoder support: ${hasX264 ? 'YES' : 'NO'}`);
+  } catch (err: any) {
+    console.error(`[Diagnostic] Failed checking encoders:`, err.message);
+  }
+
+  const diagDir = path.resolve(tempAssetsRoot, 'diagnostic_tests');
+  if (!fs.existsSync(diagDir)) fs.mkdirSync(diagDir, { recursive: true });
+
+  const tests = [
+    { name: 'TEST_A_BASIC_COLOR', args: ['-f', 'lavfi', '-i', 'color=c=black:s=320x320:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', path.join(diagDir, 'test_a.mp4')] },
+    { name: 'TEST_B_REELS_RESOL', args: ['-f', 'lavfi', '-i', 'color=c=030712:s=1080x1920:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', path.join(diagDir, 'test_b.mp4')] },
+    { name: 'TEST_C_DRAWTEXT', args: ['-f', 'lavfi', '-i', 'color=c=030712:s=1080x1920:d=2', '-vf', "drawtext=text='TEST':fontcolor='white':fontsize=54:x=(w-text_w)/2:y=180", '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', path.join(diagDir, 'test_c.mp4')] },
+    { name: 'TEST_D_PROGRESSBAR', args: ['-f', 'lavfi', '-i', 'color=c=030712:s=1080x1920:d=2', '-vf', "drawbox=y=1840:color='0xFF0000':width=iw:height=12:t=fill", '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', path.join(diagDir, 'test_d.mp4')] }
+  ];
+
+  for (const t of tests) {
+    const start = Date.now();
+    try {
+      const res = spawnSync(FFMPEG_PATH, t.args, { encoding: 'utf8', timeout: 15000 });
+      const durationMs = Date.now() - start;
+      const outFile = t.args[t.args.length - 1];
+      const exists = fs.existsSync(outFile);
+      const size = exists ? fs.statSync(outFile).size : 0;
+
+      console.log(`[Diagnostic ${t.name}] Status: Exit Code ${res.status}, Signal: ${res.signal || 'None'}, Duration: ${durationMs}ms, Size: ${size} bytes`);
+      if (res.status !== 0) {
+        console.error(`[Diagnostic ${t.name}] Stderr: ${res.stderr?.slice(-1000)}`);
+      }
+    } catch (err: any) {
+      console.error(`[Diagnostic ${t.name}] Exception: ${err.message}`);
+    }
+  }
+
+  try {
+    fs.rmSync(diagDir, { recursive: true, force: true });
+  } catch (e) {}
+
+  console.log('=====================================================\n');
+}
+
+runFFmpegDiagnosticSuite();
 
 /**
  * Structured log emitter for monitoring/auditing/telemetry
@@ -315,20 +381,21 @@ async function executeJob(
   const sendProgressThrottled = (status: string, progress: number, logsToInclude?: string[], force = false) => {
     const now = Date.now();
     const isLogUpdate = progress === -1;
+    const progressVal = progress >= 0 ? Math.max(0, Math.min(100, Math.round(progress))) : (lastProgressSentValue >= 0 ? lastProgressSentValue : 0);
     const statusChanged = status !== lastProgressSentStatus;
-    const progressJump = progress - lastProgressSentValue >= 1;
+    const progressJump = progressVal - lastProgressSentValue >= 1;
     const timeElapsed = now - lastProgressSentTime >= 500;
 
     if (force || isLogUpdate || statusChanged || progressJump || timeElapsed) {
       sendEvent('job_progress', {
         jobId,
         status,
-        progress,
+        progress: progressVal,
         ...(logsToInclude ? { logs: logsToInclude } : {})
       });
       lastProgressSentTime = now;
       if (progress >= 0) {
-        lastProgressSentValue = progress;
+        lastProgressSentValue = progressVal;
       }
       lastProgressSentStatus = status;
     }
@@ -341,8 +408,8 @@ async function executeJob(
     logs.push(logLine);
     console.log(`[Job ${jobId}] ${logLine}`);
     
-    // Send real-time log updates back to backend
-    sendProgressThrottled('Rendering', -1, [logLine]);
+    // Send real-time log updates back to backend without resetting progress to -1
+    sendProgressThrottled('Rendering', lastProgressSentValue >= 0 ? lastProgressSentValue : 0, [logLine]);
   };
 
   logStructured('JOB_START', { jobId, layersCount: layers.length, preset: preset?.id, duration });
@@ -454,11 +521,17 @@ async function executeJob(
 
       currentFFmpegProcess?.on('close', (code) => {
         currentFFmpegProcess = null;
+        const isNativeCrash = code === 3221225477 || code === -1073741819 || (code !== null && (code >>> 0) === 3221225477);
         if (code === 0) {
           addLog('FFmpeg Render', 'FFmpeg exited successfully with code 0.');
           resolve();
+        } else if (isNativeCrash) {
+          const crashMsg = `FFmpeg native crash detected: Windows Access Violation (0xC0000005 / exit code ${code}). Stderr snippet: ${stderrData.slice(-1000)}`;
+          addLog('FFmpeg Render', crashMsg, true);
+          logStructured('FFMPEG_NATIVE_CRASH', { jobId, exitCode: code, stderr: stderrData.slice(-2000) });
+          reject(new Error(crashMsg));
         } else {
-          addLog('FFmpeg Render', `FFmpeg closed with exit code ${code}`, true);
+          addLog('FFmpeg Render', `FFmpeg closed with exit code ${code}. Stderr snippet: ${stderrData.slice(-1000)}`, true);
           reject(new Error(`FFmpeg exited with error code ${code}`));
         }
       });
@@ -478,11 +551,25 @@ async function executeJob(
     const ffmpegEndTime = Date.now();
     const executionTimeMs = ffmpegEndTime - ffmpegStartTime;
 
-    // Validate video output file
+    // Validate video output file strictly
     if (!fs.existsSync(localOutputVideoPath)) {
-      throw new Error(`Output file not created at: ${localOutputVideoPath}`);
+      throw new Error(`OUTPUT_VALIDATION_FAILED: Output file not created at: ${localOutputVideoPath}`);
     }
     const videoStats = fs.statSync(localOutputVideoPath);
+    if (videoStats.size === 0) {
+      throw new Error(`OUTPUT_VALIDATION_FAILED: Video output file was created but is 0 bytes.`);
+    }
+
+    const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
+    try {
+      const probeRes = spawnSync(ffprobePath, ['-v', 'error', '-show_entries', 'format=duration,size', '-of', 'default=noprintwrappers=1', localOutputVideoPath], { encoding: 'utf8' });
+      if (probeRes.status === 0 && probeRes.stdout) {
+        addLog('FFmpeg Render', `FFprobe validation: ${probeRes.stdout.trim().replace(/\n/g, ', ')}`);
+      }
+    } catch (e: any) {
+      addLog('FFmpeg Render', `FFprobe validation note: ${e.message}`);
+    }
+
     addLog('FFmpeg Render', `Output validated successfully. Size: ${(videoStats.size / 1024 / 1024).toFixed(2)} MB.`);
 
     // -------------------------------------------------------------
