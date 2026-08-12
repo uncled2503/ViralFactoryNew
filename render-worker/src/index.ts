@@ -9,6 +9,7 @@ import { AssetUploader } from './uploader.js';
 import { FFmpegCommandBuilder, ExportPreset } from './render/FFmpegCommandBuilder.js';
 import { RenderLayer } from './render/LayerEngine.js';
 import { OutputManager } from './render/OutputManager.js';
+import { FontManager } from './render/FontManager.js';
 
 // Load environment variables from .env
 dotenv.config();
@@ -89,11 +90,27 @@ function runFFmpegDiagnosticSuite() {
   const diagDir = path.resolve(tempAssetsRoot, 'diagnostic_tests');
   if (!fs.existsSync(diagDir)) fs.mkdirSync(diagDir, { recursive: true });
 
+  let fontParam = '';
+  try {
+    const defaultFontPath = FontManager.getDefaultFontPath();
+    console.log(`[Diagnostic Font] Using default font path: ${defaultFontPath}`);
+    fontParam = FontManager.getFFmpegFontParam();
+    console.log(`[Diagnostic Font] Formatted font param: ${fontParam}`);
+  } catch (fontErr: any) {
+    console.error(`[Diagnostic Font] FAILED to resolve default font: ${fontErr.message}`);
+  }
+
   const tests = [
     { name: 'TEST_A_BASIC_COLOR', args: ['-f', 'lavfi', '-i', 'color=c=black:s=320x320:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', path.join(diagDir, 'test_a.mp4')] },
     { name: 'TEST_B_REELS_RESOL', args: ['-f', 'lavfi', '-i', 'color=c=030712:s=1080x1920:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', path.join(diagDir, 'test_b.mp4')] },
-    { name: 'TEST_C_DRAWTEXT', args: ['-f', 'lavfi', '-i', 'color=c=030712:s=1080x1920:d=2', '-vf', "drawtext=text='TEST':fontcolor='white':fontsize=54:x=(w-text_w)/2:y=180", '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', path.join(diagDir, 'test_c.mp4')] },
-    { name: 'TEST_D_PROGRESSBAR', args: ['-f', 'lavfi', '-i', 'color=c=030712:s=1080x1920:d=2', '-vf', "drawbox=y=1840:color='0xFF0000':width=iw:height=12:t=fill", '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', path.join(diagDir, 'test_d.mp4')] }
+    {
+      name: 'TEST_C_FULL_RENDER',
+      args: [
+        '-f', 'lavfi', '-i', 'color=c=030712:s=1080x1920:d=3',
+        '-filter_complex', `[0:v]drawtext=${fontParam}:text='Fábrica viral ativada...':fontcolor=white:fontsize=54:x=(w-text_w)/2:y=200:enable='between(t\\,0\\,3)'[t1];[t1]drawtext=${fontParam}:text='Render [Customizado] - ssstik.io_@_lszny':fontcolor=0xE2E8F0:fontsize=38:x=(w-text_w)/2:y=300:enable='between(t\\,0\\,3)'[t2];[t2]drawbox=y=1840:color='0x6366F1':width='iw*min(max(t/3\\,0)\\,1)':height=16:t=fill:enable='between(t\\,0\\,3)'[out]`,
+        '-map', '[out]', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', path.join(diagDir, 'test_c.mp4')
+      ]
+    }
   ];
 
   for (const t of tests) {
@@ -463,7 +480,39 @@ async function executeJob(
     // -------------------------------------------------------------
     // PHASE 3: EXECUTE FFMPEG & TRACK PROGRESS
     // -------------------------------------------------------------
-    addLog('FFmpeg Render', 'Executing FFmpeg process... Monitoring console standard error...');
+    // Font Pre-flight Check
+    try {
+      const fontPath = FontManager.getDefaultFontPath();
+      const isAbsolute = path.isAbsolute(fontPath);
+      const exists = fs.existsSync(fontPath);
+      let isFile = false;
+      let isReadable = false;
+
+      if (exists) {
+        const stats = fs.statSync(fontPath);
+        isFile = stats.isFile() && stats.size > 0;
+        try {
+          fs.accessSync(fontPath, fs.constants.R_OK);
+          isReadable = true;
+        } catch {}
+      }
+
+      addLog('FFmpeg Render', `[FFmpeg Font] Using font: ${fontPath}`);
+      addLog('FFmpeg Render', `[FFmpeg Font] Exists: ${exists}`);
+      addLog('FFmpeg Render', `[FFmpeg Font] Readable: ${isReadable}`);
+
+      if (!exists || !isFile || !isReadable || !isAbsolute) {
+        throw new Error(
+          `Default render font check failed at path "${fontPath}". (exists: ${exists}, isFile: ${isFile}, isReadable: ${isReadable}, isAbsolute: ${isAbsolute})`
+        );
+      }
+    } catch (fontErr: any) {
+      const errMsg = `FONT_PREFLIGHT_FAILED: ${fontErr.message}`;
+      addLog('FFmpeg Render', errMsg, true);
+      throw new Error(errMsg);
+    }
+
+    addLog('FFmpeg Render', `Executing FFmpeg process... Final command string:\n${commandResult.commandString}`);
     sendProgressThrottled('Rendering', 25, undefined, true);
 
     const ffmpegStartTime = Date.now();

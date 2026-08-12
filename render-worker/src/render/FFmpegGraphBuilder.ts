@@ -2,6 +2,8 @@ import { RenderLayer } from './LayerEngine.js';
 import { FFmpegAnimationEngine } from './FFmpegAnimationEngine.js';
 import { FFmpegAudioEngine } from './FFmpegAudioEngine.js';
 import { FFmpegSubtitleEngine, SubtitleItem, SubtitleStyleConfig } from './FFmpegSubtitleEngine.js';
+import { FontManager } from './FontManager.js';
+import { TextEngine } from './TextEngine.js';
 
 export interface GraphBuilderResult {
   inputArgs: string[];
@@ -200,12 +202,7 @@ export class FFmpegGraphBuilder {
         const size = layer.data?.styles?.size ?? layer.data?.size ?? 40;
         const align = layer.data?.styles?.align ?? layer.data?.align ?? 'center';
 
-        const escapedText = text
-          .replace(/\\/g, '\\\\')
-          .replace(/'/g, "'\\\\\\''")
-          .replace(/:/g, '\\:')
-          .replace(/%/g, '\\%')
-          .replace(/,/g, '\\,');
+        const escapedText = TextEngine.escapeDrawtext(text);
 
         let xPos = compiledAnims.x;
         if (align === 'center' || xPos === '0' || xPos === '') {
@@ -226,7 +223,8 @@ export class FFmpegGraphBuilder {
         const shadowCol = formatColor(shadowColor);
         const strokeCol = formatColor(strokeColor);
 
-        let drawtextFilter = `drawtext=text='${escapedText}':fontcolor='${fontCol}':fontsize=${size}:x='${xPos}':y='${compiledAnims.y}':alpha='${compiledAnims.alpha}':enable='between(t\\,${start}\\,${end})'`;
+        const fontParam = FontManager.getFFmpegFontParam();
+        let drawtextFilter = `drawtext=${fontParam}:text='${escapedText}':fontcolor='${fontCol}':fontsize=${size}:x='${xPos}':y='${compiledAnims.y}':alpha='${compiledAnims.alpha}':enable='between(t\\,${start}\\,${end})'`;
 
         if (shadowEnabled) {
           drawtextFilter += `:shadowcolor='${shadowCol}':shadowx=${shadowOffsetX}:shadowy=${shadowOffsetY}`;

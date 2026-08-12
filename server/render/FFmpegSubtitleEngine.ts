@@ -1,3 +1,6 @@
+import { FontManager } from './FontManager';
+import { TextEngine } from './TextEngine';
+
 export interface SubtitleItem {
   id: string;
   text: string;
@@ -44,11 +47,7 @@ export class FFmpegSubtitleEngine {
 
     sortedSubs.forEach((sub, index) => {
       const nextLabel = `[${outputLabelPrefix}_sub_${index}]`;
-      const escapedText = sub.text
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "'\\\\\\''")
-        .replace(/:/g, '\\:')
-        .replace(/%/g, '\\%');
+      const escapedText = TextEngine.escapeDrawtext(sub.text);
 
       const font = style.font || 'Inter';
       const color = style.color || '#FFFFFF';
@@ -79,7 +78,9 @@ export class FFmpegSubtitleEngine {
         // sizeExpr = `if(lt(t,${sub.start}+0.1),${size}*(1+2*(t-${sub.start})),${size})`
       }
 
-      let drawtextFilter = `drawtext=text='${escapedText}':fontcolor=${color}:fontsize=${size}:x='${xPos}':y='${yPos}'`;
+      const fontParam = FontManager.getFFmpegFontParam();
+
+      let drawtextFilter = `drawtext=${fontParam}:text='${escapedText}':fontcolor=${color}:fontsize=${size}:x='${xPos}':y='${yPos}'`;
 
       if (borderW > 0) {
         drawtextFilter += `:borderw=${borderW}:bordercolor=${borderCol}`;
@@ -152,8 +153,9 @@ export class FFmpegSubtitleEngine {
         const xPos = style.positionX !== undefined ? `${style.positionX}` : '(w-text_w)/2';
         const yPos = style.positionY !== undefined ? `${style.positionY}` : 'h-180';
 
-        // Base text draws the whole subtitle in secondary default color
-        let filterSegment = `drawtext=text='${sub.text}':fontcolor=${style.color || '#FFFFFF'}:fontsize=${style.fontSize || 36}:x='${xPos}':y='${yPos}':enable='between(t,${sub.start},${sub.end})'`;
+        const fontParam = FontManager.getFFmpegFontParam();
+        const escapedSubText = TextEngine.escapeDrawtext(sub.text);
+        let filterSegment = `drawtext=${fontParam}:text='${escapedSubText}':fontcolor=${style.color || '#FFFFFF'}:fontsize=${style.fontSize || 36}:x='${xPos}':y='${yPos}':enable='between(t,${sub.start},${sub.end})'`;
 
         // Future word highlighters will render on top of the base text using precise bounding boxes
         wordsList.forEach((wordItem, wordIndex) => {

@@ -31,15 +31,22 @@ export class TextEngine {
   }
 
   /**
-   * Cleans text to prevent CLI injection and breaks long lines into subtitles
+   * Escapes text specifically for single-quoted FFmpeg drawtext filter option
    */
-  static sanitizeAndWrap(text: string, maxCharsPerLine = 35): string[] {
-    // Basic character sanitization for video filters (FFmpeg escape sequences)
-    const sanitized = text
+  static escapeDrawtext(text: string): string {
+    if (!text) return '';
+    return text
       .replace(/\\/g, '\\\\')
       .replace(/'/g, "'\\''")
       .replace(/:/g, '\\:')
-      .replace(/,/g, '\\,');
+      .replace(/%/g, '\\%');
+  }
+
+  /**
+   * Cleans text to prevent CLI injection and breaks long lines into subtitles
+   */
+  static sanitizeAndWrap(text: string, maxCharsPerLine = 35): string[] {
+    const sanitized = this.escapeDrawtext(text);
 
     if (sanitized.length <= maxCharsPerLine) {
       return [sanitized];
