@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import { logger } from '../utils/logger.js';
 import { RenderJob } from '../queue/JobQueue.js';
+import { FontManager } from '../../server/render/FontManager.js';
 
 export class FFmpegRenderer {
   /**
@@ -100,8 +101,9 @@ export class FFmpegRenderer {
       let currentOutput = '[0:v]';
 
       // 1. Text overlay filter
+      const fontParam = FontManager.getFFmpegFontParam();
       const escapedText = overlayText.replace(/'/g, "'\\\\\\''").replace(/:/g, '\\:');
-      filterComplex.push(`${currentOutput}drawtext=text='${escapedText}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2[txt]`);
+      filterComplex.push(`${currentOutput}drawtext=${fontParam}:text='${escapedText}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2[txt]`);
       currentOutput = '[txt]';
 
       // Assemble complex filters
