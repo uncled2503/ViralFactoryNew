@@ -3,13 +3,13 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Helper to decode JWT and get the correct Supabase project ref
+// Helper to decode JWT and get the correct Supabase project ref if URL is not set
 function getSupabaseUrlAndKey(): { url: string; key: string } {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   let url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
   let key = serviceKey || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 
-  if (serviceKey && serviceKey.includes('.')) {
+  if (!url && serviceKey && serviceKey.includes('.')) {
     try {
       const parts = serviceKey.split('.');
       const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));

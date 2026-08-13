@@ -67,7 +67,7 @@ export class SupabaseStorageService {
         if (error) {
           const errMsg = (error.message || '').toLowerCase();
           if (errMsg.includes('signature') || errMsg.includes('jwt') || errMsg.includes('verification failed') || errMsg.includes('invalid token') || errMsg.includes('fetch failed') || errMsg.includes('failed to fetch')) {
-            console.log(`[SupabaseStorageService] Connection or credential issue detected during bucket lookup (${error.message}). Disabling Supabase Storage and using local server fallback.`);
+            console.log(`[SupabaseStorageService] Local server storage fallback active.`);
             this.supabase = null;
             return;
           }
@@ -80,7 +80,7 @@ export class SupabaseStorageService {
           if (createError) {
             const createErrMsg = (createError.message || '').toLowerCase();
             if (createErrMsg.includes('signature') || createErrMsg.includes('jwt') || createErrMsg.includes('verification failed') || createErrMsg.includes('invalid token') || createErrMsg.includes('fetch failed') || createErrMsg.includes('failed to fetch')) {
-              console.log(`[SupabaseStorageService] Connection or credential issue detected during bucket creation (${createError.message}). Disabling Supabase Storage and using local server fallback.`);
+              console.log(`[SupabaseStorageService] Local server storage fallback active.`);
               this.supabase = null;
               return;
             }
@@ -92,7 +92,7 @@ export class SupabaseStorageService {
       } catch (err: any) {
         const errMsg = (err.message || '').toLowerCase();
         if (errMsg.includes('signature') || errMsg.includes('jwt') || errMsg.includes('verification failed') || errMsg.includes('invalid token') || errMsg.includes('fetch failed') || errMsg.includes('failed to fetch')) {
-          console.log(`[SupabaseStorageService] Connection error during bucket verification (${err.message}). Disabling Supabase Storage and using local server fallback.`);
+          console.log(`[SupabaseStorageService] Local server storage fallback active.`);
           this.supabase = null;
           return;
         }
