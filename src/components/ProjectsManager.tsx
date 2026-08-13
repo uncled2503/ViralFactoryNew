@@ -124,11 +124,11 @@ export const ProjectsManager: React.FC = () => {
 
   // Preset stock video footages to populate simulation
   const FOOTAGE_PRESETS = [
-    { url: 'https://assets.mixkit.co/videos/preview/mixkit-gaming-streamer-screen-playing-with-headphones-40439-large.mp4', thumb: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=200&fit=crop', name: 'gameplay_parkour_minecraft.mp4' },
-    { url: 'https://assets.mixkit.co/videos/preview/mixkit-epic-sunset-above-mountains-and-clouds-42453-large.mp4', thumb: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=200&fit=crop', name: 'sunset_cinematic_landscape.mp4' },
-    { url: 'https://assets.mixkit.co/videos/preview/mixkit-top-aerial-shot-of-seashore-with-waves-43187-large.mp4', thumb: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=200&fit=crop', name: 'beach_drone_topdown.mp4' },
-    { url: 'https://assets.mixkit.co/videos/preview/mixkit-fresh-vegetables-chopping-on-board-48356-large.mp4', thumb: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?q=80&w=200&fit=crop', name: 'chef_cooking_veggies.mp4' },
-    { url: 'https://assets.mixkit.co/videos/preview/mixkit-white-cat-sleeping-cozily-on-a-fluffy-blanket-51921-large.mp4', thumb: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=200&fit=crop', name: 'satisfying_sleeping_cat.mp4' }
+    { url: 'https://assets.mixkit.co/videos/preview/mixkit-gaming-streamer-screen-playing-with-headphones-40439-large.mp4', thumb: '/assets/08-DDZBl70i.webp', name: 'gameplay_parkour_minecraft.mp4' },
+    { url: 'https://assets.mixkit.co/videos/preview/mixkit-epic-sunset-above-mountains-and-clouds-42453-large.mp4', thumb: '/assets/09-sQPdEBK6.webp', name: 'sunset_cinematic_landscape.mp4' },
+    { url: 'https://assets.mixkit.co/videos/preview/mixkit-top-aerial-shot-of-seashore-with-waves-43187-large.mp4', thumb: '/assets/10-D-kzC9r3.webp', name: 'beach_drone_topdown.mp4' },
+    { url: 'https://assets.mixkit.co/videos/preview/mixkit-fresh-vegetables-chopping-on-board-48356-large.mp4', thumb: '/assets/11-Bd_y7XPb.webp', name: 'chef_cooking_veggies.mp4' },
+    { url: 'https://assets.mixkit.co/videos/preview/mixkit-white-cat-sleeping-cozily-on-a-fluffy-blanket-51921-large.mp4', thumb: '/assets/12-Bq0AnmXJ.webp', name: 'satisfying_sleeping_cat.mp4' }
   ];
 
   // Bulk Videos Loader Simulation

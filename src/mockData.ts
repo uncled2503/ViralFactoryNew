@@ -11,7 +11,7 @@ export const INITIAL_USER: User = {
   email: '',
   company: 'Minha Empresa',
   role: 'Membro',
-  avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop',
+  avatarUrl: '/assets/paulodeborbamoraes.jpg',
   subscription: 'Free',
   status: 'active',
   usageCurrent: 0,

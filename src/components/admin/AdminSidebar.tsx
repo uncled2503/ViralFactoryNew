@@ -89,7 +89,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ activeMenu, setActiv
       <div className="p-4 border-b border-slate-900 bg-slate-950/60">
         <div className="flex items-center gap-3">
           <img 
-            src={user?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=256&h=256&fit=crop'} 
+            src={user?.avatarUrl || '/assets/paulodeborbamoraes.jpg'} 
             alt={user?.name} 
             className="w-10 h-10 rounded-full border border-pink-500/30 object-cover"
           />

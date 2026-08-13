@@ -134,15 +134,15 @@ export const TemplatesManager: React.FC = () => {
   const getMockThumbnailUrl = (tplId: string) => {
     switch (tplId) {
       case 'tpl-reddit-stories':
-        return 'https://images.unsplash.com/photo-1506784983877-45594efa4cbe?q=80&w=300&fit=crop';
+        return '/assets/02-uAy4VjXQ.webp';
       case 'tpl-motivational':
-        return 'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?q=80&w=300&fit=crop';
+        return '/assets/03-B2jCMS6j.webp';
       case 'tpl-saas-showcase':
-        return 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=300&fit=crop';
+        return '/assets/04-BANhblpL.webp';
       case 'tpl-ecom-quick':
-        return 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?q=80&w=300&fit=crop';
+        return '/assets/06-BCOSIrKe.webp';
       default:
-        return 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?q=80&w=300&fit=crop';
+        return '/assets/07-xAqbZkQu.webp';
     }
   };
 

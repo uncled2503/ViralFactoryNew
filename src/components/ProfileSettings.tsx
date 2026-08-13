@@ -505,7 +505,7 @@ export const ProfileSettings: React.FC = () => {
   // Remove existing avatar photo and return to standard placeholder
   const handleRemoveAvatar = async () => {
     if (!user) return;
-    const defaultAvatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=256&h=256&fit=crop';
+    const defaultAvatar = '/assets/paulodeborbamoraes.jpg';
     
     setIsSaving(true);
     try {

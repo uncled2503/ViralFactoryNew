@@ -269,7 +269,7 @@ export const AdminPanel: React.FC = () => {
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
                           <img
-                            src={u.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=128&h=128'}
+                            src={u.avatarUrl || '/assets/taysecardoso.jpg'}
                             alt={u.name}
                             className="w-8 h-8 rounded-full border border-gray-800 object-cover"
                           />
@@ -416,7 +416,7 @@ export const AdminPanel: React.FC = () => {
               {/* Profile Details card */}
               <div className="flex items-center gap-3 bg-gray-900/40 p-3 rounded-lg border border-gray-900">
                 <img
-                  src={editingUser.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=128&h=128'}
+                  src={editingUser.avatarUrl || '/assets/taysecardoso.jpg'}
                   alt={editingUser.name}
                   className="w-10 h-10 rounded-full object-cover border border-gray-850"
                 />

@@ -42,11 +42,11 @@ interface TemplateEditorProps {
 
 // Hardcoded sample templates/mock background options for quick generation
 const BACKGROUND_PRESETS = [
-  { name: 'Achadinhos Shopee', url: 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?q=80&w=600&fit=crop' },
-  { name: 'Curiosidades Curiosas', url: 'https://images.unsplash.com/photo-1506784983877-45594efa4cbe?q=80&w=600&fit=crop' },
-  { name: 'Notícias Rápidas', url: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=600&fit=crop' },
-  { name: 'Motivacional Dark', url: 'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?q=80&w=600&fit=crop' },
-  { name: 'Receitas Deliciosas', url: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?q=80&w=600&fit=crop' }
+  { name: 'Achadinhos Shopee', url: '/assets/13-_LniUGFI.webp' },
+  { name: 'Curiosidades Curiosas', url: '/assets/14-CPvLg7dt.webp' },
+  { name: 'Notícias Rápidas', url: '/assets/02-uAy4VjXQ.webp' },
+  { name: 'Motivacional Dark', url: '/assets/03-B2jCMS6j.webp' },
+  { name: 'Receitas Deliciosas', url: '/assets/04-BANhblpL.webp' }
 ];
 
 export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClose, onSave }) => {

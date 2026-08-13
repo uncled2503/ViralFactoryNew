@@ -26,8 +26,8 @@ const PRESET_ASSETS: Asset[] = [
     id: 'vid-preset-1',
     name: 'Estilo de Vida Urbano',
     category: 'videos',
-    url: 'https://images.unsplash.com/photo-1518173946687-a4c8a383392e?q=80&w=1080&h=1920&fit=crop', // unsplash high quality link
-    thumbnail: 'https://images.unsplash.com/photo-1518173946687-a4c8a383392e?q=80&w=256&h=256&fit=crop',
+    url: '/assets/02-uAy4VjXQ.webp',
+    thumbnail: '/assets/02-uAy4VjXQ.webp',
     type: 'video',
     meta: 'Fundo / 9:16'
   },
@@ -35,8 +35,8 @@ const PRESET_ASSETS: Asset[] = [
     id: 'vid-preset-2',
     name: 'Praia Tropical Slowmo',
     category: 'videos',
-    url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1080&h=1920&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=256&h=256&fit=crop',
+    url: '/assets/03-B2jCMS6j.webp',
+    thumbnail: '/assets/03-B2jCMS6j.webp',
     type: 'video',
     meta: 'Praia / 9:16'
   },
@@ -44,8 +44,8 @@ const PRESET_ASSETS: Asset[] = [
     id: 'vid-preset-3',
     name: 'Tecnologia Neon Cyberpunk',
     category: 'videos',
-    url: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?q=80&w=1080&h=1920&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?q=80&w=256&h=256&fit=crop',
+    url: '/assets/04-BANhblpL.webp',
+    thumbnail: '/assets/04-BANhblpL.webp',
     type: 'video',
     meta: 'Cyberpunk / 9:16'
   },
@@ -54,8 +54,8 @@ const PRESET_ASSETS: Asset[] = [
     id: 'img-preset-1',
     name: 'Céu de Outono',
     category: 'images',
-    url: 'https://images.unsplash.com/photo-1475924156734-496f6cac6ec1?q=80&w=1080&h=1920&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1475924156734-496f6cac6ec1?q=80&w=256&h=256&fit=crop',
+    url: '/assets/06-BCOSIrKe.webp',
+    thumbnail: '/assets/06-BCOSIrKe.webp',
     type: 'image',
     meta: 'Natureza'
   },
@@ -63,8 +63,8 @@ const PRESET_ASSETS: Asset[] = [
     id: 'img-preset-2',
     name: 'Escritório Minimalista',
     category: 'images',
-    url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=1080&h=1920&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=256&h=256&fit=crop',
+    url: '/assets/07-xAqbZkQu.webp',
+    thumbnail: '/assets/07-xAqbZkQu.webp',
     type: 'image',
     meta: 'Trabalho'
   },
@@ -73,8 +73,8 @@ const PRESET_ASSETS: Asset[] = [
     id: 'logo-preset-1',
     name: 'Logo Viral Factory',
     category: 'logos',
-    url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=256&h=256&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=128&h=128&fit=crop',
+    url: '/assets/logocomnome2.png',
+    thumbnail: '/assets/logocomnome2.png',
     type: 'logo',
     meta: 'PNG / Transparente'
   },
@@ -82,8 +82,8 @@ const PRESET_ASSETS: Asset[] = [
     id: 'logo-preset-2',
     name: 'Emblema Premium Shield',
     category: 'logos',
-    url: 'https://images.unsplash.com/photo-1599305445671-ac291c95aba9?q=80&w=256&h=256&fit=crop',
-    thumbnail: 'https://images.unsplash.com/photo-1599305445671-ac291c95aba9?q=80&w=128&h=128&fit=crop',
+    url: '/assets/logocomnome2.png',
+    thumbnail: '/assets/logocomnome2.png',
     type: 'logo',
     meta: 'PNG / Escudo'
   },
@@ -141,7 +141,7 @@ export const AssetsPanel: React.FC<AssetsPanelProps> = ({ onAddLayer }) => {
       category,
       url: fileUrl,
       thumbnail: isVideo 
-        ? 'https://images.unsplash.com/photo-1518173946687-a4c8a383392e?q=80&w=256&h=256&fit=crop'
+        ? '/assets/02-uAy4VjXQ.webp'
         : fileUrl,
       type,
       meta: `${(file.size / (1024 * 1024)).toFixed(1)} MB`
@@ -176,7 +176,7 @@ export const AssetsPanel: React.FC<AssetsPanelProps> = ({ onAddLayer }) => {
         category: 'uploads',
         url: fileUrl,
         thumbnail: isVideo 
-          ? 'https://images.unsplash.com/photo-1518173946687-a4c8a383392e?q=80&w=256&h=256&fit=crop'
+          ? '/assets/02-uAy4VjXQ.webp'
           : fileUrl,
         type,
         meta: `${(file.size / (1024 * 1024)).toFixed(1)} MB`
