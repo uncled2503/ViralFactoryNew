@@ -72,14 +72,28 @@ export class FontManager {
   }
 
   /**
-   * Formats an absolute font file path into a safe value for FFmpeg's drawtext filter.
-   * Converts Windows backslashes to forward slashes, escapes colons (e.g. C: -> C\:) and single quotes.
+   * Formats a font file path into a safe value for FFmpeg's drawtext filter.
+   * Prefers a relative path from process.cwd() when inside the project tree to avoid drive letter colons and special characters.
+   * Converts Windows backslashes to forward slashes and escapes single quotes.
    */
   static formatFontPathForFFmpeg(filePath: string): string {
     const absPath = path.resolve(filePath);
-    let normalized = absPath.replace(/\\/g, '/');
-    normalized = normalized.replace(/:/g, '\\:');
+    const relPath = path.relative(process.cwd(), absPath);
+    let targetPath = absPath;
+
+    // Prefer relative path if it's within the current working directory
+    if (relPath && !relPath.startsWith('..') && !path.isAbsolute(relPath)) {
+      targetPath = relPath;
+    }
+
+    // Convert Windows backslashes to forward slashes for FFmpeg compatibility
+    let normalized = targetPath.replace(/\\/g, '/');
+
+    // DO NOT escape colons with backslashes when wrapped in single quotes!
+    // In FFmpeg, inside single quotes '...', colons are literal.
+    // Adding a backslash before the colon ('C\:') creates an invalid Win32 drive path in C runtime fopen.
     normalized = normalized.replace(/'/g, "'\\''");
+
     return normalized;
   }
 
