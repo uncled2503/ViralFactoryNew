@@ -7,3 +7,9 @@ coverage/
 .env*
 !.env.example
 .mcp.json
+
+# Runtime-generated storage/render artifacts (not source)
+public/storage/
+temp_render/
+render-worker/fonts/fonts.conf
+render-worker/temp_assets/

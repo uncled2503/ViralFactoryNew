@@ -30,7 +30,11 @@ export class FFmpegGraphBuilder {
   static build(
     layers: RenderLayer[],
     resolvedAssets: Map<string, string>, // Maps layer ID -> local resolved file path
-    options: { width?: number; height?: number; duration?: number } = {}
+    options: { width?: number; height?: number; duration?: number } = {},
+    // Layer IDs whose source file was probed and confirmed to have NO audio stream —
+    // referencing a nonexistent ":a" stream in the filtergraph is a hard ffmpeg error,
+    // not something that silently no-ops, so these must be skipped rather than assumed.
+    noAudioLayerIds: Set<string> = new Set()
   ): GraphBuilderResult {
     const width = options.width || 1080;
     const height = options.height || 1920;
@@ -155,26 +159,30 @@ export class FFmpegGraphBuilder {
           filterSegments.push(videoSegment, overlaySegment);
           ctx.currentLabel = overlayLabel;
 
-          // Process Audio stream if exists utilizing FFmpegAudioEngine
-          const audioLabel = `[aud_${layer.id}]`;
-          const audioConf = {
-            volume: layer.data?.styles?.volume ?? layer.data?.volume ?? 1.0,
-            fadeInDuration: layer.data?.styles?.audioFadeIn || layer.data?.audioFadeIn || 0,
-            fadeOutDuration: layer.data?.styles?.audioFadeOut || layer.data?.audioFadeOut || 0,
-            delay: layer.data?.styles?.audioDelay || layer.data?.audioDelay || 0,
-            trimStart: layer.data?.styles?.audioTrimStart ?? layer.data?.audioTrimStart ?? 0,
-            trimDuration: layer.data?.styles?.audioTrimDuration ?? layer.data?.audioTrimDuration ?? layerDuration,
-            loop: layer.data?.styles?.audioLoop || layer.data?.audioLoop || false,
-          };
-          const audioSegment = FFmpegAudioEngine.compileAudioFilters(
-            `[${inputIndex}:a]`,
-            audioLabel,
-            audioConf,
-            layerDuration,
-            start
-          );
-          audioFilterSegments.push(audioSegment);
-          ctx.audioLabels.push(audioLabel);
+          // Process Audio stream if exists utilizing FFmpegAudioEngine — only when the
+          // source was actually confirmed to have an audio stream. Referencing ":a" on a
+          // video-only input is a hard filtergraph binding error, not a silent no-op.
+          if (!noAudioLayerIds.has(layer.id)) {
+            const audioLabel = `[aud_${layer.id}]`;
+            const audioConf = {
+              volume: layer.data?.styles?.volume ?? layer.data?.volume ?? 1.0,
+              fadeInDuration: layer.data?.styles?.audioFadeIn || layer.data?.audioFadeIn || 0,
+              fadeOutDuration: layer.data?.styles?.audioFadeOut || layer.data?.audioFadeOut || 0,
+              delay: layer.data?.styles?.audioDelay || layer.data?.audioDelay || 0,
+              trimStart: layer.data?.styles?.audioTrimStart ?? layer.data?.audioTrimStart ?? 0,
+              trimDuration: layer.data?.styles?.audioTrimDuration ?? layer.data?.audioTrimDuration ?? layerDuration,
+              loop: layer.data?.styles?.audioLoop || layer.data?.audioLoop || false,
+            };
+            const audioSegment = FFmpegAudioEngine.compileAudioFilters(
+              `[${inputIndex}:a]`,
+              audioLabel,
+              audioConf,
+              layerDuration,
+              start
+            );
+            audioFilterSegments.push(audioSegment);
+            ctx.audioLabels.push(audioLabel);
+          }
         }
       } else if (type === 'image' || type === 'logo' || type === 'watermark') {
         if (inputIndex !== undefined) {

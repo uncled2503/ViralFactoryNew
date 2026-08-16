@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { JobQueue, RenderJob, JobStatus } from './JobQueue';
 import { StorageManager } from './Storage';
 import { TemplateEngine } from './TemplateEngine';
@@ -202,21 +202,24 @@ export class PipelineManager {
 
       let ffmpegPath = 'ffmpeg';
       let ffmpegLocated = false;
-      
+
       const checkPaths = [
+        process.env.FFMPEG_PATH,
         'ffmpeg',
         '/usr/bin/ffmpeg',
         '/usr/local/bin/ffmpeg',
         '/opt/homebrew/bin/ffmpeg'
-      ];
+      ].filter((p): p is string => !!p);
 
       for (const checkPath of checkPaths) {
         try {
-          const { execSync } = require('child_process');
-          execSync(`"${checkPath}" -version`, { stdio: 'ignore' });
+          // spawnSync with an args array (no shell string) avoids Windows cmd.exe quoting
+          // issues that execSync('"path" -version') runs into when resolving via PATH.
+          const result = spawnSync(checkPath, ['-version'], { encoding: 'utf8' });
+          if (result.error || result.status !== 0) throw result.error || new Error(`exit code ${result.status}`);
           ffmpegPath = checkPath;
           ffmpegLocated = true;
-          addLog('Executar FFmpeg', `Executável do FFmpeg localizado e validado em: "${checkPath}"`);
+          addLog('Executar FFmpeg', `Executável do motor de renderização localizado e validado em: "${checkPath}"`);
           break;
         } catch (e) {
           // Ignore and check next path
@@ -229,11 +232,34 @@ export class PipelineManager {
 
       fileName = `${job.projectName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${Date.now()}.mp4`;
       tempOutputPath = StorageManager.getTempPath(fileName);
-      
+
       // Ensure target directory exists
       const outputDir = path.dirname(tempOutputPath);
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      // Video-type layers may reference a source clip with no embedded audio track at all
+      // (silent footage, muted exports, etc). Referencing a nonexistent ":a" stream in the
+      // filtergraph is a hard ffmpeg error, so probe each one up front rather than assuming.
+      const ffprobePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, (m) => m.toLowerCase().endsWith('.exe') ? 'ffprobe.exe' : 'ffprobe');
+      const noAudioLayerIds = new Set<string>();
+      for (const layer of renderLayers) {
+        if (layer.type !== 'video') continue;
+        const assetPath = resolvedAssets.get(layer.id);
+        if (!assetPath) continue;
+        try {
+          const probe = spawnSync(ffprobePath, ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', assetPath], { encoding: 'utf8', timeout: 10000 });
+          if (probe.error || !probe.stdout || !probe.stdout.trim()) {
+            noAudioLayerIds.add(layer.id);
+          }
+        } catch (e) {
+          // If probing itself fails, be conservative and skip the audio chain for this layer.
+          noAudioLayerIds.add(layer.id);
+        }
+      }
+      if (noAudioLayerIds.size > 0) {
+        addLog('Executar FFmpeg', `${noAudioLayerIds.size} camada(s) de vídeo sem trilha de áudio detectada — áudio dessas camadas será ignorado.`);
       }
 
       addLog('Executar FFmpeg', 'Iniciando montagem do comando FFmpeg completo e 100% dinâmico via FFmpegCommandBuilder...');
@@ -243,7 +269,8 @@ export class PipelineManager {
         resolvedAssets,
         preset,
         duration: videoDuration,
-        tempOutputPath
+        tempOutputPath,
+        noAudioLayerIds
       });
 
       const ffmpegArgs = builderResult.args;
@@ -306,6 +333,7 @@ export class PipelineManager {
             resolvePromise();
           } else {
             addLog('Monitorar progresso', `FFmpeg fechou com erro (código: ${code}).`, true);
+            console.error(`[PipelineManager] ffmpeg stderr tail for job ${jobId}:\n${stderrData.slice(-3000)}`);
             rejectPromise(new Error(`FFmpeg falhou com código de encerramento ${code}`));
           }
         });

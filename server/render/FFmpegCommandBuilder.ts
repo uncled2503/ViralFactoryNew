@@ -23,6 +23,7 @@ export class FFmpegCommandBuilder {
     preset: ExportPreset;
     duration: number;
     tempOutputPath: string;
+    noAudioLayerIds?: Set<string>;
   }): CommandBuilderResult {
     const {
       ffmpegPath = 'ffmpeg',
@@ -30,7 +31,8 @@ export class FFmpegCommandBuilder {
       resolvedAssets,
       preset,
       duration,
-      tempOutputPath
+      tempOutputPath,
+      noAudioLayerIds
     } = params;
 
     // 1. Convert visual layer array into filters and layout mappings using FFmpegGraphBuilder
@@ -38,7 +40,7 @@ export class FFmpegCommandBuilder {
       width: preset.width,
       height: preset.height,
       duration: duration
-    });
+    }, noAudioLayerIds);
 
     const args: string[] = [];
 
