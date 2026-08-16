@@ -183,7 +183,7 @@ export const AdminPanel: React.FC = () => {
               {renderingTasks.filter(t => t.status === 'processing' || t.status === 'queued').length}
             </h3>
             <p className="text-[10px] text-gray-400 mt-1">
-              Tarefas simuladas de FFmpeg ativas
+              Tarefas de renderização ativas
             </p>
           </div>
         </div>

@@ -145,7 +145,7 @@ export const DashboardTab: React.FC = () => {
         {/* KPI: Renders */}
         <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-2xl space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">Fila FFmpeg</span>
+            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">Fila de Render</span>
             <div className="p-2 bg-pink-500/10 border border-pink-500/20 text-pink-400 rounded-xl">
               <Film className="w-4 h-4" />
             </div>

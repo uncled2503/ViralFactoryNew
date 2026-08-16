@@ -94,7 +94,7 @@ export const Inspector: React.FC<InspectorProps> = ({
             <span className="text-[10px] font-bold uppercase tracking-wider">Placeholders de Automação</span>
           </div>
           <p className="text-[9px] text-gray-500 font-medium">
-            Selecione uma tag dinâmica para automatizar a renderização em lote pelo FFmpeg.
+            Selecione uma tag dinâmica para automatizar a renderização em lote.
           </p>
           <select
             value={layer.placeholder || ''}
@@ -557,7 +557,7 @@ export const Inspector: React.FC<InspectorProps> = ({
 
       {/* Footer Info */}
       <div className="p-3 bg-gray-950/30 border-t border-gray-900 text-[9px] text-gray-500 leading-relaxed select-none">
-        Todas as coordenadas e propriedades são absolutas para renderização em 100% de escala FFmpeg.
+        Todas as coordenadas e propriedades são absolutas para renderização em 100% de escala.
       </div>
     </div>
   );

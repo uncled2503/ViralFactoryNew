@@ -437,7 +437,7 @@ export const VideoAreaEditor: React.FC<VideoAreaEditorProps> = ({
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent flex items-end p-2 pointer-events-none">
                 <span className="text-[7px] font-mono text-gray-200/90 uppercase tracking-widest flex items-center gap-1">
                   <span className="w-1 h-1 rounded-full bg-indigo-400 animate-pulse" />
-                  Visualizador Real do FFmpeg
+                  Visualizador em Tempo Real
                 </span>
               </div>
             </div>
@@ -498,7 +498,7 @@ export const VideoAreaEditor: React.FC<VideoAreaEditorProps> = ({
               <span className="text-xs font-bold uppercase tracking-wider font-mono">Inspecionar Frame</span>
             </div>
             <h4 className="text-xs text-gray-500 mt-1 font-mono leading-relaxed">
-              Arraste a caixa na tela ou digite os parâmetros precisos do FFmpeg.
+              Arraste a caixa na tela ou digite os parâmetros precisos de renderização.
             </h4>
           </div>
 
@@ -702,11 +702,11 @@ export const VideoAreaEditor: React.FC<VideoAreaEditorProps> = ({
           </div>
         </div>
 
-        {/* FFmpeg Engine telemetry badge */}
+        {/* Render engine telemetry badge */}
         <div className="pt-3 border-t border-gray-900 flex items-center gap-1.5 mt-4">
           <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
           <div className="text-[8px] font-mono text-gray-500 uppercase tracking-widest leading-none">
-            <span>Integração Ativa com FFmpeg</span>
+            <span>Motor de Renderização Ativo</span>
           </div>
         </div>
       </div>

@@ -54,7 +54,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ activeMenu }) => {
       case 'users': return 'Gestão de Clientes';
       case 'subscriptions': return 'Assinaturas & Cobranças';
       case 'payments': return 'Histórico Financeiro';
-      case 'renderings': return 'Processos FFmpeg';
+      case 'renderings': return 'Processos de Renderização';
       case 'queue': return 'Fila de Tarefas';
       case 'workers': return 'Cluster de Workers';
       case 'storage': return 'Uso de Storage Geral';

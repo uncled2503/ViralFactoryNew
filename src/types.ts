@@ -136,7 +136,7 @@ export interface SystemLog {
   id: string;
   timestamp: string;
   level: 'info' | 'warning' | 'error' | 'critical';
-  service: 'ffmpeg-worker' | 'auth-service' | 'billing-engine' | 'storage-handler';
+  service: 'render-worker' | 'auth-service' | 'billing-engine' | 'storage-handler';
   message: string;
   ipAddress?: string;
 }
@@ -151,7 +151,7 @@ export interface RenderWorker {
   region: string;
   gpu?: string;
   os?: string;
-  ffmpegVersion?: string;
+  engineVersion?: string;
   version?: string;
   ip?: string;
   cores?: number;

@@ -27,7 +27,7 @@ import {
 
 interface FAQItem {
   id: string;
-  category: 'geral' | 'limits' | 'ffmpeg' | 'templates';
+  category: 'geral' | 'limits' | 'render' | 'templates';
   question: string;
   answer: string;
 }
@@ -41,7 +41,7 @@ interface Chapter {
 
 export const HelpTutorials: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<'all' | 'geral' | 'limits' | 'ffmpeg' | 'templates'>('all');
+  const [activeCategory, setActiveCategory] = useState<'all' | 'geral' | 'limits' | 'render' | 'templates'>('all');
   const [expandedFAQ, setExpandedFAQ] = useState<string | null>(null);
 
   // Simulated Video Player States
@@ -72,7 +72,7 @@ export const HelpTutorials: React.FC = () => {
       description: 'Como definir placeholders de texto, fundos variáveis e posições para legendas automáticas.' 
     },
     { 
-      title: 'Processamento FFmpeg Assíncrono', 
+      title: 'Processamento Assíncrono em Lote',
       time: '3:05', 
       seconds: 185, 
       description: 'Como nosso cluster distribui as tarefas de render e acelera a exportação em lote.' 
@@ -91,13 +91,13 @@ export const HelpTutorials: React.FC = () => {
       id: 'faq-1',
       category: 'geral',
       question: 'O que é o Viral Factory?',
-      answer: 'O Viral Factory é uma plataforma SaaS automatizada voltada para criação e renderização de vídeos curtos (Shorts, Reels, TikToks) em escala. Através do acoplamento de variáveis (textos, logos, cores) em templates reutilizáveis, nossa engine FFmpeg processa centenas de vídeos assincronamente sem travar seu navegador.'
+      answer: 'O Viral Factory é uma plataforma SaaS automatizada voltada para criação e renderização de vídeos curtos (Shorts, Reels, TikToks) em escala. Através do acoplamento de variáveis (textos, logos, cores) em templates reutilizáveis, nosso motor de renderização processa centenas de vídeos assincronamente sem travar seu navegador.'
     },
     {
       id: 'faq-2',
-      category: 'ffmpeg',
-      question: 'Como a engine de render do FFmpeg funciona?',
-      answer: 'Quando você clica em "Solicitar Render" em qualquer projeto, o sistema enfileira o projeto em nosso microsserviço de renderização. O FFmpeg extrai os assets do seu diretório virtual, aplica as fontes tipográficas, sobrepõe as legendas dinâmicas frame a frame e encoda o vídeo final no codec H.264 (.mp4), liberando-o na pasta de renderizados.'
+      category: 'render',
+      question: 'Como o motor de renderização funciona?',
+      answer: 'Quando você clica em "Solicitar Render" em qualquer projeto, o sistema enfileira o projeto em nosso microsserviço de renderização. O motor extrai os assets do seu diretório virtual, aplica as fontes tipográficas, sobrepõe as legendas dinâmicas frame a frame e encoda o vídeo final (.mp4), liberando-o na pasta de renderizados.'
     },
     {
       id: 'faq-3',
@@ -119,7 +119,7 @@ export const HelpTutorials: React.FC = () => {
     },
     {
       id: 'faq-6',
-      category: 'ffmpeg',
+      category: 'render',
       question: 'Posso baixar os vídeos gerados para meu computador?',
       answer: 'Sim! Assim que o render atinge 100% de progresso, o vídeo final é adicionado à pasta de arquivos renderizados. Você pode acessar a aba "Arquivos & Pastas", navegar até a pasta correspondente e realizar o download ou visualizá-lo em tela cheia.'
     }
@@ -217,7 +217,7 @@ export const HelpTutorials: React.FC = () => {
               {subtitlesEnabled && isPlaying && (
                 <div className="absolute bottom-16 left-4 right-4 text-center z-10 px-6 pointer-events-none">
                   <span className="bg-black/80 text-yellow-400 border border-yellow-500/20 px-4 py-1.5 rounded-lg text-xs font-bold leading-normal shadow-lg tracking-tight font-sans inline-block animate-pulse">
-                    {currentChapterIndex === 0 && '"Configure o título, selecione as fontes e deixe o FFmpeg renderizar em lote!"'}
+                    {currentChapterIndex === 0 && '"Configure o título, selecione as fontes e deixe o motor renderizar em lote!"'}
                     {currentChapterIndex === 1 && '"Múltiplas variáveis em um único template dinâmico poupam horas de edição."'}
                     {currentChapterIndex === 2 && '"O processamento é 100% assíncrono na nuvem, você pode fechar a aba!"'}
                     {currentChapterIndex === 3 && '"Fique atento às cotas de armazenamento para garantir uploads contínuos."'}
@@ -349,7 +349,7 @@ export const HelpTutorials: React.FC = () => {
                 <div>
                   <h4 className="text-xs font-bold text-gray-200">Dispare o Renderizador</h4>
                   <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
-                    Clique em <strong className="text-gray-300">Solicitar Render</strong>. O FFmpeg vai sobrepor o áudio, legendas e encodar o arquivo de forma assíncrona.
+                    Clique em <strong className="text-gray-300">Solicitar Render</strong>. Nosso motor vai sobrepor o áudio, legendas e encodar o arquivo de forma assíncrona.
                   </p>
                 </div>
               </div>
@@ -397,7 +397,7 @@ export const HelpTutorials: React.FC = () => {
 
             {/* Category Filter Chips */}
             <div className="flex flex-wrap gap-1.5">
-              {(['all', 'geral', 'ffmpeg', 'limits', 'templates'] as const).map(cat => (
+              {(['all', 'geral', 'render', 'limits', 'templates'] as const).map(cat => (
                 <button
                   key={cat}
                   onClick={() => setActiveCategory(cat)}
@@ -407,7 +407,7 @@ export const HelpTutorials: React.FC = () => {
                       : 'bg-gray-900 border-gray-850 text-gray-400 hover:text-white'
                   }`}
                 >
-                  {cat === 'all' ? 'Tudo' : cat}
+                  {cat === 'all' ? 'Tudo' : cat === 'render' ? 'Renderização' : cat === 'geral' ? 'Geral' : cat === 'limits' ? 'Limites' : 'Templates'}
                 </button>
               ))}
             </div>
@@ -417,7 +417,7 @@ export const HelpTutorials: React.FC = () => {
           <div className="relative">
             <input
               type="text"
-              placeholder="Digite palavras-chave (ex: limites, FFmpeg, storage)..."
+              placeholder="Digite palavras-chave (ex: limites, render, storage)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-gray-900 border border-gray-850 rounded-lg py-2 pl-9 pr-4 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 font-mono"
@@ -510,7 +510,7 @@ export const HelpTutorials: React.FC = () => {
                     onChange={(e) => setTicketCategory(e.target.value)}
                     className="w-full bg-gray-900 border border-gray-850 rounded-lg py-1.5 px-3 text-xs text-white focus:outline-none focus:border-indigo-600"
                   >
-                    <option value="suporte">Dificuldade de Render / FFmpeg</option>
+                    <option value="suporte">Dificuldade de Render</option>
                     <option value="billing">Dúvidas sobre Faturamento e Planos</option>
                     <option value="outro">Reportar Bug / Feedback Técnico</option>
                   </select>

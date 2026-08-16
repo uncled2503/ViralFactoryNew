@@ -29,11 +29,14 @@ export class PipelineManager {
       const timeStr = new Date().toLocaleTimeString('pt-BR');
       const prefix = isError ? '[ERRO]' : '[INFO]';
       const logLine = `[${timeStr}] [${stage}] ${prefix} ${message}`;
-      logs.push(logLine);
+      // Full detail (including the underlying render tool's name/commands) stays in the
+      // server's own console only — the trail persisted/exposed to clients never
+      // references the implementation, so users can't discover how rendering works.
       console.log(`[Pipeline] ${logLine}`);
-      
-      // Update in-memory state so frontend gets real-time updates
-      JobQueue.updateJob(jobId, { logs: [...logs] });
+      if (!/ffmpeg/i.test(logLine)) {
+        logs.push(logLine);
+        JobQueue.updateJob(jobId, { logs: [...logs] });
+      }
     };
 
     let projectData: any = null;
@@ -327,13 +330,12 @@ export class PipelineManager {
       }
       addLog('Executar FFmpeg', `Sucesso: Arquivo MP4 validado (${(fileStats.size / 1024 / 1024).toFixed(2)} MB). Continuando com o pipeline.`);
 
-      // Compile final debugInfo
+      // Compile final debugInfo. The raw command/stdout/stderr are intentionally kept out
+      // of what gets persisted or sent to the client — only generic, non-identifying
+      // telemetry (timing, size, resolution, etc) should ever leave the server process.
       const executionTimeMs = ffmpegEndTime > 0 && ffmpegStartTime > 0 ? (ffmpegEndTime - ffmpegStartTime) : 0;
       debugInfo = {
-        command: ffmpegCommandStr,
         executionTimeMs,
-        stdout: stdoutData,
-        stderr: stderrData,
         encodingTimeMs: executionTimeMs,
         fileSize: fileStats.size,
         bitrate: preset.videoBitrate,
@@ -443,15 +445,14 @@ export class PipelineManager {
       return JobQueue.getJob(jobId)!;
 
     } catch (err: any) {
-      addLog('Concluir Job', `Falha crítica no pipeline da esteira: ${err.message}`, true);
+      // Full detail stays server-side only; never let the render tool's name leak into
+      // anything persisted or returned to a client.
       console.error(`[PipelineManager] Pipeline falhou para o Job ${jobId}:`, err);
-      
+      const safeErrorMessage: string = (err.message || 'Erro inesperado no pipeline de renderização').replace(/ffmpeg/gi, 'motor de renderização');
+
       const executionTimeMs = ffmpegStartTime > 0 ? (Date.now() - ffmpegStartTime) : 0;
       const failedDebugInfo = {
-        command: ffmpegCommandStr || 'Não iniciado',
         executionTimeMs,
-        stdout: stdoutData,
-        stderr: stderrData,
         encodingTimeMs: executionTimeMs,
         fileSize: 0,
         bitrate: preset?.videoBitrate || 'N/A',
@@ -463,22 +464,22 @@ export class PipelineManager {
       const failedJobUpdates = {
         status: 'Failed' as const,
         progress: 0,
-        error: err.message || 'Erro inesperado no pipeline de renderização',
+        error: safeErrorMessage,
         logs: [...logs],
         debugInfo: failedDebugInfo
       };
 
       JobQueue.updateJob(jobId, failedJobUpdates);
-      
+
       // Update DB to failed with complete steps logs
       try {
         await RenderEngine.saveDbStatus(
-          jobId, 
-          'failed', 
-          0, 
-          undefined, 
-          undefined, 
-          err.message || 'Erro inesperado no pipeline', 
+          jobId,
+          'failed',
+          0,
+          undefined,
+          undefined,
+          safeErrorMessage,
           logs,
           failedDebugInfo
         );

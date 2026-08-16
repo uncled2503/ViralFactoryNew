@@ -57,7 +57,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ activeMenu, setActiv
     { id: 'payments' as const, label: 'Pagamentos', icon: DollarSign },
     { id: 'renderings' as const, label: 'Renderizações', icon: Film },
     { id: 'queue' as const, label: 'Fila de Processamento', icon: Clock },
-    { id: 'workers' as const, label: 'Workers (FFmpeg)', icon: Cpu, count: 4 },
+    { id: 'workers' as const, label: 'Workers de Render', icon: Cpu, count: 4 },
     { id: 'storage' as const, label: 'Storage Geral', icon: HardDrive },
     { id: 'logs' as const, label: 'Logs do Sistema', icon: Terminal },
     { id: 'coupons' as const, label: 'Cupons', icon: Ticket },

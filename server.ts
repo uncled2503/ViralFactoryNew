@@ -693,6 +693,13 @@ async function startServer() {
         return;
       }
 
+      // Never expose the raw internal render command or process output over the API —
+      // only generic, non-identifying telemetry (timing, file size, resolution, etc).
+      if (job.debugInfo) {
+        const { command, stdout, stderr, ...safeDebugInfo } = job.debugInfo as any;
+        job = { ...job, debugInfo: safeDebugInfo };
+      }
+
       res.json(job);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -721,23 +728,27 @@ async function startServer() {
       );
 
       // Map DB tasks to RenderJob format
-      const jobs = dbTasks.map((task: any) => ({
-        id: task.id,
-        userId: task.user_id || task.userId,
-        projectId: task.project_id || task.projectId,
-        projectName: task.project_name || task.projectName,
-        templateId: task.template_id || task.templateId,
-        templateName: task.template_name || task.templateName,
-        status: task.status === 'completed' ? 'Completed' : task.status === 'failed' ? 'Failed' : task.status === 'queued' ? 'Queued' : 'Rendering',
-        progress: task.progress || 0,
-        duration: task.duration || '0:30',
-        createdAt: task.created_at || task.createdAt,
-        completedAt: task.completed_at,
-        error: task.error_message,
-        logs: task.logs,
-        debugInfo: task.debug_info,
-        variables: task.variables || {}
-      })).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const jobs = dbTasks.map((task: any) => {
+        // Never expose the raw internal render command or process output over the API.
+        const { command, stdout, stderr, ...safeDebugInfo } = task.debug_info || {};
+        return {
+          id: task.id,
+          userId: task.user_id || task.userId,
+          projectId: task.project_id || task.projectId,
+          projectName: task.project_name || task.projectName,
+          templateId: task.template_id || task.templateId,
+          templateName: task.template_name || task.templateName,
+          status: task.status === 'completed' ? 'Completed' : task.status === 'failed' ? 'Failed' : task.status === 'queued' ? 'Queued' : 'Rendering',
+          progress: task.progress || 0,
+          duration: task.duration || '0:30',
+          createdAt: task.created_at || task.createdAt,
+          completedAt: task.completed_at,
+          error: task.error_message,
+          logs: task.logs,
+          debugInfo: safeDebugInfo,
+          variables: task.variables || {}
+        };
+      }).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
       res.json(jobs);
     } catch (e: any) {

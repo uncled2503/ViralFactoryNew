@@ -142,7 +142,8 @@ export class WorkerManager {
         totalRam: stats.totalRam,
         gpu: stats.gpu,
         os: stats.os,
-        ffmpegVersion: stats.ffmpegVersion,
+        // Never expose the underlying render tool's real version banner over the API.
+        engineVersion: 'Viral Engine 3.2',
         version: stats.version,
         ip: stats.ip,
         status: stats.status === 'busy' ? 'busy' : 'online', // compatibility mapping
@@ -169,7 +170,7 @@ export class WorkerManager {
             totalRam: stats.ram || stats.totalRam || 0,
             gpu: stats.gpu || false,
             os: stats.os || 'Linux',
-            ffmpegVersion: stats.ffmpegVersion || stats.ffmpeg || 'unknown',
+            engineVersion: 'Viral Engine 3.2',
             version: stats.version || '1.0.0',
             ip: stats.ip || '0.0.0.0',
             status: stats.status === 'busy' ? 'busy' : 'online',

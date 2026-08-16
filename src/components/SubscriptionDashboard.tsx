@@ -333,7 +333,7 @@ export const SubscriptionDashboard: React.FC = () => {
               <span className="text-[8px] text-emerald-300 block font-mono">Armazenamento usado</span>
             </div>
 
-            {/* FFmpeg Renders */}
+            {/* Video renders */}
             <div className="p-4 rounded-xl bg-gray-950/50 border border-gray-900 col-span-2 md:col-span-1 text-center space-y-1 hover:border-indigo-500/15 transition">
               <Zap className="w-5 h-5 text-yellow-400 mx-auto" />
               <p className="text-[10px] font-mono text-gray-500 uppercase tracking-wider font-semibold">Gerações de Vídeo</p>

@@ -21,10 +21,8 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
-  Sliders,
   Sparkles,
   Database,
-  Info,
   Trash2,
   Copy,
   Search
@@ -33,7 +31,7 @@ import { RenderingTask, Project } from '../types';
 import { ConfirmModal } from './ConfirmModal';
 
 export const RenderingsManager: React.FC = () => {
-  const { renderingTasks, projects, deleteRenderingTask, duplicateRenderingTask } = useApp();
+  const { renderingTasks, deleteRenderingTask, duplicateRenderingTask } = useApp();
 
   // Confirm delete states
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -83,54 +81,6 @@ export const RenderingsManager: React.FC = () => {
     setExpandedLogs(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // Compiler to translate project parameters into an actual executable FFmpeg command string
-  const getFFmpegCommand = (projectId: string) => {
-    const project = projects.find(p => p.id === projectId);
-    if (!project) return 'ffmpeg -i input_background.mp4 -vf "scale=720:1280" -c:v libx264 output.mp4';
-    
-    const vars = project.variables;
-    const inputs: string[] = [];
-    const filters: string[] = [];
-    
-    // 1. Video/Image background layer
-    if (vars.backgroundVideoUrl) {
-      inputs.push(`-i "background_feed.mp4"`);
-    } else if (vars.backgroundImageUrl) {
-      inputs.push(`-loop 1 -i "background_frame.webp"`);
-    } else {
-      inputs.push(`-f lavfi -i color=c=black:s=720x1280:d=30`);
-    }
-    
-    // 2. Audio layer
-    if (vars.audioUrl) {
-      inputs.push(`-i "synthesized_voice.mp3"`);
-    }
-    // 3. Brand logo overlay
-    if (vars.logoUrl) {
-      inputs.push(`-i "brand_logo.png"`);
-    }
-    
-    // Video dimensions & overlay filters
-    let vf = 'scale=720:1280';
-    
-    // Add text layers if present
-    if (vars.title) {
-      const escapedTitle = vars.title.replace(/'/g, "'\\''");
-      const color = vars.brandColor || '#ffffff';
-      const font = vars.fontName || 'Inter';
-      vf += `,drawtext=text='${escapedTitle}':font='${font}':fontsize=48:fontcolor=${color}:x=(w-text_w)/2:y=(h-text_h)/3`;
-    }
-    
-    if (vars.subtitles && vars.subtitles.length > 0) {
-      const escapedSub = vars.subtitles[0].replace(/'/g, "'\\''");
-      vf += `,drawtext=text='${escapedSub}':font='Inter':fontsize=36:fontcolor=yellow:x=(w-text_w)/2:y=(h-text_h)/1.5`;
-    }
-    
-    filters.push(`-vf "${vf}"`);
-    const audioMap = vars.audioUrl ? '-map 0:v:0 -map 1:a:0 -c:a aac -shortest' : '-c:a copy';
-    
-    return `ffmpeg -y ${inputs.join(' ')} ${filters.join(' ')} ${audioMap} -c:v libx264 -preset fast -crf 22 output_${project.id}.mp4`;
-  };
 
   // Helper to generate dynamic, user-friendly system process logs
   const getCompileLogs = (task: RenderingTask) => {
@@ -392,7 +342,7 @@ export const RenderingsManager: React.FC = () => {
                     <button
                       onClick={() => setSelectedDebugTask(task)}
                       className="p-1.5 rounded-lg bg-gray-950 border border-gray-900 hover:border-indigo-500/40 hover:text-indigo-400 text-gray-500 transition cursor-pointer"
-                      title="Ver Log de Telemetria e FFmpeg"
+                      title="Ver Log de Telemetria"
                     >
                       <Activity className="w-3.5 h-3.5" />
                     </button>
@@ -518,7 +468,7 @@ export const RenderingsManager: React.FC = () => {
 
               {/* Modal Content Scrollable Area */}
               <div className="p-6 overflow-y-auto space-y-6">
-                {/* 1. Bento Grid of Telemetry & FFmpeg Metadata */}
+                {/* 1. Bento Grid of Telemetry Metadata */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="p-3 bg-gray-900/40 rounded-xl border border-gray-900">
                     <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider block mb-1">Status Final</span>
@@ -531,7 +481,7 @@ export const RenderingsManager: React.FC = () => {
                   </div>
 
                   <div className="p-3 bg-gray-900/40 rounded-xl border border-gray-900">
-                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider block mb-1">Encoding FFmpeg</span>
+                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider block mb-1">Tempo de Codificação</span>
                     <span className="text-xs font-mono font-bold text-gray-300">
                       {formatMs(selectedDebugTask.debugInfo?.encodingTimeMs)}
                     </span>
@@ -573,72 +523,29 @@ export const RenderingsManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 2. FFmpeg command string section with copy button */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
-                      <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Comando FFmpeg Executado</span>
-                    </h3>
-                    <button
-                      onClick={() => {
-                        const cmd = selectedDebugTask.debugInfo?.command || getFFmpegCommand(selectedDebugTask.projectId);
-                        navigator.clipboard.writeText(cmd);
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 2000);
-                      }}
-                      className="px-2.5 py-1 rounded bg-gray-900 border border-gray-800 text-[10px] text-gray-400 hover:text-gray-200 transition flex items-center gap-1 cursor-pointer"
-                    >
-                      <Copy className="w-3 h-3" />
-                      <span>{copied ? 'Copiado!' : 'Copiar'}</span>
-                    </button>
-                  </div>
-                  <div className="p-4 bg-black rounded-xl border border-gray-900 font-mono text-xs text-indigo-300 overflow-x-auto break-all max-h-40 leading-relaxed whitespace-pre-wrap select-all">
-                    {selectedDebugTask.debugInfo?.command || getFFmpegCommand(selectedDebugTask.projectId)}
-                  </div>
-                </div>
-
-                {/* 3. Stderr output terminal log */}
+                {/* 2. High-level processing log (internal command/raw output intentionally not exposed) */}
                 <div className="space-y-2">
                   <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
-                    <Terminal className="w-3.5 h-3.5 text-red-400" />
-                    <span>Saída Detalhada stderr (FFmpeg Output Log)</span>
+                    <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Log de Processamento</span>
                   </h3>
                   <div className="p-4 bg-black rounded-xl border border-gray-900 font-mono text-[11px] text-gray-400 overflow-y-auto max-h-60 space-y-1 select-text scrollbar-thin">
-                    {selectedDebugTask.debugInfo?.stderr ? (
-                      selectedDebugTask.debugInfo.stderr.split('\n').map((line: string, idx: number) => {
-                        let colorClass = 'text-gray-400';
-                        if (line.includes('Error') || line.includes('Failed') || line.includes('Fatal') || line.includes('Can\'t') || line.includes('Invalid')) {
-                          colorClass = 'text-red-400 font-semibold';
-                        } else if (line.includes('warning') || line.includes('Warning')) {
-                          colorClass = 'text-amber-400';
-                        } else if (line.startsWith('frame=')) {
-                          colorClass = 'text-indigo-400';
-                        }
-                        return (
-                          <div key={idx} className={`${colorClass} leading-relaxed font-mono whitespace-pre-wrap`}>
-                            {line}
-                          </div>
-                        );
-                      })
+                    {selectedDebugTask.logs && selectedDebugTask.logs.length > 0 ? (
+                      selectedDebugTask.logs.map((line: string, idx: number) => (
+                        <div key={idx} className="leading-relaxed font-mono whitespace-pre-wrap text-gray-400">
+                          {line}
+                        </div>
+                      ))
                     ) : (
-                      <div className="text-gray-600 italic font-mono">Nenhuma mensagem registrada na saída padrão de erro do FFmpeg.</div>
+                      <div className="text-gray-600 italic font-mono">Nenhum registro disponível para esta tarefa.</div>
+                    )}
+                    {selectedDebugTask.errorMessage && (
+                      <div className="text-red-400 font-semibold leading-relaxed font-mono whitespace-pre-wrap pt-1">
+                        {selectedDebugTask.errorMessage}
+                      </div>
                     )}
                   </div>
                 </div>
-
-                {/* 4. Stdout output log */}
-                {selectedDebugTask.debugInfo?.stdout && (
-                  <div className="space-y-2">
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
-                      <Info className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Saída Padrão stdout</span>
-                    </h3>
-                    <div className="p-4 bg-black rounded-xl border border-gray-900 font-mono text-[11px] text-gray-400 overflow-y-auto max-h-32 select-text scrollbar-thin whitespace-pre-wrap">
-                      {selectedDebugTask.debugInfo.stdout}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Modal Footer */}

@@ -1106,7 +1106,7 @@ export const DashboardOverview: React.FC = () => {
                             <span className="text-[10px] font-mono text-indigo-400 font-bold uppercase tracking-wider block">Passo 2 de 4</span>
                             <h2 className="text-lg font-bold text-white tracking-tight mt-0.5">Editor de Área do Vídeo</h2>
                             <p className="text-xs text-gray-400 mt-0.5">
-                              Arraste e redimensione para definir com precisão de pixels onde o vídeo será renderizado sobre o template pelo FFmpeg.
+                              Arraste e redimensione para definir com precisão de pixels onde o vídeo será renderizado sobre o template.
                             </p>
                           </div>
                           

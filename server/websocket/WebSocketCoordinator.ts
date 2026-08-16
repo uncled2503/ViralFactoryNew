@@ -14,6 +14,26 @@ export class WebSocketCoordinator {
   private static dbSaveThrottleMap: Map<string, { lastSavedTime: number; lastSavedProgress: number }> = new Map();
 
   /**
+   * Strips any log line that references the underlying render tool (name, flags, raw
+   * command strings, process output) before it's persisted or sent to a client — workers
+   * report low-level implementation detail in their logs that should never leave this
+   * process as-is.
+   */
+  private static sanitizeLogs(logs: string[] | undefined | null): string[] {
+    if (!logs || logs.length === 0) return [];
+    return logs.filter(line => !/ffmpeg/i.test(line));
+  }
+
+  /**
+   * Redacts the underlying render tool's name from error messages reported by workers,
+   * without discarding the rest of the message (exit codes, reasons, etc are still useful).
+   */
+  private static sanitizeErrorMessage(message: string | undefined | null): string | undefined {
+    if (!message) return message || undefined;
+    return message.replace(/ffmpeg/gi, 'motor de renderização');
+  }
+
+  /**
    * Initializes the WebSocket Coordinator on the existing HTTP Server
    */
   static init(server: any) {
@@ -96,7 +116,8 @@ export class WebSocketCoordinator {
           } 
           else if (type === 'job_progress') {
             if (!registeredId) return;
-            const { jobId, status, progress, logs } = payload;
+            const { jobId, status, progress, logs: rawLogs } = payload;
+            const logs = this.sanitizeLogs(rawLogs);
             console.log(`[WebSocketCoordinator] [Job ${jobId}] Progress updated: ${status} - ${progress}% (${registeredId})`);
 
             // Always update live in-memory cache immediately
@@ -140,7 +161,11 @@ export class WebSocketCoordinator {
           } 
           else if (type === 'job_completed') {
             if (!registeredId) return;
-            const { jobId, outputUrl, thumbnailUrl, previewUrl, renderTime, logs, debugInfo } = payload;
+            const { jobId, outputUrl, thumbnailUrl, previewUrl, renderTime, logs: rawLogs, debugInfo: rawDebugInfo } = payload;
+            // Never persist or forward the raw render command / process output — only
+            // generic, non-identifying telemetry (timing, size, resolution, etc).
+            const { command, stdout, stderr, ...debugInfo } = rawDebugInfo || {};
+            const logs = this.sanitizeLogs(rawLogs);
             console.log(`[WebSocketCoordinator] [Job ${jobId}] COMPLETED by worker "${registeredId}" in ${renderTime}!`);
 
             // Clear database write throttle entry
@@ -195,8 +220,11 @@ export class WebSocketCoordinator {
           } 
           else if (type === 'job_failed') {
             if (!registeredId) return;
-            const { jobId, error, logs, debugInfo } = payload;
-            console.error(`[WebSocketCoordinator] [Job ${jobId}] FAILED on "${registeredId}": ${error}`);
+            const { jobId, error: rawError, logs: rawLogs, debugInfo: rawDebugInfo } = payload;
+            const { command, stdout, stderr, ...debugInfo } = rawDebugInfo || {};
+            const logs = this.sanitizeLogs(rawLogs);
+            const error = this.sanitizeErrorMessage(rawError);
+            console.error(`[WebSocketCoordinator] [Job ${jobId}] FAILED on "${registeredId}": ${rawError}`);
 
             // Clear database write throttle entry
             this.dbSaveThrottleMap.delete(jobId);
@@ -209,7 +237,7 @@ export class WebSocketCoordinator {
             JobQueue.updateJob(jobId, {
               status: 'Failed',
               progress: 0,
-              error: error || 'Remote rendering process failed.',
+              error: error || 'Falha no processamento remoto da renderização.',
               logs,
               debugInfo
             });
@@ -220,7 +248,7 @@ export class WebSocketCoordinator {
               0,
               undefined,
               undefined,
-              error || 'Remote worker rendering failure.',
+              error || 'Falha no processamento remoto da renderização.',
               logs,
               debugInfo
             );

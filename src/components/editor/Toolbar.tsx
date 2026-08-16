@@ -72,7 +72,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             className="bg-transparent border-0 font-bold text-xs text-gray-200 outline-none w-44 focus:ring-1 focus:ring-indigo-500 rounded px-1"
             title="Renomear Projeto"
           />
-          <span className="text-[9px] text-gray-600 font-bold font-mono px-1">FFMPEG WORKSPACE ENGINE</span>
+          <span className="text-[9px] text-gray-600 font-bold font-mono px-1">VIRAL FACTORY ENGINE</span>
         </div>
 
         <div className="w-px h-6 bg-gray-900" />
@@ -159,7 +159,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             value={presetId}
             onChange={(e) => onPresetChange?.(e.target.value)}
             className="bg-transparent border-none text-[10px] font-bold text-gray-300 focus:outline-none cursor-pointer uppercase font-mono py-0.5"
-            title="Escolher Preset de Exportação (FFmpeg)"
+            title="Escolher Preset de Exportação"
           >
             <option value="tiktok" className="bg-gray-950 text-gray-300">TikTok (9:16, 30fps)</option>
             <option value="reels" className="bg-gray-950 text-gray-300">Reels (9:16, 30fps)</option>

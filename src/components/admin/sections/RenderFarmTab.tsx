@@ -188,7 +188,7 @@ export const RenderFarmTab: React.FC<RenderFarmTabProps> = ({ showToast }) => {
 
   const handleTestEngine = async () => {
     setIsTesting(true);
-    showToast("Iniciando validação do motor FFmpeg em tempo real...", "info");
+    showToast("Iniciando validação do motor de renderização em tempo real...", "info");
     try {
       const response = await adminFetch('/api/admin/test-render', {
         method: 'POST',
@@ -364,7 +364,7 @@ export const RenderFarmTab: React.FC<RenderFarmTabProps> = ({ showToast }) => {
             className="px-4 py-2 bg-pink-600 hover:bg-pink-500 disabled:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
           >
             <Zap className="w-4 h-4" />
-            {isTesting ? "Validando..." : "Testar Engine FFmpeg"}
+            {isTesting ? "Validando..." : "Testar Motor de Render"}
           </button>
           <button 
             onClick={fetchData}
