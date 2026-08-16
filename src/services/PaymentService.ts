@@ -9,7 +9,7 @@ import { PaymentModel, CouponModel } from './schema';
 
 export class PaymentService {
   private static INVOICES_TABLE = 'invoices';
-  private static COUPONS_TABLE = 'coupons';
+  private static COUPONS_TABLE = 'saas_coupons';
 
   /**
    * Fetches all statements or invoices associated with the SaaS subscription

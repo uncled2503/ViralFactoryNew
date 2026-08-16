@@ -76,6 +76,23 @@ const BUILTIN_TEMPLATES = [
   }
 ];
 
+const MASTER_OWNER_USER = {
+  id: '00000000-0000-0000-0000-000000000001',
+  name: 'Gabriel Moura',
+  email: 'mouragabriel2011@gmail.com',
+  company: 'ViralFactory HQ',
+  role: 'owner',
+  avatarUrl: '',
+  subscription: 'Business',
+  status: 'active',
+  usageCurrent: 0,
+  usageLimit: 999999,
+  storageUsedMB: 0,
+  templatesUsed: 0,
+  projectsActive: 0,
+  createdAt: new Date().toISOString()
+};
+
 export class LocalDbMutex {
   private static queue: (() => Promise<void>)[] = [];
   private static isProcessing = false;
@@ -97,7 +114,7 @@ export class LocalDbMutex {
       // Safe offline/test fallback inside memory
       if (this.cachedDbData === null) {
         this.cachedDbData = {
-          saas_users: [],
+          saas_users: [{ ...MASTER_OWNER_USER }],
           users: [],
           projects: [],
           templates: [],
@@ -187,6 +204,7 @@ export class LocalDbMutex {
         duration: t.duration,
         renderTime: t.render_time,
         outputUrl: t.output_url,
+        thumbnailUrl: t.thumbnail_url,
         errorMessage: t.error_message,
         logs: t.logs,
         debugInfo: t.debug_info,
@@ -267,7 +285,7 @@ export class LocalDbMutex {
     if (!this.isLoaded || this.cachedDbData === null) {
       // Perform initial memory fallback
       this.cachedDbData = {
-        saas_users: [],
+        saas_users: [{ ...MASTER_OWNER_USER }],
         users: [],
         projects: [],
         templates: [...BUILTIN_TEMPLATES],
@@ -423,7 +441,9 @@ export class LocalDbMutex {
             id: toUUID(t.id),
             name: t.name || 'Untitled Template',
             description: t.description || '',
+            aspect: t.aspect || t.aspect_ratio || '16:9',
             aspect_ratio: t.aspect || t.aspect_ratio || '16:9',
+            default_duration: t.defaultDuration || t.duration_seconds || 30,
             duration_seconds: t.defaultDuration || t.duration_seconds || 30,
             layers: t.layers || [],
             thumbnail_url: t.backgroundImageUrl || t.thumbnail_url || '',
@@ -453,6 +473,7 @@ export class LocalDbMutex {
             duration: t.duration || '0:30',
             render_time: t.renderTime || t.render_time || '',
             output_url: t.outputUrl || t.output_url || '',
+            thumbnail_url: t.thumbnailUrl || t.thumbnail_url || '',
             error_message: t.errorMessage || t.error_message || '',
             logs: t.logs || [],
             debug_info: t.debugInfo || t.debug_info || {},

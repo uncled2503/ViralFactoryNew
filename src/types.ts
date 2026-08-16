@@ -227,6 +227,7 @@ export interface RenderingTask {
   duration: string; // duration of video, e.g. "0:30"
   renderTime?: string; // e.g. "45s"
   outputUrl?: string;
+  thumbnailUrl?: string;
   createdAt: string;
   completedAt?: string;
   logs?: string[];

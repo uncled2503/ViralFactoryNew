@@ -10,7 +10,7 @@ import { PLAN_LIMITS_MAP, PLANS_DETAILS } from '../config/plans';
 
 export class SubscriptionService {
   private static SUBSCRIPTIONS_TABLE = 'subscriptions';
-  private static PLANS_TABLE = 'plans';
+  private static PLANS_TABLE = 'saas_plans';
 
   /**
    * Fetches the subscription details of a user

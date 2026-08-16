@@ -66,6 +66,7 @@ export class ProjectService {
         template_id: validTemplateId || undefined,
         status: project.status || 'draft',
         aspect: project.aspect || '16:9',
+        aspect_ratio: project.aspect || '16:9',
         variables: project.variables || {},
         video_url: project.videoUrl || undefined,
         updated_at: new Date().toISOString(),

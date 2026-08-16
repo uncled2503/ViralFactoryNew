@@ -32,6 +32,9 @@ export interface ProjectModel {
   template_id?: string;
   status: 'draft' | 'rendering' | 'completed' | 'failed';
   aspect: string;
+  // Kept in sync with `aspect` on every write — the DB still has both columns
+  // (legacy duplication) and some readers use one or the other.
+  aspect_ratio?: string;
   variables: any;
   video_url?: string;
   created_at?: string;
@@ -44,7 +47,10 @@ export interface TemplateModel {
   name: string;
   description?: string;
   aspect: string;
+  aspect_ratio?: string;
   default_duration: number;
+  // Kept in sync with `default_duration` on every write, same reason as aspect_ratio above.
+  duration_seconds?: number;
   scenes_count: number;
   layers: any[];
   bg_music_url?: string;
@@ -64,6 +70,7 @@ export interface RenderJobModel {
   duration: string;
   render_time?: string;
   output_url?: string;
+  thumbnail_url?: string;
   created_at?: string;
   completed_at?: string;
 }

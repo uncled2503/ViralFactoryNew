@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { supabaseAdmin, isSupabaseConfigured } from '../database/supabaseClient';
 import { LocalDbMutex } from '../database/LocalDbMutex';
 
@@ -258,7 +259,7 @@ export class AdminRepository {
     }
     const db = LocalDbMutex.getDbDataSync();
     const newLog = {
-      id: `log-${Math.random().toString(36).substr(2, 9)}`,
+      id: randomUUID(),
       admin_name: log.admin_name || 'System',
       action: log.action || 'ACTION',
       target_user: log.target_user || 'SYSTEM',
