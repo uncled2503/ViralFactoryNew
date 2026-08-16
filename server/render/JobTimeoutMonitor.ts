@@ -2,9 +2,18 @@ import { JobQueue } from './JobQueue';
 import { WorkerRegistry } from '../websocket/WorkerRegistry';
 import { RenderEngine } from './RenderEngine';
 import { JobDispatcher } from '../websocket/JobDispatcher';
+import { supabaseAdmin } from '../database/supabaseClient';
 
 export class JobTimeoutMonitor {
   private static interval: NodeJS.Timeout | null = null;
+  private static orphanInterval: NodeJS.Timeout | null = null;
+
+  // How long a `rendering_tasks` row can sit at status 'queued' before we consider
+  // it orphaned (the client wrote it optimistically but the /api/render/job request
+  // that actually enqueues it in JobQueue never completed — e.g. the tab was closed
+  // or the connection dropped mid-request). Generous window to avoid false positives
+  // on slow requests; this is strictly for jobs the server never even received.
+  private static readonly ORPHAN_QUEUE_THRESHOLD_MS = 2 * 60 * 1000;
 
   /**
    * Starts the background timer to monitor stuck rendering jobs
@@ -21,6 +30,17 @@ export class JobTimeoutMonitor {
       }
     }, checkIntervalMs);
 
+    // Orphan sweep hits the database, so it runs on a much slower cadence than the
+    // in-memory timeout check above.
+    const orphanCheckIntervalMs = 60000; // Every 60 seconds
+    this.orphanInterval = setInterval(async () => {
+      try {
+        await this.checkOrphanedQueuedTasks();
+      } catch (err: any) {
+        console.error('[JobTimeoutMonitor] Error during orphaned task check:', err.message);
+      }
+    }, orphanCheckIntervalMs);
+
     console.log('[JobTimeoutMonitor] Automatic job timeout monitor and failover scheduler started.');
   }
 
@@ -32,6 +52,66 @@ export class JobTimeoutMonitor {
       clearInterval(this.interval);
       this.interval = null;
       console.log('[JobTimeoutMonitor] Automatic job timeout monitor stopped.');
+    }
+    if (this.orphanInterval) {
+      clearInterval(this.orphanInterval);
+      this.orphanInterval = null;
+    }
+  }
+
+  /**
+   * Finds `rendering_tasks` rows stuck at status 'queued' that never actually made it
+   * into the in-memory JobQueue (i.e. the request that should have created the real
+   * job never completed). These would otherwise sit as "queued" forever with no
+   * dispatch, no progress, and no way for the user to tell what happened. Marks them
+   * as failed with an explanatory message so the UI shows a terminal, actionable state.
+   */
+  private static async checkOrphanedQueuedTasks() {
+    if (!supabaseAdmin) return;
+
+    const cutoff = new Date(Date.now() - this.ORPHAN_QUEUE_THRESHOLD_MS).toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from('rendering_tasks')
+      .select('id, project_id, created_at')
+      .eq('status', 'queued')
+      .lt('created_at', cutoff);
+
+    if (error) {
+      console.error('[JobTimeoutMonitor] Failed to query for orphaned queued tasks:', error.message);
+      return;
+    }
+    if (!data || data.length === 0) return;
+
+    for (const row of data) {
+      // If it's genuinely tracked in-memory, the normal dispatch/timeout flow owns it.
+      if (JobQueue.getJob(row.id)) continue;
+
+      const message = 'A solicitação de renderização não chegou a ser registrada no servidor (conexão interrompida antes da confirmação). Exclua esta tarefa e tente renderizar novamente.';
+      console.warn(`[JobTimeoutMonitor] Orphaned queued task "${row.id}" never reached the job queue (created ${row.created_at}). Marking as failed.`);
+
+      await RenderEngine.saveDbStatus(
+        row.id,
+        'failed',
+        0,
+        undefined,
+        undefined,
+        message,
+        [`[SISTEMA] Tarefa nunca chegou a ser registrada na fila de processamento do servidor — marcada como falha automaticamente após ${this.ORPHAN_QUEUE_THRESHOLD_MS / 60000} minutos sem atividade.`]
+      ).catch(err => console.error(`[JobTimeoutMonitor] Failed saving orphaned-task failure status for ${row.id}:`, err.message));
+
+      // saveDbStatus only resets the project's status via its own JobQueue lookup, which
+      // won't find this job (it never existed there) — reset it directly here instead,
+      // so the project doesn't stay stuck showing "rendering" forever.
+      if (row.project_id) {
+        await supabaseAdmin
+          .from('projects')
+          .update({ status: 'failed' })
+          .eq('id', row.project_id)
+          .then(({ error: projErr }) => {
+            if (projErr) console.error(`[JobTimeoutMonitor] Failed resetting project ${row.project_id} status:`, projErr.message);
+          });
+      }
     }
   }
 

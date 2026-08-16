@@ -171,7 +171,8 @@ export class WebSocketCoordinator {
               renderTime,
               undefined,
               logs,
-              debugInfo
+              debugInfo,
+              thumbnailUrl
             );
 
             // Fetch and register final user outputs

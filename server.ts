@@ -44,9 +44,10 @@ async function startServer() {
   // Redirect storage access to Supabase signed URLs if Supabase is configured
   app.get('/storage/:folder/:filename', async (req, res, next) => {
     const { folder, filename } = req.params;
+    const downloadAs = typeof req.query.download === 'string' ? req.query.download : undefined;
     try {
       if (SupabaseStorageService.isConfigured()) {
-        const signedUrl = await SupabaseStorageService.getDownloadSignedUrl(folder, filename);
+        const signedUrl = await SupabaseStorageService.getDownloadSignedUrl(folder, filename, 3600, downloadAs);
         if (signedUrl && signedUrl.startsWith('http')) {
           res.redirect(302, signedUrl);
           return;

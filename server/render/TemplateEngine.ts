@@ -136,7 +136,7 @@ export class TemplateEngine {
       return {
         width: vars.canvas.width || 1080,
         height: vars.canvas.height || 1920,
-        duration: project.totalDuration || template?.defaultDuration || 30,
+        duration: project.totalDuration || template?.duration_seconds || template?.default_duration || 30,
         layers: vars.layers.map((layer: any) => {
           const isVideo = layer.type === 'video' || layer.id === 'layer-video';
           return {
@@ -197,7 +197,7 @@ export class TemplateEngine {
     }
 
     // 3. Absolute Fallback: Generate template layers using old metadata
-    const duration = template?.defaultDuration || 30;
+    const duration = template?.duration_seconds || template?.default_duration || 30;
     const videoPosition = vars.videoZone ? { x: vars.videoZone.x, y: vars.videoZone.y } : { x: 0, y: 460 };
     const videoSize = vars.videoZone ? { width: vars.videoZone.width, height: vars.videoZone.height } : { width: 1080, height: 1000 };
     const videoRotation = (vars.videoZone && vars.videoZone.rotation !== undefined) ? vars.videoZone.rotation : 0;
@@ -210,7 +210,21 @@ export class TemplateEngine {
       height: 1920,
       duration: duration,
       layers: [
-        {
+        vars.backgroundImageUrl ? {
+          id: 'layer-base-bg',
+          type: 'background',
+          position: { x: 0, y: 0 },
+          size: { width: 1080, height: 1920 },
+          rotation: 0,
+          opacity: 100,
+          zIndex: 0,
+          timeline: { start: 0, end: duration },
+          animations: [],
+          content: vars.backgroundImageUrl,
+          styles: {
+            fit: 'cover'
+          }
+        } : {
           id: 'layer-base-bg',
           type: 'overlay',
           position: { x: 0, y: 0 },

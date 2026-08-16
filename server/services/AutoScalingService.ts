@@ -357,7 +357,7 @@ export class AutoScalingService {
           const parsed = JSON.parse(message);
           if (parsed.type === 'start_job') {
             const payload = parsed.payload;
-            this.simulateJobRendering(payload.jobId, payload, id);
+            this.runRealElasticJob(payload.jobId, id);
           }
         } catch (err: any) {
           console.error(`[MockSocket ${id}] Error handling send:`, err.message);
@@ -442,112 +442,31 @@ export class AutoScalingService {
   }
 
   /**
-   * Simulates full rendering stages for elastic workers with log trails
+   * Runs a job assigned to an elastic worker through the real in-process FFmpeg
+   * pipeline (the same one that backs `RenderEngine.processJob`), instead of
+   * faking progress/output. Elastic workers have no real remote machine behind
+   * them, so "their" work actually executes here on the coordinator process.
    */
-  private static simulateJobRendering(jobId: string, payload: any, workerId: string) {
-    const steps = [
-      { status: 'Preparing' as const, progress: 10, logs: ['[AUTOSCALER] Inicializando ambiente virtual de rendering...', '[AUTOSCALER] Carregando assets e fontes estruturais...'] },
-      { status: 'Rendering' as const, progress: 30, logs: ['[AUTOSCALER] Processando camadas do template...', '[AUTOSCALER] Renderizando frames do vídeo H.264...'] },
-      { status: 'Rendering' as const, progress: 65, logs: ['[AUTOSCALER] Renderização de frames 50% concluída...', '[AUTOSCALER] Compondo áudios, legendas e trilhas...'] },
-      { status: 'Encoding' as const, progress: 85, logs: ['[AUTOSCALER] Codificando vídeo para presets de redes sociais...', '[AUTOSCALER] Otimizando bitrate do arquivo final mp4...'] },
-      { status: 'Saving' as const, progress: 95, logs: ['[AUTOSCALER] Salvando arquivo final na nuvem...', '[AUTOSCALER] Gerando thumbnail em alta resolução...'] },
-      { status: 'Completed' as const, progress: 100, logs: ['[AUTOSCALER] Vídeo renderizado com sucesso no cluster elástico!', '[AUTOSCALER] Upload completo. Job concluído.'] }
-    ];
+  private static async runRealElasticJob(jobId: string, workerId: string) {
+    const worker = WorkerRegistry.get(workerId);
+    if (!worker) return;
 
-    let currentStep = 0;
+    worker.status = 'busy';
+    worker.currentJobId = jobId;
 
-    const executeStep = async () => {
-      // Check if the worker is still registered (not scaled down in the middle)
-      if (!this.elasticWorkerIds.has(workerId)) {
-        console.log(`[AutoScaling] Job ${jobId} simulation aborted because worker ${workerId} was terminated.`);
-        return;
+    try {
+      await RenderEngine.processJob(jobId);
+    } catch (err: any) {
+      console.error(`[AutoScaling] Real render failed for job ${jobId} on elastic worker ${workerId}:`, err.message);
+    } finally {
+      const currentWorker = WorkerRegistry.get(workerId);
+      if (currentWorker) {
+        currentWorker.status = 'idle';
+        currentWorker.currentJobId = undefined;
       }
-
-      const worker = WorkerRegistry.get(workerId);
-      if (!worker) return;
-
-      // Check if job is still active / not canceled
-      const job = JobQueue.getJob(jobId);
-      if (!job || job.status === 'Canceled') {
-        console.log(`[AutoScaling] Job ${jobId} was canceled. Aborting simulation.`);
-        if (worker) {
-          worker.status = 'idle';
-          worker.currentJobId = undefined;
-        }
-        return;
-      }
-
-      const step = steps[currentStep];
-
-      // Update in-memory job progress
-      JobQueue.updateProgress(jobId, step.status, step.progress);
-      
-      const existingLogs = job.logs || [];
-      const newLogs = [...existingLogs, ...step.logs];
-      JobQueue.updateJob(jobId, { logs: newLogs });
-
-      if (step.status === 'Completed') {
-        worker.status = 'idle';
-        worker.currentJobId = undefined;
-
-        const outputUrl = `https://supabase.co/storage/v1/object/public/rendered/render_${jobId}.mp4`;
-        const thumbnailUrl = `https://supabase.co/storage/v1/object/public/rendered/thumb_${jobId}.jpg`;
-        const renderTime = `${Math.floor(Math.random() * 8) + 4}s`;
-
-        JobQueue.updateJob(jobId, {
-          status: 'Completed',
-          progress: 100,
-          renderTime,
-          outputUrl,
-          thumbnailUrl,
-          completedAt: new Date().toISOString(),
-          logs: newLogs
-        });
-
-        await RenderEngine.saveDbStatus(
-          jobId,
-          'completed',
-          100,
-          outputUrl,
-          renderTime,
-          undefined,
-          newLogs
-        );
-
-        // Register rendered file
-        try {
-          await RenderEngine.registerRenderedFile(
-            job.userId,
-            job.projectId,
-            job.projectName,
-            outputUrl
-          );
-        } catch (err: any) {
-          console.error('[AutoScaling] Error registering rendered file:', err.message);
-        }
-
-        // Trigger job dispatcher immediately
-        JobDispatcher.distributeJobs();
-
-      } else {
-        // Update DB progress
-        await RenderEngine.saveDbStatus(
-          jobId,
-          step.status === 'Preparing' ? 'Preparing' as any : 'processing',
-          step.progress,
-          undefined,
-          undefined,
-          undefined,
-          newLogs
-        );
-
-        // Run next step in 1200ms
-        currentStep++;
-        setTimeout(executeStep, 1200);
-      }
-    };
-
-    executeStep();
+      // Pick up the next queued job, if any
+      JobDispatcher.distributeJobs();
+    }
   }
 
   /**

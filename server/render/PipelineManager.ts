@@ -391,14 +391,15 @@ export class PipelineManager {
 
       // Save complete status to databases
       await RenderEngine.saveDbStatus(
-        jobId, 
-        'completed', 
-        100, 
-        permanentVideoUrl, 
-        renderTimeStr, 
-        undefined, 
+        jobId,
+        'completed',
+        100,
+        permanentVideoUrl,
+        renderTimeStr,
+        undefined,
         logs,
-        debugInfo
+        debugInfo,
+        permanentThumbUrl
       );
       
       await RenderEngine.registerRenderedFile(

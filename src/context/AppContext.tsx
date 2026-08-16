@@ -1339,6 +1339,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
                           progress: job.progress,
                           renderTime: job.renderTime,
                           outputUrl: job.outputUrl,
+                          thumbnailUrl: job.thumbnailUrl,
                           completedAt: job.completedAt,
                           logs: job.logs,
                           errorMessage: job.error || job.errorMessage,

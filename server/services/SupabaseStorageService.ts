@@ -204,7 +204,7 @@ export class SupabaseStorageService {
   /**
    * Generates a temporary Signed URL for downloading/viewing a file from Supabase Storage
    */
-  static async getDownloadSignedUrl(folder: string, fileName: string, expiresInSeconds = 3600): Promise<string> {
+  static async getDownloadSignedUrl(folder: string, fileName: string, expiresInSeconds = 3600, downloadAs?: string): Promise<string> {
     this.init();
 
     const { bucket, path: bucketPath } = this.getBucketAndPath(folder, fileName);
@@ -215,7 +215,11 @@ export class SupabaseStorageService {
     }
 
     try {
-      const { data, error } = await this.supabase!.storage.from(bucket).createSignedUrl(bucketPath, expiresInSeconds);
+      const { data, error } = await this.supabase!.storage.from(bucket).createSignedUrl(
+        bucketPath,
+        expiresInSeconds,
+        downloadAs ? { download: downloadAs } : undefined
+      );
       
       if (error || !data || !data.signedUrl) {
         throw new Error(error?.message || 'Signed URL generation returned empty.');

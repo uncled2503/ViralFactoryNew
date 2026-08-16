@@ -34,6 +34,7 @@ export class RenderService {
         duration: t.duration,
         renderTime: t.render_time || undefined,
         outputUrl: t.output_url || undefined,
+        thumbnailUrl: t.thumbnail_url || undefined,
         createdAt: t.created_at || new Date().toISOString(),
         completedAt: t.completed_at || undefined,
       }));
@@ -109,8 +110,7 @@ export class RenderService {
     ipAddress?: string
   ): Promise<boolean> {
     try {
-      const logData: RenderLogModel = {
-        id: `log-${Math.random().toString(36).substring(2, 9)}`,
+      const logData: Omit<RenderLogModel, 'id'> = {
         timestamp: new Date().toISOString(),
         level,
         service,

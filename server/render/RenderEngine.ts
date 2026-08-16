@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { createClient } from '@supabase/supabase-js';
 import { JobQueue, RenderJob, JobStatus } from './JobQueue';
 import { StorageManager } from './Storage';
 import { TemplateEngine } from './TemplateEngine';
@@ -12,15 +11,7 @@ import { PipelineManager } from './PipelineManager';
 import { LocalDbMutex } from '../database/LocalDbMutex';
 import { RedisService } from '../services/RedisService';
 import { toUUID } from '../database/SupabaseDbService';
-
-// Initialize server-side Supabase if config is provided
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
-const isSupabaseConfigured = !!SUPABASE_URL && !!SUPABASE_ANON_KEY && SUPABASE_URL !== 'https://your-project-id.supabase.co';
-
-const supabase = isSupabaseConfigured 
-  ? createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!)
-  : null;
+import { supabaseAdmin } from '../database/supabaseClient';
 
 export class RenderEngine {
   /**
@@ -45,8 +36,8 @@ export class RenderEngine {
     }
 
     let project: any = null;
-    if (supabase) {
-      const { data } = await supabase
+    if (supabaseAdmin) {
+      const { data } = await supabaseAdmin
         .from('projects')
         .select('*')
         .eq('id', projectId)
@@ -55,7 +46,7 @@ export class RenderEngine {
       if (data) project = data;
 
       if (!project) {
-        const { data: dataById } = await supabase
+        const { data: dataById } = await supabaseAdmin
           .from('projects')
           .select('*')
           .eq('id', projectId)
@@ -93,8 +84,8 @@ export class RenderEngine {
     }
 
     let template: any = null;
-    if (supabase) {
-      const { data } = await supabase
+    if (supabaseAdmin) {
+      const { data } = await supabaseAdmin
         .from('templates')
         .select('*')
         .eq('id', templateId)
@@ -146,19 +137,21 @@ export class RenderEngine {
     renderTime?: string,
     errorMsg?: string,
     logs?: string[],
-    debugInfo?: any
+    debugInfo?: any,
+    thumbnailUrl?: string
   ) {
     const timeNow = new Date().toISOString();
 
-    if (supabase) {
+    if (supabaseAdmin) {
       try {
         const targetId = toUUID(jobId);
-        const { error } = await supabase
+        const { error } = await supabaseAdmin
           .from('rendering_tasks')
           .update({
             status: status,
             progress: progress,
             output_url: videoUrl,
+            thumbnail_url: thumbnailUrl,
             render_time: renderTime,
             completed_at: status === 'completed' ? timeNow : undefined,
             error_message: errorMsg,
@@ -170,7 +163,7 @@ export class RenderEngine {
         if (!error && videoUrl) {
           const job = JobQueue.getJob(jobId);
           if (job?.projectId) {
-            await supabase
+            await supabaseAdmin
               .from('projects')
               .update({ status: status === 'completed' ? 'completed' : 'rendering', video_url: videoUrl })
               .eq('id', toUUID(job.projectId));
@@ -199,6 +192,7 @@ export class RenderEngine {
         duration: job?.duration || '0:30',
         render_time: renderTime,
         output_url: videoUrl,
+        thumbnail_url: thumbnailUrl,
         created_at: job?.createdAt,
         completed_at: status === 'completed' ? timeNow : undefined,
         error_message: errorMsg,
@@ -280,10 +274,9 @@ export class RenderEngine {
     const sizeMb = StorageManager.getFileSizeMB(path.join(process.cwd(), 'public', url));
     const timestamp = new Date().toISOString();
 
-    if (supabase) {
+    if (supabaseAdmin) {
       try {
-        await supabase.from('rendered_videos').insert({
-          id: `rnd-vid-${Math.random().toString(36).substring(2, 9)}`,
+        const { error } = await supabaseAdmin.from('rendered_videos').insert({
           user_id: userId,
           project_id: projectId,
           name: name,
@@ -291,7 +284,10 @@ export class RenderEngine {
           url: url,
           created_at: timestamp
         });
-      } catch (e) {}
+        if (error) console.error('[RenderEngine] Failed to register rendered_videos row:', error.message);
+      } catch (e: any) {
+        console.error('[RenderEngine] registerRenderedFile threw:', e?.message || e);
+      }
     }
 
     // Sync to Server JSON database folders uploads structure
