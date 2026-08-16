@@ -255,7 +255,9 @@ export class TemplateEngine {
             fit: videoFit
           }
         },
-        {
+        // Headline/subtitle layers are only added when the user actually provided text —
+        // no placeholder text should ever be burned into a video the user didn't ask for.
+        ...(vars.title || vars.headline ? [{
           id: 'layer-headline',
           type: 'headline',
           position: { x: 90, y: 180 },
@@ -265,14 +267,14 @@ export class TemplateEngine {
           zIndex: 2,
           timeline: { start: 0, end: duration },
           animations: [],
-          content: vars.title || vars.headline || 'HEADLINE PRINCIPAL',
+          content: vars.title || vars.headline,
           styles: {
             font: vars.fontName || 'Inter',
             color: '#FFFFFF',
             size: 54
           }
-        },
-        {
+        }] : []),
+        ...((vars.subtitles && vars.subtitles[0]) || vars.subheadline ? [{
           id: 'layer-subtitle',
           type: 'subtitle',
           position: { x: 90, y: 1400 },
@@ -282,13 +284,13 @@ export class TemplateEngine {
           zIndex: 3,
           timeline: { start: 0, end: duration },
           animations: [],
-          content: (vars.subtitles && vars.subtitles[0]) || vars.subheadline || 'Subheadline informativa',
+          content: (vars.subtitles && vars.subtitles[0]) || vars.subheadline,
           styles: {
             font: vars.fontName || 'Inter',
             color: '#E2E8F0',
             size: 38
           }
-        },
+        }] : []),
         {
           id: 'layer-progress-bar',
           type: 'progressBar',

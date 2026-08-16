@@ -267,7 +267,12 @@ export const DashboardOverview: React.FC = () => {
           layoutPosition: 'custom',
           videoZone: { ...videoZone },
           backgroundImageUrl: templateFile?.url,
-          backgroundVideoUrl: video.url
+          backgroundVideoUrl: video.url,
+          // This wizard only composites template + video — no on-screen text unless the
+          // user explicitly adds it later in an editor. Override createProject's defaults
+          // (which otherwise burn the project name in as a headline).
+          title: undefined,
+          subtitles: undefined
         }
       );
 
