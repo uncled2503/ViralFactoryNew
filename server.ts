@@ -206,6 +206,9 @@ async function startServer() {
         success: true,
         uploadUrl,
         publicUrl: `/storage/${destFolder}/${destFilename}`,
+        // The URL to actually use for anything the server itself needs to fetch (e.g. FFmpeg -i),
+        // since the relative publicUrl above only resolves locally when Supabase isn't configured.
+        assetUrl: SupabaseStorageService.getPublicUrl(destFolder, destFilename),
         isSupabase: SupabaseStorageService.isConfigured()
       });
     } catch (err: any) {

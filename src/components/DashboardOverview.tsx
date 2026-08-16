@@ -39,6 +39,7 @@ import {
   Check
 } from 'lucide-react';
 import { AspectRatio, Project } from '../types';
+import { authenticatedFetch } from '../utils/api';
 
 export const DashboardOverview: React.FC = () => {
   const { navigate } = useRouter();
@@ -49,10 +50,11 @@ export const DashboardOverview: React.FC = () => {
     setActiveTab, 
     triggerRender, 
     user, 
-    folders, 
+    folders,
     uploadFileToFolder,
     createProject,
-    templates
+    templates,
+    showToast
   } = useApp();
 
   const [dragActive, setDragActive] = useState(false);
@@ -67,7 +69,7 @@ export const DashboardOverview: React.FC = () => {
 
   // Step 1 States
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [templateFile, setTemplateFile] = useState<{ name: string; size: string } | null>(null);
+  const [templateFile, setTemplateFile] = useState<{ name: string; size: string; url?: string; uploading?: boolean } | null>(null);
   const [templateUploadProgress, setTemplateUploadProgress] = useState<number | null>(null);
   const [templateDragActive, setTemplateDragActive] = useState(false);
   const templateFileInputRef = useRef<HTMLInputElement>(null);
@@ -88,7 +90,7 @@ export const DashboardOverview: React.FC = () => {
   const [videoPosition, setVideoPosition] = useState<'bottom_half' | 'top_half' | 'full_bg' | 'pip' | 'custom'>('custom');
 
   // Step 3 States
-  const [sourceVideos, setSourceVideos] = useState<Array<{ id: string; name: string; size: string; progress: number; status: 'uploading' | 'completed' }>>([]);
+  const [sourceVideos, setSourceVideos] = useState<Array<{ id: string; name: string; size: string; progress: number; status: 'uploading' | 'completed' | 'error'; url?: string }>>([]);
   const [sourceDragActive, setSourceDragActive] = useState(false);
   const sourceFileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
@@ -120,26 +122,65 @@ export const DashboardOverview: React.FC = () => {
     }
   };
 
-  const uploadTemplateFile = (file: File) => {
-    setTemplateFile({ name: file.name, size: (file.size / (1024 * 1024)).toFixed(1) + " MB" });
+  // Uploads a real file to the backend (signed URL + PUT), reporting real progress.
+  // Reuses the same GET /api/render/signed-upload-url + PUT /api/render/upload pattern
+  // already used by render-worker to upload finished renders.
+  const uploadFileToServer = (file: File, onProgress: (pct: number) => void): Promise<string> => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}-${file.name}`.replace(/\s+/g, '_');
+        const signedRes = await authenticatedFetch(
+          `/api/render/signed-upload-url?folder=uploads&filename=${encodeURIComponent(uniqueName)}&contentType=${encodeURIComponent(file.type || 'application/octet-stream')}`
+        );
+        if (!signedRes.ok) {
+          const errBody = await signedRes.json().catch(() => ({}));
+          throw new Error(errBody.error || 'Falha ao solicitar URL de upload');
+        }
+        const { uploadUrl, assetUrl } = await signedRes.json();
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', uploadUrl, true);
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable) {
+            onProgress(Math.round((evt.loaded / evt.total) * 100));
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(assetUrl);
+          } else {
+            reject(new Error(`Upload falhou com status ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Falha de rede durante o upload'));
+        xhr.send(file);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  };
+
+  const uploadTemplateFile = async (file: File) => {
+    setTemplateFile({ name: file.name, size: (file.size / (1024 * 1024)).toFixed(1) + " MB", uploading: true });
     try {
       setTemplateFileUrl(URL.createObjectURL(file));
     } catch (err) {
       console.error(err);
     }
     setTemplateUploadProgress(1);
-    
-    let progress = 1;
-    const interval = setInterval(() => {
-      progress += Math.floor(Math.random() * 20) + 10;
-      if (progress >= 100) {
-        clearInterval(interval);
-        setTemplateUploadProgress(100);
-        setTimeout(() => setTemplateUploadProgress(null), 500);
-      } else {
-        setTemplateUploadProgress(progress);
-      }
-    }, 100);
+
+    try {
+      const assetUrl = await uploadFileToServer(file, (pct) => setTemplateUploadProgress(pct));
+      setTemplateFile({ name: file.name, size: (file.size / (1024 * 1024)).toFixed(1) + " MB", url: assetUrl, uploading: false });
+      setTemplateUploadProgress(100);
+      setTimeout(() => setTemplateUploadProgress(null), 500);
+    } catch (err: any) {
+      console.error('Template upload failed:', err);
+      setTemplateFile(null);
+      setTemplateUploadProgress(null);
+      showToast(`Falha ao enviar o template: ${err.message || 'erro desconhecido'}`, 'error');
+    }
   };
 
   // Source Videos Drag & Drop Handlers
@@ -174,22 +215,23 @@ export const DashboardOverview: React.FC = () => {
       name: file.name,
       size: (file.size / (1024 * 1024)).toFixed(1) + " MB",
       progress: 0,
-      status: 'uploading' as const
+      status: 'uploading' as const,
+      file
     }));
 
-    setSourceVideos(prev => [...prev, ...newFiles]);
+    setSourceVideos(prev => [...prev, ...newFiles.map(({ file, ...rest }) => rest)]);
 
-    newFiles.forEach(newFile => {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += Math.floor(Math.random() * 25) + 15;
-        if (progress >= 100) {
-          clearInterval(interval);
-          setSourceVideos(prev => prev.map(f => f.id === newFile.id ? { ...f, progress: 100, status: 'completed' as const } : f));
-        } else {
-          setSourceVideos(prev => prev.map(f => f.id === newFile.id ? { ...f, progress } : f));
-        }
-      }, 150);
+    newFiles.forEach(async (newFile) => {
+      try {
+        const assetUrl = await uploadFileToServer(newFile.file, (pct) => {
+          setSourceVideos(prev => prev.map(f => f.id === newFile.id ? { ...f, progress: pct } : f));
+        });
+        setSourceVideos(prev => prev.map(f => f.id === newFile.id ? { ...f, progress: 100, status: 'completed' as const, url: assetUrl } : f));
+      } catch (err: any) {
+        console.error('Source video upload failed:', err);
+        setSourceVideos(prev => prev.map(f => f.id === newFile.id ? { ...f, status: 'error' as const } : f));
+        showToast(`Falha ao enviar "${newFile.name}": ${err.message || 'erro desconhecido'}`, 'error');
+      }
     });
   };
 
@@ -208,9 +250,14 @@ export const DashboardOverview: React.FC = () => {
     let blocked = false;
 
     for (const video of sourceVideos) {
+      if (!video.url) {
+        blocked = true;
+        continue;
+      }
+
       const projectName = `Render [Customizado] - ${video.name.replace(/\.[^/.]+$/, "")}`;
       const description = `Vídeo renderizado via Pipeline Inteligente. Moldura: Customizada (${videoZone.width}x${videoZone.height}).`;
-      
+
       const createdProject = createProject(
         projectName,
         description,
@@ -219,8 +266,8 @@ export const DashboardOverview: React.FC = () => {
         {
           layoutPosition: 'custom',
           videoZone: { ...videoZone },
-          backgroundVideo: templateFile ? templateFile.name : undefined,
-          mainVideo: video.name
+          backgroundImageUrl: templateFile?.url,
+          backgroundVideoUrl: video.url
         }
       );
 
@@ -1166,6 +1213,8 @@ export const DashboardOverview: React.FC = () => {
                                           <div className="bg-indigo-500 h-full" style={{ width: `${video.progress}%` }} />
                                         </div>
                                       </div>
+                                    ) : video.status === 'error' ? (
+                                      <span className="text-[9px] font-mono bg-red-950/30 text-red-400 px-1.5 py-0.5 border border-red-500/10 rounded font-bold">FALHOU</span>
                                     ) : (
                                       <span className="text-[9px] font-mono bg-emerald-950/30 text-emerald-400 px-1.5 py-0.5 border border-emerald-500/10 rounded font-bold">PRONTO</span>
                                     )}
@@ -1328,9 +1377,9 @@ export const DashboardOverview: React.FC = () => {
                   ) : flowStep === 3 ? (
                     <button
                       onClick={() => setFlowStep(4)}
-                      disabled={sourceVideos.length === 0 || sourceVideos.some((v) => v.status === 'uploading')}
+                      disabled={sourceVideos.length === 0 || sourceVideos.some((v) => v.status === 'uploading' || v.status === 'error')}
                       className={`py-2 px-5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                        sourceVideos.length === 0 || sourceVideos.some((v) => v.status === 'uploading')
+                        sourceVideos.length === 0 || sourceVideos.some((v) => v.status === 'uploading' || v.status === 'error')
                           ? 'bg-gray-900 text-gray-600 border border-gray-950 cursor-not-allowed'
                           : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20'
                       }`}
