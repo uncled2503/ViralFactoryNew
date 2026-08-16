@@ -282,17 +282,17 @@ export const RenderingsManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Render History list container */}
-      <motion.div 
-        className="space-y-4"
+      {/* Render History grid container */}
+      <motion.div
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
         variants={containerVariants}
         initial="hidden"
         animate="show"
       >
         {filteredTasks.length === 0 ? (
-          <motion.div 
+          <motion.div
             variants={rowVariants}
-            className="glass-panel rounded-2xl p-16 text-center border border-gray-900"
+            className="col-span-full glass-panel rounded-2xl p-16 text-center border border-gray-900"
           >
             <Film className="w-12 h-12 text-gray-700 mx-auto mb-4 animate-pulse" />
             <h3 className="text-sm font-semibold text-gray-300">Nenhum pipeline correspondente</h3>
@@ -303,135 +303,135 @@ export const RenderingsManager: React.FC = () => {
         ) : (
           filteredTasks.map((task) => {
             const isLogOpen = !!expandedLogs[task.id];
+            const hasThumbnail = !!task.thumbnailUrl;
+            const hasVideoFallback = task.status === 'completed' && !!task.outputUrl;
+
             return (
               <motion.div
                 key={task.id}
                 variants={rowVariants}
-                className="bg-gray-950 border border-gray-900/80 rounded-2xl overflow-hidden transition-all duration-300 hover:border-gray-800"
+                className="col-span-1 bg-gray-950 border border-gray-900/80 rounded-2xl overflow-hidden transition-all duration-300 hover:border-gray-800 flex flex-col"
               >
-                {/* Job Info Layout Grid */}
-                <div className="p-5 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                  
-                  {/* Title & Date */}
-                  <div className="md:col-span-4 min-w-0">
-                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-widest block">JOB ID: {task.id}</span>
-                    <h3 className="font-bold text-gray-200 truncate mt-0.5 text-sm">{task.projectName}</h3>
-                    <p className="text-[10px] text-gray-500 font-mono mt-1 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-gray-600" />
-                      Iniciado: {new Date(task.createdAt).toLocaleTimeString('pt-BR')}
-                    </p>
-                  </div>
-
-                  {/* Template Details */}
-                  <div className="md:col-span-3">
-                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-widest block">Template Utilizado</span>
-                    <span className="text-xs text-gray-300 truncate mt-0.5 block font-semibold">{task.templateName}</span>
-                    <span className="text-[9px] font-mono text-gray-500 block mt-1">Duração: {task.duration}</span>
-                  </div>
-
-                  {/* Status & Live Progress */}
-                  <div className="md:col-span-3">
-                    <div className="flex justify-between items-center mb-1.5">
-                      {getStatusBadge(task.status)}
-                      {task.status === 'processing' && (
-                        <span className="text-[10px] font-mono font-bold text-indigo-400">{task.progress}%</span>
+                {/* 9:16 Preview */}
+                <div className="relative w-full aspect-[9/16] bg-gray-900 overflow-hidden">
+                  {hasThumbnail ? (
+                    <img
+                      src={task.thumbnailUrl}
+                      alt={task.projectName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : hasVideoFallback ? (
+                    <video
+                      src={task.outputUrl}
+                      muted
+                      preload="metadata"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      {task.status === 'processing' ? (
+                        <RefreshCw className="w-8 h-8 text-gray-700 animate-spin" />
+                      ) : task.status === 'failed' ? (
+                        <XCircle className="w-8 h-8 text-red-900" />
+                      ) : (
+                        <Film className="w-8 h-8 text-gray-700" />
                       )}
                     </div>
+                  )}
 
-                    {/* Progress slider bar */}
+                  {/* Status + progress overlay */}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-2.5 pt-6 flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      {getStatusBadge(task.status)}
+                      {task.status === 'processing' && (
+                        <span className="text-[10px] font-mono font-bold text-indigo-300">{task.progress}%</span>
+                      )}
+                    </div>
                     {task.status === 'processing' ? (
-                      <div className="w-full bg-gray-900 h-1.5 rounded-full overflow-hidden border border-gray-850">
+                      <div className="w-full bg-black/50 h-1 rounded-full overflow-hidden">
                         <div
-                          className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(99,102,241,0.5)]"
+                          className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-full rounded-full transition-all duration-300"
                           style={{ width: `${task.progress}%` }}
                         />
                       </div>
-                    ) : task.status === 'completed' ? (
-                      <div className="w-full bg-gray-900 h-1.5 rounded-full overflow-hidden border border-gray-850">
-                        <div className="bg-emerald-500 h-full rounded-full w-full" />
-                      </div>
                     ) : task.status === 'queued' ? (
-                      <div className="w-full bg-gray-900 h-1.5 rounded-full overflow-hidden border border-gray-850">
-                        <div className="bg-yellow-500/20 h-full rounded-full w-1/12 animate-pulse" />
+                      <div className="w-full bg-black/50 h-1 rounded-full overflow-hidden">
+                        <div className="bg-yellow-500/40 h-full rounded-full w-1/12 animate-pulse" />
                       </div>
-                    ) : (
-                      <div className="w-full bg-gray-900 h-1.5 rounded-full overflow-hidden border border-gray-850">
-                        <div className="bg-red-500 h-full rounded-full w-full" />
-                      </div>
-                    )}
+                    ) : null}
                   </div>
+                </div>
 
-                  {/* Output Controls & Actions */}
-                  <div className="md:col-span-2 flex items-center justify-end gap-2.5 self-stretch md:self-auto border-t md:border-t-0 border-gray-900 pt-3 md:pt-0">
+                {/* Compact info block */}
+                <div className="p-3 min-w-0">
+                  <h3 className="font-bold text-gray-200 truncate text-xs">{task.projectName}</h3>
+                  <p className="text-[10px] text-gray-500 truncate mt-0.5">{task.templateName}</p>
+                  <p className="text-[9px] text-gray-600 font-mono mt-1 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {task.duration}
+                    {task.status === 'completed' && task.renderTime && (
+                      <span className="text-indigo-500">· {task.renderTime}</span>
+                    )}
+                  </p>
+                </div>
+
+                {/* Actions footer */}
+                <div className="mt-auto p-2.5 pt-0 flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={() => toggleLog(task.id)}
-                      className={`p-2 rounded-xl border text-xs font-mono font-bold transition flex items-center gap-1 cursor-pointer ${
-                        isLogOpen 
-                          ? 'bg-indigo-950/20 border-indigo-500/30 text-indigo-400' 
-                          : 'bg-gray-950 border-gray-900 hover:border-gray-850 text-gray-400 hover:text-gray-200'
+                      className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                        isLogOpen
+                          ? 'bg-indigo-950/20 border-indigo-500/30 text-indigo-400'
+                          : 'bg-gray-950 border-gray-900 hover:border-gray-850 text-gray-500 hover:text-gray-200'
                       }`}
                       title="Console Logs"
                     >
                       <Terminal className="w-3.5 h-3.5" />
-                      <span>LOGS</span>
                     </button>
-
                     <button
                       onClick={() => setSelectedDebugTask(task)}
-                      className="p-2 rounded-xl bg-gray-950 border border-gray-900 hover:border-indigo-500/40 hover:text-indigo-400 text-xs font-mono font-bold transition flex items-center gap-1 cursor-pointer"
+                      className="p-1.5 rounded-lg bg-gray-950 border border-gray-900 hover:border-indigo-500/40 hover:text-indigo-400 text-gray-500 transition cursor-pointer"
                       title="Ver Log de Telemetria e FFmpeg"
                     >
                       <Activity className="w-3.5 h-3.5" />
-                      <span>VER LOG</span>
                     </button>
-
                     <button
                       onClick={() => duplicateRenderingTask(task.id)}
-                      className="p-2.5 rounded-xl bg-gray-950 border border-gray-900 hover:border-gray-800 text-gray-400 hover:text-gray-200 transition cursor-pointer"
+                      className="p-1.5 rounded-lg bg-gray-950 border border-gray-900 hover:border-gray-800 text-gray-500 hover:text-gray-200 transition cursor-pointer"
                       title="Duplicar Renderização"
                     >
-                      <Copy className="w-4 h-4" />
+                      <Copy className="w-3.5 h-3.5" />
                     </button>
-
                     <button
                       onClick={() => {
                         setTaskToDelete(task.id);
                         setIsConfirmOpen(true);
                       }}
-                      className="p-2.5 rounded-xl bg-gray-950 border border-gray-900 hover:border-red-950 hover:text-red-400 text-gray-500 transition cursor-pointer"
+                      className="p-1.5 rounded-lg bg-gray-950 border border-gray-900 hover:border-red-950 hover:text-red-400 text-gray-600 transition cursor-pointer"
                       title="Excluir Renderização"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
-
-                    {task.status === 'completed' && task.outputUrl ? (
-                      <a
-                        href={task.outputUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs shadow-md shadow-indigo-600/10 flex items-center justify-center transition cursor-pointer"
-                        title="Baixar Vídeo Codificado (ZIP)"
-                      >
-                        <Download className="w-4 h-4" />
-                      </a>
-                    ) : (
-                      <button
-                        disabled
-                        className="p-2.5 rounded-xl bg-gray-900 text-gray-700 border border-gray-850 cursor-not-allowed"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                    )}
                   </div>
 
-                </div>
-
-                {/* Honest Pipeline metadata displayed if processing or completed */}
-                <div className="px-5 py-2.5 bg-gray-950 border-t border-b border-gray-900/60 grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px] font-mono text-gray-500">
-                  <span>ID do Projeto: <strong className="text-gray-400">{task.projectId}</strong></span>
-                  <span>Duração: <strong className="text-gray-400">{task.duration}</strong></span>
-                  <span>Formato: <strong className="text-gray-400">MP4 (H.264)</strong></span>
-                  <span>Tempo Processado: <strong className="text-indigo-400">{task.renderTime || 'Calculando...'}</strong></span>
+                  {task.status === 'completed' && task.outputUrl ? (
+                    <a
+                      href={`${task.outputUrl}${task.outputUrl.includes('?') ? '&' : '?'}download=${encodeURIComponent(task.projectName || 'video')}.mp4`}
+                      rel="noreferrer"
+                      className="p-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-md shadow-indigo-600/10 flex items-center justify-center transition cursor-pointer"
+                      title="Baixar Vídeo Codificado"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </a>
+                  ) : (
+                    <button
+                      disabled
+                      className="p-1.5 rounded-lg bg-gray-900 text-gray-700 border border-gray-850 cursor-not-allowed"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Collapsible Console Log Terminal Container */}
@@ -443,13 +443,12 @@ export const RenderingsManager: React.FC = () => {
                       exit={{ height: 0 }}
                       className="overflow-hidden bg-black"
                     >
-                      <div className="p-5 font-mono text-[10px] text-gray-400 space-y-1.5 border-t border-gray-900">
-                        <div className="flex justify-between text-gray-600 text-[9px] uppercase font-bold tracking-widest mb-1 pb-1 border-b border-gray-950">
-                          <span>LOGS DE COMPOSIÇÃO E EXPORTAÇÃO</span>
-                          <span>Status do Processamento</span>
+                      <div className="p-3 font-mono text-[9px] text-gray-400 space-y-1.5 border-t border-gray-900 max-h-48 overflow-y-auto">
+                        <div className="flex justify-between text-gray-600 text-[8px] uppercase font-bold tracking-widest mb-1 pb-1 border-b border-gray-950">
+                          <span>LOGS</span>
                         </div>
                         {getCompileLogs(task).map((line, idx) => (
-                          <div key={idx} className="flex gap-2 font-mono leading-relaxed">
+                          <div key={idx} className="flex gap-1.5 font-mono leading-relaxed">
                             <span className="text-indigo-900 shrink-0 select-none">❯</span>
                             <span className={line.includes('[Error]') || line.includes('error') ? 'text-red-400' : line.startsWith('  ') ? 'text-amber-400 font-bold font-mono break-all bg-gray-900/40 p-1.5 rounded border border-gray-900 mt-1 block w-full' : 'text-gray-500'}>
                               {line}
