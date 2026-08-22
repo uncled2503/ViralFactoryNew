@@ -26,6 +26,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Vite needs these DURING the image build (they get baked into the static
+      # JS bundle) — plain `environment:` below only reaches the running container,
+      # which is too late for Vite.
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-https://your-project-id.supabase.co}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
     container_name: viralfactory-coordinator
     ports:
       - "3000:3000"
@@ -38,6 +44,7 @@ services:
       - REDIS_URL=redis://redis:6379
       # Set your API keys in a local .env file before running
       - VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-https://your-project-id.supabase.co}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:

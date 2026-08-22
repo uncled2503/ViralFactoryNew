@@ -14,6 +14,13 @@ RUN npm ci
 # Copy full application codebase
 COPY . .
 
+# Vite bakes these into the static JS bundle at build time (they're not readable
+# at container runtime), so they must arrive as build args, not just env vars.
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 # Build the React static frontend and compile the Express backend bundle via esbuild
 RUN npm run build
 
