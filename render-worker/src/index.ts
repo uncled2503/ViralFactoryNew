@@ -18,6 +18,7 @@ const API_URL = process.env.API_URL || 'http://localhost:3000';
 const WS_URL = process.env.WS_URL || 'ws://localhost:3000/ws/worker';
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
 const WORKER_ID = process.env.WORKER_ID || `worker-${os.hostname().toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.floor(Math.random() * 1000)}`;
+const WORKER_SECRET = process.env.WORKER_SECRET || '';
 
 console.log('=====================================================');
 console.log(`🚀 STARTING VIRAL FACTORY DISTRIBUTED RENDER WORKER`);
@@ -217,6 +218,7 @@ function connect() {
     const stats = getSystemStats();
     sendEvent('register', {
       id: WORKER_ID,
+      secret: WORKER_SECRET,
       cores: stats.cpuCores,
       ram: Math.round(stats.ramTotalMb / 1024), // GB
       gpu: stats.cpuModel,

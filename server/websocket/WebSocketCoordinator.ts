@@ -104,12 +104,22 @@ export class WebSocketCoordinator {
           }
 
           if (type === 'register') {
+            // Opt-in shared-secret check: only enforced when WORKER_SECRET is set server-side,
+            // so existing trusted-network deployments (docker-compose, same-host) keep working
+            // unchanged. Required once a worker connects over the public internet.
+            const requiredSecret = process.env.WORKER_SECRET;
+            if (requiredSecret && payload?.secret !== requiredSecret) {
+              console.warn(`[WebSocketCoordinator] Rejected worker registration from ${ip}: invalid or missing WORKER_SECRET.`);
+              ws.close(4001, 'Unauthorized: invalid worker secret');
+              return;
+            }
+
             const success = WorkerManager.registerWorker(connection, payload);
             if (success) {
               registeredId = payload.id;
               console.log(`[WebSocketCoordinator] Worker successfully registered: "${registeredId}" from ${ip}`);
             }
-          } 
+          }
           else if (type === 'heartbeat') {
             if (!registeredId) return;
             WorkerManager.updateHeartbeat(registeredId, payload);
