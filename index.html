@@ -1,14 +1,64 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Viral Factory</title>
+
+    <!-- Primary SEO -->
+    <title>Viral Factory — Vídeos em Lote a partir de um Template</title>
+    <meta name="description" content="Envie um template, defina onde o vídeo entra e processe o lote inteiro em minutos. A Viral Factory aplica seu template a dezenas de vídeos automaticamente." />
+    <link rel="canonical" href="https://viralfactory.site/" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#03050a" />
+
+    <!-- Open Graph / Facebook, LinkedIn, WhatsApp, Discord -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://viralfactory.site/" />
+    <meta property="og:site_name" content="Viral Factory" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:title" content="Viral Factory — Vídeos em Lote a partir de um Template" />
+    <meta property="og:description" content="Envie um template, defina onde o vídeo entra e processe o lote inteiro em minutos. A Viral Factory aplica seu template a dezenas de vídeos automaticamente." />
+    <meta property="og:image" content="https://viralfactory.site/assets/logocomnome2.png" />
+
+    <!-- Twitter / X Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Viral Factory — Vídeos em Lote a partir de um Template" />
+    <meta name="twitter:description" content="Envie um template, defina onde o vídeo entra e processe o lote inteiro em minutos. A Viral Factory aplica seu template a dezenas de vídeos automaticamente." />
+    <meta name="twitter:image" content="https://viralfactory.site/assets/logocomnome2.png" />
+
     <link rel="icon" type="image/jpeg" href="/src/assets/images/logo_symbol_new_1782894227400.jpg" />
+
+    <!-- Structured data: brand entity -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Viral Factory",
+      "url": "https://viralfactory.site/",
+      "logo": "https://viralfactory.site/assets/logocomnome2.png"
+    }
+    </script>
+
+    <!-- Structured data: the product itself, with real plan prices only -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Viral Factory",
+      "url": "https://viralfactory.site/",
+      "description": "Plataforma para renderizar em lote vídeos verticais a partir de um template configurado uma única vez.",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Web",
+      "offers": [
+        { "@type": "Offer", "name": "Starter", "price": "97.00", "priceCurrency": "BRL", "url": "https://viralfactory.site/#precos" },
+        { "@type": "Offer", "name": "Creator Pro", "price": "197.00", "priceCurrency": "BRL", "url": "https://viralfactory.site/#precos" },
+        { "@type": "Offer", "name": "Business", "price": "397.00", "priceCurrency": "BRL", "url": "https://viralfactory.site/#precos" }
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

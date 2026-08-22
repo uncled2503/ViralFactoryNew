@@ -1,0 +1,21 @@
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /register
+Allow: /recovery
+
+# Everything past this point requires a logged-in session and renders the same
+# marketing landing page for anonymous visitors/crawlers anyway — disallowed to
+# avoid duplicate-content indexing and wasted crawl budget.
+Disallow: /dashboard
+Disallow: /projects
+Disallow: /templates
+Disallow: /renderings
+Disallow: /storage
+Disallow: /subscription
+Disallow: /settings
+Disallow: /project/
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://viralfactory.site/sitemap.xml
