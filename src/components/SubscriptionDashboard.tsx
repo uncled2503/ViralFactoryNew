@@ -7,6 +7,8 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { PLANS_DETAILS, PLAN_LIMITS_MAP, getPlanLimits } from '../config/plans';
 import { isAdminRole } from '../utils/rbac';
+import { EmptyState } from './ui/EmptyState';
+import { PageHeader } from './ui/PageHeader';
 import { PlanTier, BillingCycle, PlanLimits } from '../types';
 import { 
   CreditCard, 
@@ -24,7 +26,6 @@ import {
   Clock,
   Zap,
   Film,
-  Award,
   QrCode,
   Copy,
   Check,
@@ -33,15 +34,15 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 export const SubscriptionDashboard: React.FC = () => {
-  const { 
-    user, 
-    changeSubscription, 
-    cancelSubscription, 
-    invoices, 
-    triggerMockRenewal,
+  const {
+    user,
+    changeSubscription,
+    cancelSubscription,
+    invoices,
     projects,
     templates,
     renderingTasks,
+    showToast
   } = useApp();
 
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
@@ -238,7 +239,7 @@ export const SubscriptionDashboard: React.FC = () => {
 
   const itemVariants = {
     hidden: { opacity: 0, y: 15 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100, damping: 15 } }
+    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 100, damping: 15 } }
   };
 
   return (
@@ -248,30 +249,10 @@ export const SubscriptionDashboard: React.FC = () => {
       initial="hidden"
       animate="show"
     >
-      {/* 1. PAGE HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            <Award className="w-5 h-5 text-indigo-400" />
-            <span>Assinatura & Faturamento</span>
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Controle cotas de processamento, simule pagamentos via Stripe e analise o ROI obtido com nossa automação.
-          </p>
-        </div>
-
-        {/* Rapid Testing Simulation controls */}
-        <div className="flex items-center gap-2 self-start md:self-auto">
-          <button
-            onClick={triggerMockRenewal}
-            className="flex items-center gap-1.5 text-[10px] bg-gray-950 border border-gray-900 hover:border-gray-850 hover:text-white px-3 py-2 rounded-xl text-gray-400 transition-all font-mono shadow-sm cursor-pointer"
-            title="Simula o recebimento do webhook de pagamento do Stripe, renovando sua franquia."
-          >
-            <RefreshCw className="w-3.5 h-3.5 text-emerald-500 animate-spin" />
-            <span>Simular Renovação</span>
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Assinatura & Faturamento"
+        subtitle="Controle suas cotas de processamento e analise o ROI obtido com nossa automação."
+      />
 
       {/* 2. VALUE-FIRST BILLING DASHBOARD: DIRECT BUSINESS VALUE DELIVERED */}
       <motion.div 
@@ -362,10 +343,7 @@ export const SubscriptionDashboard: React.FC = () => {
         <div className="bg-gray-950 border border-gray-900 rounded-xl p-5">
           <p className="text-[9px] font-mono text-gray-500 uppercase tracking-wider">Investimento</p>
           <h2 className="text-lg font-bold text-white mt-1">
-            {user.subscription === 'Free' && 'R$ 0,00'}
-            {user.subscription === 'Starter' && 'R$ 97,00'}
-            {user.subscription === 'Pro' && 'R$ 197,00'}
-            {user.subscription === 'Business' && 'R$ 397,00'}
+            R$ {currentPlan.priceMonthly.toFixed(2).replace('.', ',')}
             <span className="text-[10px] text-gray-500 font-normal"> /mês</span>
           </h2>
           <p className="text-[10px] text-gray-400 mt-2 font-mono">
@@ -589,8 +567,8 @@ export const SubscriptionDashboard: React.FC = () => {
         </div>
 
         {invoices.length === 0 ? (
-          <div className="p-12 text-center text-gray-500 text-xs font-mono">
-            Nenhuma fatura encontrada neste registro.
+          <div className="p-8">
+            <EmptyState icon={Receipt} title="Nenhuma fatura ainda" description="Suas faturas aparecerão aqui após a primeira cobrança." />
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -624,14 +602,14 @@ export const SubscriptionDashboard: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3 px-6 text-right">
-                      <a 
-                        href="#" 
-                        onClick={(e) => { e.preventDefault(); alert('Iniciando download simulado da fatura em PDF...'); }}
-                        className="inline-flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 hover:underline font-mono"
+                      <button
+                        type="button"
+                        onClick={() => showToast('Download de recibo em PDF ainda não está disponível.', 'info')}
+                        className="inline-flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 hover:underline font-mono cursor-pointer"
                       >
                         <FileText className="w-3.5 h-3.5" />
                         PDF Recibo
-                      </a>
+                      </button>
                     </td>
                   </tr>
                 ))}

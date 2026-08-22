@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Auth } from './components/Auth';
 import { Sidebar } from './components/Sidebar';
@@ -25,6 +25,12 @@ import { LandingPage } from './components/LandingPage';
 const AppContent: React.FC = () => {
   const { user, activeTab, setActiveTab, isImpersonating, stopImpersonating } = useApp();
   const { path, navigate } = useRouter();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Close the mobile sidebar drawer whenever the active tab changes
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [activeTab]);
 
   // Redirect root path '/' to '/dashboard' once authenticated
   useEffect(() => {
@@ -104,23 +110,23 @@ const AppContent: React.FC = () => {
       )}
 
       <div className="flex-1 flex">
-        {/* Permanent Premium Left Sidebar */}
-        <Sidebar />
+        {/* Left Sidebar — fixed on desktop, off-canvas drawer below lg */}
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
         {/* Main Workspace Frame */}
-        <div className="flex-1 flex flex-col min-h-screen pl-64">
+        <div className="flex-1 flex flex-col min-h-screen lg:pl-64 w-full min-w-0">
           {/* Sticky Header info bar */}
-          <Header />
+          <Header onMenuClick={() => setSidebarOpen(true)} />
 
           {/* Dynamic page content wrapped with elegant padding and max-width bounds */}
-          <main className="flex-1 p-8 max-w-7xl w-full mx-auto relative z-10">
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto relative z-10 overflow-x-hidden">
             {renderActiveTab()}
           </main>
 
           {/* Footer info bar */}
-          <footer className="h-12 border-t border-gray-900/40 flex items-center justify-between px-8 text-[10px] font-mono text-gray-600">
+          <footer className="h-12 border-t border-gray-900/40 flex items-center justify-between px-4 sm:px-8 text-[10px] font-mono text-gray-600">
             <span>Viral Factory © 2026</span>
-            <span>Plataforma de Produção e Edição de Vídeos</span>
+            <span className="hidden sm:inline">Plataforma de Produção e Edição de Vídeos</span>
           </footer>
         </div>
       </div>

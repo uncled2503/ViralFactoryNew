@@ -7,6 +7,9 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { StorageFile, StorageFolder } from '../types';
 import { ConfirmModal } from './ConfirmModal';
+import { uploadFileToServer } from '../utils/uploadFile';
+import { EmptyState } from './ui/EmptyState';
+import { PageHeader } from './ui/PageHeader';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   HardDrive,
@@ -19,11 +22,9 @@ import {
   Trash2,
   Upload,
   Search,
-  Plus,
   ArrowLeft,
   Calendar,
   Layers,
-  Sparkles,
   CheckCircle2,
   X,
   LayoutGrid,
@@ -36,7 +37,6 @@ import {
   FolderPlus,
   ChevronRight,
   ExternalLink,
-  RefreshCw,
   Edit3
 } from 'lucide-react';
 
@@ -61,8 +61,48 @@ export const StorageManager: React.FC = () => {
   const [fileTypeFilter, setFileTypeFilter] = useState<'all' | 'video' | 'audio' | 'image' | 'font'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>('name');
 
-  // Drag and Drop support
+  // Real file uploads — signed URL + PUT, same pattern used by the project wizard.
+  // Every upload here actually sends the file's bytes to the server; the resulting
+  // record only exists once that succeeds.
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<Array<{
+    id: string;
+    name: string;
+    sizeLabel: string;
+    type: StorageFile['type'];
+    progress: number;
+    status: 'uploading' | 'completed' | 'error';
+  }>>([]);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+
+  const inferFileType = (file: File): StorageFile['type'] => {
+    if (file.type.startsWith('image/')) return 'image';
+    if (file.type.startsWith('audio/')) return 'audio';
+    if (file.name.endsWith('.json')) return 'font';
+    return 'video';
+  };
+
+  const startRealUpload = (files: File[], folderId: string) => {
+    files.forEach((file) => {
+      const id = `up-${Math.random().toString(36).substr(2, 9)}`;
+      const sizeLabel = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
+      const type = inferFileType(file);
+      setUploadQueue(prev => [...prev, { id, name: file.name, sizeLabel, type, progress: 0, status: 'uploading' }]);
+
+      uploadFileToServer(file, (pct) => {
+        setUploadQueue(prev => prev.map(u => (u.id === id ? { ...u, progress: pct } : u)));
+      })
+        .then((assetUrl) => {
+          uploadFileToFolder(folderId, file.name, sizeLabel, type, assetUrl);
+          setUploadQueue(prev => prev.map(u => (u.id === id ? { ...u, progress: 100, status: 'completed' } : u)));
+        })
+        .catch((err: any) => {
+          console.error('Storage upload failed:', err);
+          setUploadQueue(prev => prev.map(u => (u.id === id ? { ...u, status: 'error' } : u)));
+          showToast(`Falha ao enviar "${file.name}": ${err.message || 'erro desconhecido'}`, 'error');
+        });
+    });
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -79,17 +119,7 @@ export const StorageManager: React.FC = () => {
     if (!selectedFolderId) return;
 
     const files = Array.from(e.dataTransfer.files) as File[];
-    if (files.length > 0) {
-      files.forEach(f => {
-        const sizeMB = (f.size / (1024 * 1024)).toFixed(1) + ' MB';
-        let type: StorageFile['type'] = 'video';
-        if (f.type.startsWith('image/')) type = 'image';
-        else if (f.type.startsWith('audio/')) type = 'audio';
-        else if (f.name.endsWith('.json')) type = 'font';
-        
-        uploadFileToFolder(selectedFolderId, f.name, sizeMB, type);
-      });
-    }
+    if (files.length > 0) startRealUpload(files, selectedFolderId);
   };
 
   // File Preview Modal Overlay
@@ -117,11 +147,6 @@ export const StorageManager: React.FC = () => {
 
   // Upload modal state
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [uploadList, setUploadList] = useState<{ name: string; type: StorageFile['type']; size: string }[]>([
-    { name: '', type: 'video', size: '12.4 MB' }
-  ]);
-  const [isSimulatingUploadBatch, setIsSimulatingUploadBatch] = useState(false);
-  const [batchProgress, setBatchProgress] = useState<number | null>(null);
 
   const selectedFolder = folders.find(f => f.id === selectedFolderId);
 
@@ -185,70 +210,11 @@ export const StorageManager: React.FC = () => {
     }
   };
 
-  const addUploadRow = () => {
-    setUploadList([...uploadList, { name: '', type: 'video', size: '5.5 MB' }]);
-  };
-
-  const removeUploadRow = (index: number) => {
-    if (uploadList.length === 1) return;
-    setUploadList(uploadList.filter((_, idx) => idx !== index));
-  };
-
-  const handleRowChange = (index: number, field: string, value: any) => {
-    setUploadList(uploadList.map((item, idx) => {
-      if (idx === index) {
-        let size = item.size;
-        if (field === 'type') {
-          if (value === 'video') size = '15.2 MB';
-          else if (value === 'audio') size = '3.5 MB';
-          else if (value === 'image') size = '420 KB';
-          else size = '50 KB';
-        }
-        return { ...item, [field]: value, size };
-      }
-      return item;
-    }));
-  };
-
-  const handleBatchUploadSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedFolderId) return;
-
-    setIsSimulatingUploadBatch(true);
-    setBatchProgress(5);
-
-    const interval = setInterval(() => {
-      setBatchProgress(prev => {
-        if (prev === null) return null;
-        if (prev >= 100) {
-          clearInterval(interval);
-          setTimeout(() => {
-            // Commit all items in bulk
-            uploadList.forEach(item => {
-              if (!item.name) return;
-              let finalName = item.name;
-              const extensions: Record<string, string> = {
-                image: '.png',
-                video: '.mp4',
-                audio: '.mp3',
-                font: '.json'
-              };
-              if (!finalName.includes('.')) {
-                finalName += extensions[item.type] || '.bin';
-              }
-              uploadFileToFolder(selectedFolderId, finalName, item.size, item.type);
-            });
-
-            setUploadList([{ name: '', type: 'video', size: '12.4 MB' }]);
-            setIsSimulatingUploadBatch(false);
-            setBatchProgress(null);
-            setIsUploadOpen(false);
-          }, 800);
-          return 100;
-        }
-        return prev + 20;
-      });
-    }, 150);
+  const handleUploadInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && selectedFolderId) {
+      startRealUpload(Array.from(e.target.files), selectedFolderId);
+      e.target.value = '';
+    }
   };
 
   const getFilteredAndSortedFiles = () => {
@@ -298,49 +264,42 @@ export const StorageManager: React.FC = () => {
 
   const itemVariants = {
     hidden: { opacity: 0, y: 15 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100, damping: 15 } }
+    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 100, damping: 15 } }
   };
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header section with active action */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-gray-100 tracking-tight flex items-center gap-2">
-            <HardDrive className="w-5 h-5 text-indigo-400" />
-            <span>Mídias & Diretórios Cloud</span>
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Armazenamento de ativos inspirado em Dropbox/Google Drive. Carregue logos, fontes e gameplays de fundo em lote.
-          </p>
-        </div>
+      <PageHeader
+        title="Arquivos"
+        subtitle="Envie e organize templates, logos, fontes e vídeos de fundo em pastas."
+        action={
+          <div className="flex items-center gap-2">
+            {!selectedFolderId && (
+              <button
+                onClick={() => {
+                  setNewFolderName('');
+                  setNewFolderDesc('');
+                  setIsCreateFolderOpen(true);
+                }}
+                className="py-2.5 px-4 bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <FolderPlus className="w-4 h-4 text-indigo-400" />
+                <span>Nova Pasta</span>
+              </button>
+            )}
 
-        <div className="flex items-center gap-2">
-          {!selectedFolderId && (
-            <button
-              onClick={() => {
-                setNewFolderName('');
-                setNewFolderDesc('');
-                setIsCreateFolderOpen(true);
-              }}
-              className="py-2.5 px-4 bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto animate-in fade-in"
-            >
-              <FolderPlus className="w-4 h-4 text-indigo-400" />
-              <span>Nova Pasta</span>
-            </button>
-          )}
-
-          {selectedFolderId && (
-            <button
-              onClick={() => setIsUploadOpen(true)}
-              className="py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/10 transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-            >
-              <Upload className="w-4 h-4" />
-              <span>Upload em Lote</span>
-            </button>
-          )}
-        </div>
-      </div>
+            {selectedFolderId && (
+              <button
+                onClick={() => setIsUploadOpen(true)}
+                className="py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/10 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Upload em Lote</span>
+              </button>
+            )}
+          </div>
+        }
+      />
 
       {/* Directory Path Breadcrumbs */}
       <div className="flex items-center gap-2 text-xs font-mono py-2 px-3.5 bg-gray-950 border border-gray-900 rounded-xl max-w-max text-gray-400">
@@ -349,7 +308,7 @@ export const StorageManager: React.FC = () => {
           className="hover:text-white font-bold transition flex items-center gap-1"
         >
           <HardDrive className="w-3.5 h-3.5" />
-          <span>SaaS Drive</span>
+          <span>Arquivos</span>
         </button>
 
         {selectedFolder && (
@@ -536,14 +495,17 @@ export const StorageManager: React.FC = () => {
           {/* Files Render Grid/List */}
           <AnimatePresence mode="popLayout">
             {sortedFiles.length === 0 ? (
-              <motion.div 
-                className="glass-panel rounded-2xl p-16 text-center border border-gray-900"
+              <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
               >
-                <CheckCircle2 className="w-10 h-10 text-gray-700 mx-auto mb-3" />
-                <p className="text-xs text-gray-400 font-semibold">Nenhum arquivo encontrado</p>
-                <p className="text-[10px] text-gray-500 mt-1">Faça um upload em lote para injetar mídias simuladas.</p>
+                <EmptyState
+                  icon={Upload}
+                  title="Nenhum arquivo nesta pasta"
+                  description="Arraste arquivos para a área acima ou clique em Upload para enviá-los."
+                  actionLabel="Enviar Arquivos"
+                  onAction={() => setIsUploadOpen(true)}
+                />
               </motion.div>
             ) : viewMode === 'grid' ? (
               /* GRID VIEW MODE */
@@ -788,7 +750,7 @@ export const StorageManager: React.FC = () => {
             <div className="p-5 border-b border-gray-900/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Upload className="w-4 h-4 text-indigo-400" />
-                <h3 className="text-sm font-bold text-gray-100">Upload em Lote de Mídias (Dropbox SaaS)</h3>
+                <h3 className="text-sm font-bold text-gray-100">Enviar Arquivos</h3>
               </div>
               <button
                 onClick={() => setIsUploadOpen(false)}
@@ -799,108 +761,72 @@ export const StorageManager: React.FC = () => {
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleBatchUploadSubmit} className="p-5 space-y-4">
-              
-              {isSimulatingUploadBatch ? (
-                <div className="py-12 space-y-4 text-center">
-                  <div className="w-12 h-12 rounded-full bg-indigo-950/40 border border-indigo-500/20 flex items-center justify-center text-indigo-400 animate-spin mx-auto mb-3">
-                    <RefreshCw className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-xs font-bold text-gray-200">Sincronizando fatias em paralelo</h4>
-                  <div className="w-full max-w-xs bg-gray-900 h-2 rounded-full overflow-hidden border border-gray-850 mx-auto">
-                    <div 
-                      className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-150"
-                      style={{ width: `${batchProgress}%` }}
-                    />
-                  </div>
-                  <p className="text-[10px] text-gray-500 font-mono">Processando {uploadList.length} arquivos simultâneos...</p>
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                    {uploadList.map((row, idx) => (
-                      <div key={idx} className="grid grid-cols-12 gap-3 items-center bg-gray-900/30 p-2.5 border border-gray-900 rounded-xl relative group">
-                        {/* Filename Input */}
-                        <div className="col-span-6">
-                          <label className="block text-[8px] font-mono text-gray-500 uppercase tracking-wider mb-1">Nome do Arquivo {idx + 1}</label>
-                          <input
-                            type="text"
-                            required
-                            value={row.name}
-                            onChange={(e) => handleRowChange(idx, 'name', e.target.value)}
-                            placeholder="Ex: gameplay_subway"
-                            className="w-full px-2.5 py-1.5 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-200 outline-none"
-                          />
-                        </div>
+            <div className="p-5 space-y-4">
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => uploadInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center gap-2 cursor-pointer ${
+                  isDraggingOver
+                    ? 'border-indigo-500 bg-indigo-950/15 text-indigo-400'
+                    : 'border-gray-900 hover:border-gray-800 bg-gray-950/20 text-gray-500'
+                }`}
+              >
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleUploadInputChange}
+                />
+                <Upload className={`w-7 h-7 ${isDraggingOver ? 'animate-bounce text-indigo-400' : 'text-gray-600'}`} />
+                <span className="text-xs font-bold text-gray-300">Arraste arquivos aqui ou clique para selecionar</span>
+                <span className="text-[10px] text-gray-500 font-mono">Vídeos, áudios, imagens e fontes</span>
+              </div>
 
-                        {/* File Type */}
-                        <div className="col-span-4">
-                          <label className="block text-[8px] font-mono text-gray-500 uppercase tracking-wider mb-1">Tipo</label>
-                          <select
-                            value={row.type}
-                            onChange={(e) => handleRowChange(idx, 'type', e.target.value)}
-                            className="w-full px-2 py-1.5 bg-gray-950 border border-gray-900 rounded-lg text-xs text-gray-200 outline-none"
-                          >
-                            <option value="video">Vídeo (.mp4)</option>
-                            <option value="audio">Áudio (.mp3 / .wav)</option>
-                            <option value="image">Imagem (.png / .jpg)</option>
-                            <option value="font">Fonte / Config (.json)</option>
-                          </select>
-                        </div>
-
-                        {/* Size (Auto filled) */}
-                        <div className="col-span-2 flex items-center justify-between pt-4 pl-1">
-                          <span className="text-[10px] font-mono text-gray-500">{row.size}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeUploadRow(idx)}
-                            className="text-gray-500 hover:text-red-400 p-1 rounded-md transition"
-                            title="Remover linha"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+              {uploadQueue.length > 0 && (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {uploadQueue.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-900/40 border border-gray-900 text-xs">
+                      <div className="flex items-center gap-2 truncate max-w-[220px]">
+                        {getFileIcon(item.type)}
+                        <div className="truncate">
+                          <p className="font-semibold text-gray-200 truncate">{item.name}</p>
+                          <p className="text-[9px] text-gray-500 font-mono">{item.sizeLabel}</p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-
-                  {/* Add more files row button */}
-                  <button
-                    type="button"
-                    onClick={addUploadRow}
-                    className="py-1.5 px-3 bg-gray-900/60 hover:bg-gray-900 border border-gray-850 rounded-lg text-[10px] font-mono text-gray-300 hover:text-white transition flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Adicionar Arquivo à Fila</span>
-                  </button>
-
-                  {/* Terms text */}
-                  <p className="text-[10px] text-gray-500 leading-relaxed bg-indigo-950/15 border border-indigo-950/30 p-3 rounded-lg flex items-start gap-2">
-                    <Sparkles className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                    <span>
-                      Os arquivos informados serão integrados imediatamente no seu painel de mídias respeitando o limite de fatias.
-                    </span>
-                  </p>
-
-                  {/* Actions */}
-                  <div className="pt-3 border-t border-gray-900 flex items-center justify-end gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setIsUploadOpen(false)}
-                      className="px-3 py-1.5 hover:bg-gray-900 text-gray-400 rounded-lg text-xs font-semibold transition cursor-pointer"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md shadow-indigo-600/10 transition cursor-pointer"
-                    >
-                      Iniciar Upload do Lote
-                    </button>
-                  </div>
-                </>
+                      {item.status === 'uploading' ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-mono text-indigo-400 font-bold">{item.progress}%</span>
+                          <div className="w-12 bg-gray-900 h-1 rounded-full overflow-hidden">
+                            <div className="bg-indigo-500 h-full" style={{ width: `${item.progress}%` }} />
+                          </div>
+                        </div>
+                      ) : item.status === 'error' ? (
+                        <span className="text-[9px] font-mono bg-red-950/30 text-red-400 px-1.5 py-0.5 border border-red-500/10 rounded font-bold">FALHOU</span>
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
-            </form>
+
+              {/* Actions */}
+              <div className="pt-3 border-t border-gray-900 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUploadOpen(false);
+                    setUploadQueue([]);
+                  }}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md shadow-indigo-600/10 transition cursor-pointer"
+                >
+                  Concluir
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

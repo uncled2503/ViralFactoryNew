@@ -27,14 +27,14 @@ import {
   Smartphone, 
   Laptop, 
   RefreshCw,
-  Eye, 
+  Eye,
   EyeOff,
-  Settings,
   CheckCircle,
   AlertCircle,
   MapPin,
   FileText
 } from 'lucide-react';
+import { PageHeader } from './ui/PageHeader';
 
 export const ProfileSettings: React.FC = () => {
   const { user, updateUser, showToast } = useApp();
@@ -92,15 +92,9 @@ export const ProfileSettings: React.FC = () => {
   const [notifyNews, setNotifyNews] = useState(false);
   const [notifyMarketing, setNotifyMarketing] = useState(false);
 
-  // Security Sessions
-  const [sessions, setSessions] = useState([
-    { id: '1', device: 'Chrome no MacOS (Este navegador)', ip: '177.105.88.24', lastActive: 'Ativo agora', isCurrent: true, type: 'desktop' },
-    { id: '2', device: 'Safari no iPhone 15 Pro', ip: '177.105.88.24', lastActive: 'Há 4 horas', isCurrent: false, type: 'mobile' },
-    { id: '3', device: 'Firefox no Windows PC', ip: '189.44.112.5', lastActive: 'Há 2 dias', isCurrent: false, type: 'desktop' }
-  ]);
-
-  // Simulated Last Login
-  const lastLoginTime = '28/06/2026, 23:01 (Horário de Brasília)';
+  // Only the current session is something we can honestly claim to know client-side —
+  // there is no real multi-device session listing (would need a backend endpoint).
+  const currentSession = { id: 'current', device: 'Este navegador', lastActive: 'Ativo agora', isCurrent: true, type: 'desktop' as const };
 
   // Simulate initial skeleton loading for premium polish
   useEffect(() => {
@@ -324,16 +318,16 @@ export const ProfileSettings: React.FC = () => {
     }
   };
 
-  // Terminate other active sessions
+  // Terminate any other active sessions via Supabase Auth. This is a real action even
+  // though we don't display a list of other devices (no backend endpoint exists to
+  // enumerate them client-side) — it revokes them on the server regardless.
   const terminateOtherSessions = () => {
     if (isSupabaseConfigured() && supabaseClient) {
-      // In Supabase Auth, you can trigger global sign out to end all sessions
       supabaseClient.auth.signOut({ scope: 'others' })
         .then(({ error }) => {
           if (error) {
             showToast(error.message, 'error');
           } else {
-            setSessions(prev => prev.filter(s => s.isCurrent));
             showToast('Todas as outras sessões foram encerradas com sucesso!', 'success');
           }
         })
@@ -341,9 +335,7 @@ export const ProfileSettings: React.FC = () => {
           showToast('Erro ao revogar sessões no Supabase.', 'error');
         });
     } else {
-      // Offline Flow simulation
-      setSessions(prev => prev.filter(s => s.isCurrent));
-      showToast('Todas as outras sessões foram encerradas com sucesso!', 'success');
+      showToast('Encerrar outras sessões requer integração com o Supabase.', 'info');
     }
   };
 
@@ -502,16 +494,15 @@ export const ProfileSettings: React.FC = () => {
     }
   };
 
-  // Remove existing avatar photo and return to standard placeholder
+  // Remove existing avatar photo and fall back to the initials avatar
   const handleRemoveAvatar = async () => {
     if (!user) return;
-    const defaultAvatar = '/assets/paulodeborbamoraes.jpg';
-    
+
     setIsSaving(true);
     try {
       const updatedUser: User = {
         ...user,
-        avatarUrl: defaultAvatar
+        avatarUrl: undefined
       };
       await updateUser(updatedUser);
       showToast('Foto de perfil removida com sucesso.', 'success');
@@ -605,32 +596,31 @@ export const ProfileSettings: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-6"
           >
-            {/* Elegant Header with Auto-Saving status indicator */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-8">
-              <div>
-                <h1 className="text-2xl font-bold font-sans tracking-tight text-white flex items-center gap-2">
-                  <Settings className="w-6 h-6 text-indigo-400" />
-                  Gerenciamento de Conta
-                </h1>
-                <p className="text-gray-400 text-xs mt-1">
-                  Gerencie suas informações, preferências de notificações, fuso horário, segurança e integrações com o Supabase.
-                </p>
-              </div>
-
-              {/* Auto-saving pulse */}
-              <div className="flex items-center gap-2 text-xs font-mono text-gray-500">
-                {autoSavingIndicator ? (
-                  <span className="flex items-center gap-1.5 text-indigo-400">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    Salvando preferências...
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-emerald-400">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    Supabase integrado e sincronizado
-                  </span>
-                )}
-              </div>
+            <div className="mb-8">
+              <PageHeader
+                title="Gerenciamento de Conta"
+                subtitle="Gerencie suas informações, preferências de notificações, fuso horário e segurança."
+                action={
+                  <div className="flex items-center gap-2 text-xs font-mono text-gray-500">
+                    {autoSavingIndicator ? (
+                      <span className="flex items-center gap-1.5 text-indigo-400">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        Salvando preferências...
+                      </span>
+                    ) : isSupabaseConfigured() ? (
+                      <span className="flex items-center gap-1 text-emerald-400">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Sincronizado com o Supabase
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-gray-500">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Salvo neste navegador
+                      </span>
+                    )}
+                  </div>
+                }
+              />
             </div>
 
             {/* Main Workspace layout split into vertical bento layouts */}
@@ -1437,58 +1427,36 @@ export const ProfileSettings: React.FC = () => {
                             <Smartphone className="w-4 h-4 text-indigo-400" />
                             Segurança & Sessões Ativas
                           </h2>
-                          <p className="text-[10px] text-gray-500 font-mono mt-0.5">Último login feito em: {lastLoginTime}</p>
+                          <p className="text-[10px] text-gray-500 font-mono mt-0.5">
+                            Encerre sua sessão em qualquer outro dispositivo em que você esteja logado.
+                          </p>
                         </div>
 
-                        {sessions.length > 1 && (
-                          <button
-                            onClick={terminateOtherSessions}
-                            className="text-[10px] font-mono font-bold text-rose-400 hover:text-rose-300 transition cursor-pointer"
-                          >
-                            Encerrar Outras Sessões
-                          </button>
-                        )}
+                        <button
+                          onClick={terminateOtherSessions}
+                          className="text-[10px] font-mono font-bold text-rose-400 hover:text-rose-300 transition cursor-pointer shrink-0"
+                        >
+                          Encerrar Outras Sessões
+                        </button>
                       </div>
 
                       <div className="space-y-3">
-                        {sessions.map((session) => {
-                          const Icon = session.type === 'desktop' ? Laptop : Smartphone;
-                          return (
-                            <div 
-                              key={session.id}
-                              className="flex items-center justify-between p-3 rounded-xl bg-gray-950/30 border border-gray-900 hover:border-gray-800/80 transition"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="p-2 bg-gray-900 rounded-lg text-gray-400">
-                                  <Icon className="w-4 h-4" />
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-xs font-semibold text-gray-200">{session.device}</span>
-                                    {session.isCurrent && (
-                                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/25 text-emerald-400 font-bold">
-                                        ATUAL
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[10px] text-gray-500 font-mono mt-0.5">IP: {session.ip} • {session.lastActive}</p>
-                                </div>
-                              </div>
-
-                              {!session.isCurrent && (
-                                <button
-                                  onClick={() => {
-                                    setSessions(prev => prev.filter(s => s.id !== session.id));
-                                    showToast('Sessão encerrada com sucesso.', 'success');
-                                  }}
-                                  className="text-[10px] font-mono text-gray-500 hover:text-red-400 transition cursor-pointer"
-                                >
-                                  Revogar
-                                </button>
-                              )}
+                        <div className="flex items-center justify-between p-3 rounded-xl bg-gray-950/30 border border-gray-900">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-gray-900 rounded-lg text-gray-400">
+                              <Laptop className="w-4 h-4" />
                             </div>
-                          );
-                        })}
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-gray-200">{currentSession.device}</span>
+                                <span className="text-[8px] font-mono px-1.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/25 text-emerald-400 font-bold">
+                                  ATUAL
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-gray-500 font-mono mt-0.5">{currentSession.lastActive}</p>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

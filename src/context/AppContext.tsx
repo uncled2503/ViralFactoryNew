@@ -93,7 +93,7 @@ interface AppContextType {
   duplicateRenderingTask: (id: string) => void;
   
   // Storage System
-  uploadFileToFolder: (folderId: string, fileName: string, fileSize: string, fileType: StorageFile['type']) => boolean;
+  uploadFileToFolder: (folderId: string, fileName: string, fileSize: string, fileType: StorageFile['type'], fileUrl?: string) => boolean;
   deleteFileFromFolder: (folderId: string, fileId: string) => void;
   createFolder: (name: string, description?: string) => void;
   renameFolder: (id: string, name: string) => void;
@@ -1440,7 +1440,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
   };
 
   // Storage Functions with Limit Checks
-  const uploadFileToFolder = (folderId: string, fileName: string, fileSize: string, fileType: StorageFile['type']): boolean => {
+  const uploadFileToFolder = (folderId: string, fileName: string, fileSize: string, fileType: StorageFile['type'], fileUrl?: string): boolean => {
     const fileMB = parseSizeToMB(fileSize);
     if (!verifyAndTriggerLimitExceeded('storage', fileMB)) {
       return false;
@@ -1451,7 +1451,10 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       name: fileName,
       size: fileSize,
       type: fileType,
-      url: `/storage/${folderId === 'fld-uploads' || folderId === 'uploads' ? 'uploads' : folderId === 'fld-templates' || folderId === 'templates' ? 'templates' : 'rendered'}/${fileName}`,
+      // `fileUrl` is the real signed-upload URL for a file that was actually sent to
+      // the server; only fabricate a path when the caller has no real one (there are
+      // currently no such callers left, but this keeps the signature backward-compatible).
+      url: fileUrl || `/storage/${folderId === 'fld-uploads' || folderId === 'uploads' ? 'uploads' : folderId === 'fld-templates' || folderId === 'templates' ? 'templates' : 'rendered'}/${fileName}`,
       createdAt: new Date().toISOString()
     };
 

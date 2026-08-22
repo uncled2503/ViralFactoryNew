@@ -6,41 +6,23 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { LogoFull } from './Logo';
-import { isAdminRole } from '../utils/rbac';
-import {
-  LayoutDashboard,
-  Video,
-  FileVideo,
-  Film,
-  HardDrive,
-  LogOut,
-  Sparkles,
-  Layers,
-  ShieldCheck,
-  HelpCircle,
-  Settings
-} from 'lucide-react';
+import { NAV_ITEMS } from '../config/navigation';
+import { LogOut, Sparkles, ShieldCheck, X } from 'lucide-react';
 
-export const Sidebar: React.FC = () => {
-  const { activeTab, setActiveTab, logout, user, stats, renderingTasks } = useApp();
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
+  const { activeTab, setActiveTab, logout, user, renderingTasks } = useApp();
 
   const activeJobsCount = renderingTasks.filter(t => t.status === 'queued' || t.status === 'processing').length;
 
-  const navItems: Array<{ id: string; label: string; icon: any; badge?: number }> = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'projects', label: 'Projetos', icon: Video },
-    { id: 'templates', label: 'Templates', icon: Layers },
-    {
-      id: 'renderings',
-      label: 'Renderizações',
-      icon: Film,
-      badge: activeJobsCount > 0 ? activeJobsCount : undefined
-    },
-    { id: 'storage', label: 'Arquivos & Pastas', icon: HardDrive },
-    { id: 'subscription', label: 'Minha Assinatura', icon: Sparkles },
-    { id: 'profile-settings', label: 'Configurações', icon: Settings },
-    { id: 'help', label: 'Ajuda & Tutoriais', icon: HelpCircle }
-  ];
+  const navItems = NAV_ITEMS.map((item) => ({
+    ...item,
+    badge: item.id === 'renderings' && activeJobsCount > 0 ? activeJobsCount : undefined
+  }));
 
   if (!user) return null;
 
@@ -48,10 +30,29 @@ export const Sidebar: React.FC = () => {
   const limitPercent = Math.min(100, Math.round((user.usageCurrent / user.usageLimit) * 100));
 
   return (
-    <aside className="w-64 bg-gray-950/80 border-r border-gray-900 flex flex-col h-screen fixed top-0 left-0 z-20 backdrop-blur-xl">
+    <>
+      {/* Backdrop — mobile/tablet only, dismisses the drawer */}
+      {isOpen && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+        />
+      )}
+
+      <aside
+        className={`w-64 bg-gray-950/95 lg:bg-gray-950/80 border-r border-gray-900 flex flex-col h-screen fixed top-0 left-0 z-40 backdrop-blur-xl transition-transform duration-300 ${
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        } lg:translate-x-0`}
+      >
       {/* Brand logo */}
-      <div className="p-4 border-b border-gray-900/60 flex items-center justify-center overflow-hidden">
+      <div className="p-4 border-b border-gray-900/60 flex items-center justify-between overflow-hidden">
         <LogoFull iconSize={150} className="w-full justify-center" />
+        <button
+          onClick={onClose}
+          className="lg:hidden shrink-0 p-1.5 -mr-1 text-gray-500 hover:text-gray-200 rounded-lg hover:bg-gray-900 transition cursor-pointer"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Navigation list */}
@@ -62,7 +63,7 @@ export const Sidebar: React.FC = () => {
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id as any)}
+              onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer ${
                 isActive
                   ? 'bg-indigo-950/40 text-indigo-200 border border-indigo-500/20 shadow-sm shadow-indigo-500/5'
@@ -152,6 +153,7 @@ export const Sidebar: React.FC = () => {
           <LogOut className="w-4 h-4" />
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 };

@@ -29,9 +29,11 @@ import {
 } from 'lucide-react';
 import { RenderingTask, Project } from '../types';
 import { ConfirmModal } from './ConfirmModal';
+import { EmptyState } from './ui/EmptyState';
+import { PageHeader } from './ui/PageHeader';
 
 export const RenderingsManager: React.FC = () => {
-  const { renderingTasks, deleteRenderingTask, duplicateRenderingTask } = useApp();
+  const { renderingTasks, deleteRenderingTask, duplicateRenderingTask, setActiveTab } = useApp();
 
   // Confirm delete states
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -175,23 +177,15 @@ export const RenderingsManager: React.FC = () => {
 
   const rowVariants = {
     hidden: { opacity: 0, y: 12 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100, damping: 15 } }
+    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 100, damping: 15 } }
   };
 
   return (
     <div className="space-y-6 pb-12 animate-fade-in">
-      {/* Header section with active action */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-gray-100 tracking-tight flex items-center gap-2">
-            <Film className="w-5 h-5 text-indigo-400" />
-            <span>Fila de Geração de Vídeos</span>
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Acompanhe o andamento da criação, legendagem e exportação dos seus vídeos em lote.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Fila de Geração de Vídeos"
+        subtitle="Acompanhe o andamento da criação, legendagem e exportação dos seus vídeos em lote."
+      />
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-gray-900 bg-gray-950/30">
@@ -240,16 +234,21 @@ export const RenderingsManager: React.FC = () => {
         animate="show"
       >
         {filteredTasks.length === 0 ? (
-          <motion.div
-            variants={rowVariants}
-            className="col-span-full glass-panel rounded-2xl p-16 text-center border border-gray-900"
-          >
-            <Film className="w-12 h-12 text-gray-700 mx-auto mb-4 animate-pulse" />
-            <h3 className="text-sm font-semibold text-gray-300">Nenhum pipeline correspondente</h3>
-            <p className="text-xs text-gray-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
-              Tente alterar os termos da busca ou os filtros de status selecionados.
-            </p>
-          </motion.div>
+          renderingTasks.length === 0 ? (
+            <EmptyState
+              icon={Film}
+              title="Nenhuma renderização ainda"
+              description="Crie um projeto e inicie uma renderização para ver o progresso aqui."
+              actionLabel="Ir para Projetos"
+              onAction={() => setActiveTab('projects')}
+            />
+          ) : (
+            <EmptyState
+              icon={Search}
+              title="Nenhum pipeline correspondente"
+              description="Tente alterar os termos da busca ou os filtros de status selecionados."
+            />
+          )
         ) : (
           filteredTasks.map((task) => {
             const isLogOpen = !!expandedLogs[task.id];

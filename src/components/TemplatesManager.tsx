@@ -15,7 +15,6 @@ import {
   Edit3,
   Copy,
   X,
-  Sparkles,
   HelpCircle,
   Eye,
   CheckCircle2,
@@ -34,6 +33,8 @@ import {
   Upload
 } from 'lucide-react';
 import { TemplateEditor } from './TemplateEditor';
+import { EmptyState } from './ui/EmptyState';
+import { PageHeader } from './ui/PageHeader';
 
 export const TemplatesManager: React.FC = () => {
   const {
@@ -206,20 +207,10 @@ export const TemplatesManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Upper Banner Section */}
-      <div className="bg-gradient-to-r from-gray-950 via-indigo-950/20 to-gray-950 border border-gray-900 rounded-3xl p-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="max-w-2xl space-y-2">
-          <span className="text-[9px] font-mono font-bold px-2.5 py-1 rounded-full bg-indigo-950 text-indigo-400 border border-indigo-900 uppercase tracking-widest inline-flex items-center gap-1">
-            <Sparkles className="w-3 h-3 animate-pulse" />
-            Fórmula de Automação
-          </span>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Biblioteca de Templates</h1>
-          <p className="text-xs text-gray-400 leading-relaxed">
-            Desenhe a estrutura visual uma única vez e use-a para gerar centenas de shorts, reels e TikToks com vídeos de fundo dinâmicos, headlines, CTAs e legendas aplicadas automaticamente.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Biblioteca de Templates"
+        subtitle="Desenhe a estrutura visual uma única vez e use-a para gerar centenas de vídeos com fundos, textos e legendas aplicados automaticamente."
+      />
 
       {/* Toolbar / Filters Panel */}
       <div className="bg-gray-950 border border-gray-900/60 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
@@ -290,6 +281,23 @@ export const TemplatesManager: React.FC = () => {
       </div>
 
       {/* Grid of Templates */}
+      {filteredTemplates.length === 0 ? (
+        templates.length === 0 ? (
+          <EmptyState
+            icon={Layers}
+            title="Nenhum template criado ainda"
+            description="Crie uma estrutura visual reutilizável ou envie uma arte pronta para começar a gerar vídeos em lote."
+            actionLabel="Criar Template"
+            onAction={openCreateFlow}
+          />
+        ) : (
+          <EmptyState
+            icon={Search}
+            title="Nenhum template encontrado"
+            description="Ajuste a busca ou a categoria para ver outros templates."
+          />
+        )
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {filteredTemplates.map((template) => {
           const category = getTemplateCategory(template);
@@ -397,6 +405,7 @@ export const TemplatesManager: React.FC = () => {
           );
         })}
       </div>
+      )}
 
       {/* Confirm Deletion Modal */}
       <ConfirmModal
@@ -406,7 +415,7 @@ export const TemplatesManager: React.FC = () => {
         confirmText="Excluir"
         cancelText="Cancelar"
         onConfirm={handleConfirmDelete}
-        onCancel={() => {
+        onClose={() => {
           setIsConfirmOpen(false);
           setTemplateToDelete(null);
         }}
