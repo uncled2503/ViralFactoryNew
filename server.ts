@@ -20,7 +20,7 @@ import { supabaseAdmin, isSupabaseConfigured } from './server/database/supabaseC
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Compress all responses with Gzip/Brotli
   app.use(compression());
