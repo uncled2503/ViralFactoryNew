@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { useRouter } from '../hooks/useRouter';
 import { LogoFull } from './Logo';
 import {
@@ -16,28 +16,79 @@ import {
   Users,
   CheckCircle2,
   Globe,
-  Sliders,
   Eye,
   Cloud,
-  Shield,
   Activity,
-  Maximize2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Check,
   CheckSquare,
   Play,
-  Flame,
   LayoutGrid,
-  TrendingUp,
   FolderOpen,
-  Settings,
-  HelpCircle,
   Menu,
-  X,
-  Search
+  X
 } from 'lucide-react';
+
+// Section background tones — subtle variations within the brand's dark/indigo/violet palette,
+// used to differentiate sections without introducing new hues.
+const TONE_VOID = '#03050a';   // matches the page base — open, seamless sections
+const TONE_INDIGO = '#080b16'; // faint indigo-tinted panel
+const TONE_VIOLET = '#0b0814'; // faint violet-tinted panel
+const TONE_FOOTER = '#05060c'; // darkest, closing tone
+
+// Full-bleed wave divider placed between sections (own document flow, never overlaps content).
+// Each divider is one full wave cycle — a clear descent followed by a clear rise (or the reverse) —
+// with strong amplitude so the curve reads clearly, not a flat ripple.
+// `from`/`to` are set explicitly so the seam always matches its neighbors, regardless of layout above/below.
+const WAVE_PATHS = [
+  'M0,40 C360,40 360,170 720,170 C1080,170 1080,30 1440,30 L1440,200 L0,200 Z', // down, then up
+  'M0,160 C360,160 360,30 720,30 C1080,30 1080,180 1440,180 L1440,200 L0,200 Z', // up, then down
+  'M0,30 C300,30 300,180 620,180 C1000,180 1050,60 1440,60 L1440,200 L0,200 Z' // steep down, gentle up
+];
+
+const WaveDivider: React.FC<{ from: string; to: string; variant?: number }> = ({ from, to, variant = 0 }) => (
+  <div aria-hidden="true" className="relative w-full h-24 md:h-40 overflow-hidden" style={{ backgroundColor: from }}>
+    <svg
+      className="absolute inset-x-0 bottom-0 w-full h-full"
+      viewBox="0 0 1440 200"
+      preserveAspectRatio="none"
+      fill="none"
+    >
+      <path d={WAVE_PATHS[variant % WAVE_PATHS.length]} fill={to} />
+    </svg>
+  </div>
+);
+
+// Scroll-reveal wrapper used across every section — fades/slides content in once as it enters
+// the viewport. Wrapped app-wide in <MotionConfig reducedMotion="user">, so this automatically
+// turns into an instant, no-motion appearance when the OS requests reduced motion.
+const Reveal: React.FC<{
+  children: React.ReactNode;
+  delay?: number;
+  y?: number;
+  className?: string;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}> = ({
+  children,
+  delay = 0,
+  y = 24,
+  className,
+  onMouseEnter,
+  onMouseLeave
+}) => (
+  <motion.div
+    initial={{ opacity: 0, y }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true, margin: '-80px' }}
+    transition={{ duration: 0.6, ease: 'easeOut', delay }}
+    className={className}
+    onMouseEnter={onMouseEnter}
+    onMouseLeave={onMouseLeave}
+  >
+    {children}
+  </motion.div>
+);
 
 const examplePages = [
   { id: 1, image: '/assets/02-uAy4VjXQ.webp', title: '@filosofia_ancestral', views: '1.4M views', category: 'Citações' },
@@ -56,7 +107,7 @@ const examplePages = [
 
 export const LandingPage: React.FC = () => {
   const { navigate } = useRouter();
-  const [activeTab, setActiveTab] = useState<'projetos' | 'templates' | 'editor' | 'renders' | 'dashboard'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'template' | 'posicionamento' | 'videos' | 'renderizacao'>('posicionamento');
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
@@ -96,179 +147,81 @@ export const LandingPage: React.FC = () => {
     };
   }, []);
 
-  // Demo tab data for Interactive SaaS Showcase
+  // Demo tab data — reflects the real 4-stage product flow (template → posicionamento → vídeos → renderização)
   const demoTabs = {
-    dashboard: {
-      title: 'Dashboard de Performance',
-      badge: 'Visão Geral do Consumo',
-      desc: 'Acompanhe em tempo real o consumo de créditos de vídeos, os minutos gastos de processamento na nuvem e o armazenamento disponível.',
+    template: {
+      title: 'Template selecionado',
+      badge: 'Estrutura visual do lote',
+      desc: 'Escolha um template pronto ou envie seu próprio background — ele vira a estrutura visual aplicada a todos os vídeos do lote.',
       content: (
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800/80">
-              <span className="text-[9px] uppercase text-gray-500 font-mono tracking-wider block">Consumo Mensal</span>
-              <p className="text-sm md:text-base font-bold font-display text-indigo-400 mt-1">1.428 / 5.000</p>
-              <span className="text-[8px] text-emerald-400 flex items-center gap-1 mt-0.5 font-mono">
-                <TrendingUp className="w-2.5 h-2.5" /> 28% USADO
-              </span>
-            </div>
-            <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800/80">
-              <span className="text-[9px] uppercase text-gray-500 font-mono tracking-wider block">Minutos Usados</span>
-              <p className="text-sm md:text-base font-bold font-display text-purple-400 mt-1">456 / 2.000 min</p>
-              <span className="text-[8px] text-indigo-300 mt-0.5 block font-mono">NUVEM ATIVA</span>
-            </div>
-            <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800/80">
-              <span className="text-[9px] uppercase text-gray-500 font-mono tracking-wider block">Armazenamento</span>
-              <p className="text-sm md:text-base font-bold font-display text-pink-400 mt-1">4.8 / 10 GB</p>
-              <span className="text-[8px] text-gray-400 flex items-center gap-1 mt-0.5 font-mono">
-                DISK CLOUD OK
-              </span>
-            </div>
+        <div className="space-y-3 font-sans text-left">
+          <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800/40 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-purple-500/10 to-transparent pointer-events-none" />
+            <span className="text-[8px] uppercase tracking-wider font-mono text-indigo-400 font-semibold block">Template ativo</span>
+            <h3 className="text-xs font-bold text-gray-100 mt-0.5">background_estudio_dark.mp4</h3>
+            <p className="text-[10px] text-gray-400 mt-1">Servirá de estrutura visual para todos os vídeos deste lote.</p>
           </div>
-          <div className="bg-gray-900/40 p-4 rounded-xl border border-gray-800/50">
-            <div className="flex items-center justify-between mb-3 text-xs">
-              <span className="font-medium text-gray-300">Volume de Produção Diário</span>
-              <span className="text-[10px] font-mono text-gray-500">Últimos 7 Dias</span>
-            </div>
-            <div className="h-28 flex items-end gap-3 pt-4">
-              {[35, 60, 45, 90, 110, 80, 150].map((h, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-                  <div
-                    className="w-full bg-gradient-to-t from-indigo-600/40 to-indigo-500/95 rounded-t-md transition-all duration-1000"
-                    style={{ height: `${(h / 150) * 100}%` }}
-                  />
-                  <span className="text-[9px] font-mono text-gray-500">
-                    {['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][i]}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )
-    },
-    projetos: {
-      title: 'Gerenciador de Projetos e Campanhas',
-      badge: 'Organização de Lotes',
-      desc: 'Crie pastas organizadas por canal dark, marca ou nicho. Controle todas as variáveis do lote de forma centralizada.',
-      content: (
-        <div className="space-y-3 font-sans">
-          <div className="flex items-center justify-between border-b border-gray-950 pb-3">
-            <span className="text-xs font-semibold text-gray-300">Minhas Campanhas Ativas</span>
-            <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full font-semibold border border-indigo-500/20">3 Pastas</span>
-          </div>
-          <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-2.5">
             {[
-              { name: '🧠 Desenvolvimento & Mentalidade', videos: 150, update: 'Modificado há 5 min', status: 'Concluído' },
-              { name: '🎬 Rainha das Novelas (Cortes)', videos: 80, update: 'Modificado ontem', status: 'Processando' },
-              { name: '⚽ Futebol Resenha - Melhores Lances', videos: 45, update: 'Modificado há 3 dias', status: 'Aguardando' }
-            ].map((proj, i) => (
-              <div key={i} className="bg-gray-900/40 p-3 rounded-xl border border-gray-800/50 hover:border-indigo-500/20 transition flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-                    <FolderOpen className="w-4 h-4" />
-                  </div>
-                  <div className="text-left">
-                    <h4 className="text-xs font-semibold text-gray-200">{proj.name}</h4>
-                    <span className="text-[10px] text-gray-500">{proj.videos} variações de vídeo • {proj.update}</span>
-                  </div>
-                </div>
-                <span className={`text-[9px] px-2 py-0.5 rounded-md font-mono ${
-                  proj.status === 'Concluído' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                  proj.status === 'Processando' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 animate-pulse' :
-                  'bg-gray-800 text-gray-400 border border-gray-700'
-                }`}>
-                  {proj.status}
-                </span>
+              'from-orange-600/10 to-orange-500/5 border-orange-500/20',
+              'from-indigo-600/15 to-indigo-500/5 border-indigo-500/50 ring-1 ring-indigo-500/40',
+              'from-blue-600/10 to-blue-500/5 border-blue-500/20'
+            ].map((c, i) => (
+              <div key={i} className={`bg-gradient-to-br ${c} h-16 rounded-lg border flex items-center justify-center`}>
+                {i === 1 && <CheckCircle2 className="w-4 h-4 text-indigo-400" />}
               </div>
             ))}
           </div>
         </div>
       )
     },
-    templates: {
-      title: 'Biblioteca de Templates Virais',
-      badge: 'Layouts de Altíssima Retenção',
-      desc: 'Combine fontes marcantes, efeitos de blur, barras de progresso e legendas de alto contraste testadas nas redes.',
+    posicionamento: {
+      title: 'Área do vídeo dentro do template',
+      badge: 'Posicionamento preciso',
+      desc: 'Arraste, redimensione e trave a área exata onde cada vídeo do lote será encaixado dentro do template.',
       content: (
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { title: 'Reddit Stories / Gameplay', desc: 'Legendas centralizadas com fundo de gameplay acelerado e áudio envolvente.', color: 'from-orange-600/10 to-orange-500/5 border-orange-500/20' },
-            { title: 'Citação Estética Escura', desc: 'Vídeo estético em câmera lenta com efeito blur, tipografia fina e citação impactante.', color: 'from-purple-600/10 to-purple-500/5 border-purple-500/20' },
-            { title: 'Cortes de Podcasts / Entrevistas', desc: 'Layout duplo inteligente, molduras arredondadas e legendas coloridas automáticas.', color: 'from-blue-600/10 to-blue-500/5 border-blue-500/20' },
-            { title: 'Lista Top 5 Curiosidades', desc: 'Contagem regressiva automática, transições limpas e zoom sutil em lote.', color: 'from-emerald-600/10 to-emerald-500/5 border-emerald-500/20' }
-          ].map((tpl, i) => (
-            <div key={i} className={`bg-gradient-to-br ${tpl.color} p-3 rounded-xl border flex flex-col justify-between h-28 hover:border-indigo-500/30 transition-all duration-300 text-left`}>
-              <div>
-                <h5 className="text-[11px] font-bold text-gray-200">{tpl.title}</h5>
-                <p className="text-[9px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">{tpl.desc}</p>
-              </div>
-              <span className="text-[9px] text-indigo-300 font-mono flex items-center gap-1 cursor-pointer">
-                Usar Layout <ArrowRight className="w-2.5 h-2.5" />
+        <div className="relative bg-slate-950 rounded-xl border border-gray-900 h-[220px] flex items-center justify-center overflow-hidden">
+          <div className="relative h-[85%] aspect-[9/16] bg-gray-900/80 rounded-lg overflow-hidden border border-gray-800">
+            <div className="absolute inset-0 opacity-30 bg-[linear-gradient(to_right,#1f2937_1px,transparent_1px),linear-gradient(to_bottom,#1f2937_1px,transparent_1px)] bg-[size:14px_14px]" />
+            {/* Selected video area (bounding box) */}
+            <div className="absolute left-[16%] top-[24%] right-[16%] bottom-[24%] border border-pink-400/80 bg-indigo-500/10">
+              <div className="absolute left-1/2 top-0 bottom-0 w-px border-l border-dashed border-pink-500/60 -translate-x-1/2" />
+              <div className="absolute top-1/2 left-0 right-0 h-px border-t border-dashed border-pink-500/60 -translate-y-1/2" />
+              {['-top-1.5 -left-1.5', '-top-1.5 -right-1.5', '-bottom-1.5 -left-1.5', '-bottom-1.5 -right-1.5'].map((pos, i) => (
+                <span key={i} className={`absolute ${pos} w-2.5 h-2.5 rounded-full bg-white border-2 border-indigo-600 shadow`} />
+              ))}
+            </div>
+          </div>
+          <div className="absolute bottom-3 left-3 text-[9px] font-mono text-gray-500 bg-gray-950/80 px-2 py-1 rounded border border-gray-900">760 × 980 px</div>
+        </div>
+      )
+    },
+    videos: {
+      title: 'Envio do lote de vídeos',
+      badge: 'Upload em lote',
+      desc: 'Adicione todo o lote que deseja processar de uma só vez — o mesmo template é aplicado a cada arquivo enviado.',
+      content: (
+        <div className="space-y-1.5">
+          {['clipe_001.mp4', 'clipe_002.mp4', 'clipe_003.mp4', 'clipe_004.mp4', 'clipe_005.mp4'].map((name, i) => (
+            <div key={i} className="flex items-center justify-between text-[10px] bg-gray-900/40 p-2 rounded-lg border border-gray-800/50">
+              <span className="font-mono text-gray-300 flex items-center gap-2">
+                <Video className="w-3 h-3 text-indigo-400" /> {name}
               </span>
+              <span className="text-[8px] text-emerald-400 font-mono">Pronto</span>
             </div>
           ))}
+          <div className="text-[9px] text-gray-500 font-mono pt-1.5">+ 45 arquivos no lote</div>
         </div>
       )
     },
-    editor: {
-      title: 'Posicionador e Editor de Zonas de Vídeo',
-      badge: 'Interface Dinâmica Canva-Style',
-      desc: 'Arraste, dimensione e controle a camada onde os vídeos dinâmicos de fundo serão encaixados em todos os vídeos gerados.',
-      content: (
-        <div className="space-y-3 text-xs">
-          <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800 flex items-center justify-between">
-            <span className="text-gray-300 font-semibold flex items-center gap-2">
-              <Sliders className="w-3.5 h-3.5 text-indigo-400" /> Camada Ativa: [ZONA_DE_VÍDEO]
-            </span>
-            <span className="text-[10px] text-indigo-300 font-mono">{"{{VIDEO_DINAMICO}}"}</span>
-          </div>
-          
-          <div className="bg-gray-950 p-2.5 rounded-lg border border-gray-900/80 space-y-2">
-            <div className="flex items-center justify-between text-[9px] text-gray-500 font-mono">
-              <span>COORDENADAS DE REDIMENSIONAMENTO</span>
-              <span className="text-indigo-400 font-bold">Customizado</span>
-            </div>
-            <div className="grid grid-cols-4 gap-1.5 text-center">
-              <div className="bg-gray-900/60 p-1.5 rounded border border-gray-800/80">
-                <span className="text-[7.5px] text-gray-500 uppercase block">Posição X</span>
-                <span className="text-[10px] font-mono font-semibold text-gray-300">145 px</span>
-              </div>
-              <div className="bg-gray-900/60 p-1.5 rounded border border-gray-800/80">
-                <span className="text-[7.5px] text-gray-500 uppercase block">Posição Y</span>
-                <span className="text-[10px] font-mono font-semibold text-gray-300">320 px</span>
-              </div>
-              <div className="bg-gray-900/60 p-1.5 rounded border border-gray-800/80">
-                <span className="text-[7.5px] text-gray-500 uppercase block">Largura</span>
-                <span className="text-[10px] font-mono font-semibold text-gray-300">760 px</span>
-              </div>
-              <div className="bg-gray-900/60 p-1.5 rounded border border-gray-800/80">
-                <span className="text-[7.5px] text-gray-500 uppercase block">Altura</span>
-                <span className="text-[10px] font-mono font-semibold text-gray-300">980 px</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div className="flex items-center justify-between px-2 py-1 bg-gray-900/40 rounded border border-gray-800/50 text-[9px] text-gray-400">
-                <span>Modo de Preenchimento:</span>
-                <span className="font-semibold text-indigo-400">Cover (Cortar)</span>
-              </div>
-              <div className="flex items-center justify-between px-2 py-1 bg-gray-900/40 rounded border border-gray-800/50 text-[9px] text-gray-400">
-                <span>Bordas Arredondadas:</span>
-                <span className="font-semibold text-indigo-400">16 px</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )
-    },
-    renders: {
-      title: 'Fila Concorrente & Sistema Anti-Detecção',
-      badge: 'Segurança & Escala Algorítmica',
-      desc: 'Nossos servidores processam em lote limpando metadados, adicionando filtros de ruído sutis e alterando o áudio para evitar conteúdo duplicado.',
+    renderizacao: {
+      title: 'Renderização do lote',
+      badge: 'Processamento em fila',
+      desc: 'O sistema aplica o template a cada vídeo, trata os metadados dos arquivos e entrega o lote finalizado.',
       content: (
         <div className="space-y-3 font-sans">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-gray-300">Exportação do Lote #142 (Ativo)</span>
+            <span className="font-semibold text-gray-300">Lote #142</span>
             <span className="text-indigo-400 font-mono font-bold">75% CONCLUÍDO</span>
           </div>
           <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden border border-gray-800">
@@ -276,10 +229,10 @@ export const LandingPage: React.FC = () => {
           </div>
           <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
             {[
-              { id: 'video_001.mp4', status: 'Anti-Detecção OK', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
-              { id: 'video_002.mp4', status: 'Anti-Detecção OK', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
-              { id: 'video_003.mp4', status: 'Processando Filtros...', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20 animate-pulse' },
-              { id: 'video_004.mp4', status: 'Na fila', color: 'text-gray-400 bg-gray-800 border-gray-700' }
+              { id: 'clipe_001.mp4', status: 'Finalizado', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+              { id: 'clipe_002.mp4', status: 'Finalizado', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+              { id: 'clipe_003.mp4', status: 'Tratando metadados...', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20 animate-pulse' },
+              { id: 'clipe_004.mp4', status: 'Na fila', color: 'text-gray-400 bg-gray-800 border-gray-700' }
             ].map((v, i) => (
               <div key={i} className="flex items-center justify-between text-[10px] bg-gray-900/40 p-2 rounded-lg border border-gray-800/50">
                 <span className="font-mono text-gray-300">{v.id}</span>
@@ -402,7 +355,7 @@ export const LandingPage: React.FC = () => {
   const faqs = [
     {
       q: 'Como funciona a geração de centenas de vídeos?',
-      a: 'Você escolhe ou cria um template com variáveis dinâmicas (como títulos, fundos, imagens e áudios). Depois, fornece os valores dessas variáveis (por exemplo, preenchendo as colunas no nosso editor ou criando lotes). O Viral Factory processa tudo na nuvem ao mesmo tempo, renderizando centenas de vídeos totalmente únicos e prontos para publicar.'
+      a: 'Você envia um template (background) e define exatamente a área onde o vídeo vai ser posicionado. Depois, envia o lote de vídeos que deseja processar. O Viral Factory aplica o template a cada vídeo do lote e renderiza tudo na nuvem ao mesmo tempo, entregando os arquivos finalizados e prontos para publicar.'
     },
     {
       q: 'Preciso instalar algum programa ou ter um computador forte?',
@@ -432,6 +385,7 @@ export const LandingPage: React.FC = () => {
   };
 
   return (
+    <MotionConfig reducedMotion="user">
     <div className="min-h-screen bg-[#03050a] text-gray-200 selection:bg-indigo-500/30 selection:text-indigo-200 overflow-x-hidden font-sans">
       
       {/* Background Radial Light Gradients */}
@@ -530,8 +484,8 @@ export const LandingPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
           
           {/* Hero Left Info */}
-          <div className="lg:col-span-7 space-y-8 text-left">
-            
+          <Reveal y={16} className="lg:col-span-7 space-y-8 text-left">
+
             {/* Promo Tag */}
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 text-[11px] font-mono tracking-wide uppercase">
               <Sparkles className="w-3.5 h-3.5" />
@@ -581,470 +535,528 @@ export const LandingPage: React.FC = () => {
                 Cancele quando quiser
               </div>
             </div>
-          </div>
+          </Reveal>
 
-          {/* Hero Right 3D Visual Mockup */}
-          <div className="lg:col-span-5 relative flex justify-center">
-            
-            {/* Ambient Purple Soft Glow behind mockup */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-indigo-500/20 blur-[80px] rounded-full pointer-events-none" />
+          {/* Hero Right Visual — Render Core Pipeline Illustration */}
+          <Reveal y={16} delay={0.15} className="lg:col-span-5 relative flex justify-center lg:justify-end">
 
-            {/* Mockup Frame with perspective 3D effect */}
-            <div className="relative w-full max-w-[360px] bg-gray-950/90 border border-gray-800/80 rounded-2xl p-5 shadow-2xl shadow-indigo-500/10 hover:scale-[1.03] transition-transform duration-500 transform lg:rotate-y-[-12deg] lg:rotate-x-[6deg] lg:perspective-[1000px]">
-              
-              {/* Fake Window bar */}
-              <div className="flex items-center justify-between border-b border-gray-900 pb-3 mb-4">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
-                </div>
-                <div className="text-[9px] font-mono text-gray-600 bg-gray-900/60 px-3 py-0.5 rounded border border-gray-800/40">
-                  viralfactory.app/studio
-                </div>
-                <div className="w-4 h-4" />
-              </div>
+            {/* Ambient Purple Soft Glow behind illustration */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[26rem] h-[26rem] bg-indigo-500/20 blur-[110px] rounded-full pointer-events-none" />
 
-              {/* Fake Active Editor Screen */}
-              <div className="space-y-4 font-sans text-left">
-                <div className="bg-gray-900/60 p-3 rounded-xl border border-gray-800/40 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-purple-500/10 to-transparent pointer-events-none" />
-                  <span className="text-[8px] uppercase tracking-wider font-mono text-indigo-400 font-semibold block">Template Selecionado</span>
-                  <h3 className="text-xs font-bold text-gray-100 mt-0.5">Reddit Viral Stories</h3>
-                  <p className="text-[10px] text-gray-400 mt-1">Layout com fundo de gameplay automatizado.</p>
-                </div>
+            <div className="relative w-full max-w-[380px] sm:max-w-[440px] lg:max-w-[520px]">
+              <img
+                src="/assets/hero-render-core.webp"
+                alt="Template e lote de vídeos sendo processados pelo Viral Factory até se tornarem vários vídeos finalizados"
+                width={1122}
+                height={1402}
+                fetchPriority="high"
+                loading="eager"
+                decoding="async"
+                className="relative z-10 w-full h-auto"
+              />
 
-                <div className="bg-gray-900/30 p-3 rounded-xl border border-gray-800/50 space-y-2">
-                  <span className="text-[8px] uppercase tracking-wider font-mono text-gray-500 block">Camadas de Texto (Variáveis)</span>
-                  
-                  <div className="bg-gray-950 p-2 rounded-lg border border-gray-900/80 flex items-center justify-between text-[10px]">
-                    <span className="text-gray-400">Citação Principal</span>
-                    <span className="text-indigo-300 font-mono">{"{{CITAÇÃO}}"}</span>
-                  </div>
-
-                  <div className="bg-gray-950 p-2 rounded-lg border border-gray-900/80 flex items-center justify-between text-[10px]">
-                    <span className="text-gray-400">Legenda Automática</span>
-                    <span className="text-purple-300 font-mono">{"{{LEGENDA}}"}</span>
-                  </div>
-                </div>
-
-                {/* Progress simulator */}
-                <div className="space-y-1">
-                  <div className="flex justify-between items-center text-[9px] text-gray-500">
-                    <span>Exportando Lote de 200 Vídeos</span>
-                    <span className="font-mono text-indigo-400">92%</span>
-                  </div>
-                  <div className="w-full h-1 bg-gray-900 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 w-[92%] rounded-full" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Orbiting Badge 1 */}
-              <div className="absolute -top-4 -right-6 bg-indigo-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-xl shadow-lg flex items-center gap-1 border border-indigo-400/30 animate-bounce">
+              {/* Floating Badge — Top Right */}
+              <div className="absolute top-6 right-0 sm:-right-2 z-20 bg-indigo-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-xl shadow-lg flex items-center gap-1 border border-indigo-400/30 animate-bounce">
                 <Sparkles className="w-3 h-3" />
                 100x Mais Rápido
               </div>
 
-              {/* Orbiting Badge 2 */}
-              <div className="absolute -bottom-5 -left-6 bg-gray-900 border border-gray-800 text-gray-300 text-[10px] font-mono px-3 py-1.5 rounded-xl shadow-2xl flex items-center gap-1.5">
+              {/* Floating Badge — Bottom Left */}
+              <div className="absolute bottom-8 left-0 sm:-left-2 z-20 bg-gray-900 border border-gray-800 text-gray-300 text-[10px] font-mono px-3 py-1.5 rounded-xl shadow-2xl flex items-center gap-1.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Fila de Processamento Ativa
               </div>
             </div>
-          </div>
+          </Reveal>
 
         </div>
       </section>
+
+      <WaveDivider from={TONE_VOID} to={TONE_INDIGO} variant={0} />
 
       {/* PROVA SOCIAL / STATS SECTION */}
-      <section className="py-12 border-t border-b border-gray-900/60 bg-gray-950/20 max-w-7xl mx-auto px-6 relative z-10">
-        
-        {/* Placeholder Logos */}
-        <div className="text-center mb-10">
-          <p className="text-[11px] font-mono text-gray-500 uppercase tracking-widest">Tecnologia de Confiança Utilizada por Criadores de Todo o Mundo</p>
-          <div className="flex flex-wrap justify-center items-center gap-x-12 gap-y-6 mt-6 opacity-40 grayscale hover:grayscale-0 transition duration-300">
-            {['Vortex', 'Apex Creator', 'ScaleFlow', 'PixelTech', 'OmniMedia'].map((logo, i) => (
-              <span key={i} className="text-sm font-bold font-display tracking-widest text-gray-400">
-                {logo.toUpperCase()}
-              </span>
-            ))}
-          </div>
-        </div>
+      <section className="relative z-10" style={{ backgroundColor: TONE_INDIGO }}>
+        <div className="py-16 md:py-20 max-w-7xl mx-auto px-6">
 
-        {/* Counter Stats Container */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 pt-8 border-t border-gray-900/40 text-center max-w-4xl mx-auto">
-          <div>
-            <p className="text-3xl md:text-4xl font-bold font-display text-white">
-              +{stats.videos >= 1000000 ? `${(stats.videos / 1000000).toFixed(1)}M` : stats.videos}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">Vídeos produzidos</p>
+          {/* Placeholder Logos */}
+          <div className="text-center mb-10">
+            <p className="text-[11px] font-mono text-gray-500 uppercase tracking-widest">Tecnologia de Confiança Utilizada por Criadores de Todo o Mundo</p>
+            <div className="flex flex-wrap justify-center items-center gap-x-12 gap-y-6 mt-6 opacity-40 grayscale hover:grayscale-0 transition duration-300">
+              {['Vortex', 'Apex Creator', 'ScaleFlow', 'PixelTech', 'OmniMedia'].map((logo, i) => (
+                <span key={i} className="text-sm font-bold font-display tracking-widest text-gray-400">
+                  {logo.toUpperCase()}
+                </span>
+              ))}
+            </div>
           </div>
-          <div>
-            <p className="text-3xl md:text-4xl font-bold font-display text-indigo-400">
-              +{stats.users >= 1000 ? `${Math.round(stats.users / 1000)}k` : stats.users}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">Criadores ativos</p>
-          </div>
-          <div>
-            <p className="text-3xl md:text-4xl font-bold font-display text-purple-400">
-              {stats.sat}%
-            </p>
-            <p className="text-xs text-gray-500 mt-1">De satisfação</p>
-          </div>
-          <div>
-            <p className="text-3xl md:text-4xl font-bold font-display text-white">
-              +{stats.countries}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">Países integrados</p>
+
+          {/* Counter Stats Container */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 pt-8 border-t border-gray-900/40 text-center max-w-4xl mx-auto">
+            <div>
+              <p className="text-3xl md:text-4xl font-bold font-display text-white">
+                +{stats.videos >= 1000000 ? `${(stats.videos / 1000000).toFixed(1)}M` : stats.videos}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">Vídeos produzidos</p>
+            </div>
+            <div>
+              <p className="text-3xl md:text-4xl font-bold font-display text-indigo-400">
+                +{stats.users >= 1000 ? `${Math.round(stats.users / 1000)}k` : stats.users}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">Criadores ativos</p>
+            </div>
+            <div>
+              <p className="text-3xl md:text-4xl font-bold font-display text-purple-400">
+                {stats.sat}%
+              </p>
+              <p className="text-xs text-gray-500 mt-1">De satisfação</p>
+            </div>
+            <div>
+              <p className="text-3xl md:text-4xl font-bold font-display text-white">
+                +{stats.countries}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">Países integrados</p>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* COMO FUNCIONA */}
-      <section id="como-funciona" className="py-24 max-w-7xl mx-auto px-6 relative z-10 text-center">
-        <div className="space-y-4 max-w-2xl mx-auto mb-16">
+      <WaveDivider from={TONE_INDIGO} to={TONE_VOID} variant={1} />
+
+      {/* COMO FUNCIONA — PIPELINE DE 4 ETAPAS */}
+      <section id="como-funciona" className="relative z-10" style={{ backgroundColor: TONE_VOID }}>
+        <div className="py-24 md:py-28 max-w-7xl mx-auto px-6 text-center">
+        <Reveal className="space-y-4 max-w-2xl mx-auto mb-16">
           <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Metodologia</span>
           <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight">
             Como usar o <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 font-extrabold">Viral Factory?</span>
           </h2>
           <p className="text-gray-400 text-xs md:text-sm">
-            Uma estrutura inteligente de alta conversão desenhada para remover qualquer atrito operacional da sua produção diária de vídeos virais.
+            Configure uma vez. Envie o lote. Renderize em escala — sem repetir o mesmo trabalho vídeo por vídeo.
           </p>
-        </div>
+        </Reveal>
 
-        {/* Interactive Steps Card Line */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative max-w-6xl mx-auto">
-          
-          {/* Connector Line behind steps (Desktop only) */}
-          <div className="hidden md:block absolute top-[80px] left-[15%] right-[15%] h-[1px] bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-indigo-500/10 z-0" />
+        {/* 4-Step Pipeline */}
+        <div className="relative max-w-6xl mx-auto">
 
-          {[
-            {
-              step: '01',
-              title: 'Encontre e selecione',
-              desc: 'Busque entre milhares de vídeos virais do nicho e selecione quantos quiser pra editar de uma vez só.',
-              icon: <Search className="w-5 h-5 text-indigo-400" />,
-              glow: 'rgba(99, 102, 241, 0.12)',
-              borderHover: 'hover:border-indigo-500/30'
-            },
-            {
-              step: '02',
-              title: 'Escolha seu template',
-              desc: 'Aplique o template de edição que combina com a identidade da sua página. Uma vez configurado, fica salvo pra sempre.',
-              icon: <Layers className="w-5 h-5 text-purple-400" />,
-              glow: 'rgba(168, 85, 247, 0.12)',
-              borderHover: 'hover:border-purple-500/30'
-            },
-            {
-              step: '03',
-              title: 'Aperte 1 botão',
-              desc: 'O Viral Factory edita, corta e aplica o sistema anti-detecção em todos os vídeos selecionados automaticamente. Simultaneamente. Sem você tocar em editor nenhum.',
-              icon: <Zap className="w-5 h-5 text-pink-400" />,
-              glow: 'rgba(236, 72, 153, 0.12)',
-              borderHover: 'hover:border-pink-500/30'
-            }
-          ].map((item, i) => (
-            <div 
-              key={i} 
-              className={`relative z-10 flex flex-col items-center group bg-gradient-to-b from-gray-950 to-gray-950/40 p-8 rounded-3xl border border-gray-900/80 ${item.borderHover} transition-all duration-500 shadow-xl overflow-hidden hover:shadow-2xl hover:shadow-indigo-500/5`}
-            >
-              {/* Giant background number watermark */}
-              <div className="absolute -top-4 -right-2 text-[120px] font-display font-extrabold text-white/[0.02] select-none group-hover:text-white/[0.04] transition-colors duration-500 pointer-events-none font-mono">
-                {item.step}
-              </div>
+          {/* Desktop connector line — draws left to right as it enters view, then the glow node keeps traveling */}
+          <div className="hidden md:block absolute top-[92px] left-[12.5%] right-[12.5%] h-px z-0">
+            <motion.div
+              initial={{ scaleX: 0 }}
+              whileInView={{ scaleX: 1 }}
+              viewport={{ once: true, margin: '-80px' }}
+              transition={{ duration: 1.1, ease: 'easeInOut', delay: 0.1 }}
+              style={{ transformOrigin: 'left' }}
+              className="absolute inset-0 bg-gradient-to-r from-indigo-500/0 via-indigo-500/25 to-indigo-500/0"
+            />
+            <div className="pipeline-glow-node hidden motion-safe:block" />
+          </div>
 
-              {/* Ambient circle glow under icon */}
-              <div 
-                className="absolute w-32 h-32 rounded-full -top-10 -left-10 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none blur-2xl"
-                style={{ backgroundColor: item.glow }}
-              />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-10 md:gap-6 relative">
+            {[
+              {
+                step: '01',
+                title: 'Envie seu template',
+                desc: 'Envie o background ou template que será aplicado aos seus vídeos.',
+                image: '/assets/step-template.webp'
+              },
+              {
+                step: '02',
+                title: 'Defina a área do vídeo',
+                desc: 'Escolha exatamente onde e em qual tamanho o conteúdo será exibido.',
+                image: '/assets/step-position.webp'
+              },
+              {
+                step: '03',
+                title: 'Envie seus vídeos',
+                desc: 'Adicione todo o lote que deseja processar de uma só vez.',
+                image: '/assets/step-batch.webp'
+              },
+              {
+                step: '04',
+                title: 'Renderize tudo',
+                desc: 'A Viral Factory aplica o template, processa os arquivos e entrega o lote finalizado.',
+                image: '/assets/step-render.webp'
+              }
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, x: -28 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, margin: '-80px' }}
+                transition={{ duration: 0.5, ease: 'easeOut', delay: 0.15 + i * 0.22 }}
+                className="relative z-10 flex flex-col items-center"
+              >
 
-              {/* Icon container */}
-              <div className="w-16 h-16 rounded-2xl bg-gray-900/90 border border-gray-800 flex items-center justify-center shadow-inner group-hover:scale-110 group-hover:border-indigo-500/30 transition-all duration-500 relative z-10">
-                {item.icon}
-                <span className="absolute -top-2.5 -right-2.5 bg-gradient-to-r from-indigo-600 to-indigo-500 border border-indigo-400/30 text-[9px] font-mono font-bold text-white w-6 h-6 rounded-full flex items-center justify-center shadow-lg shadow-indigo-950">
+                {/* Mobile vertical connector */}
+                {i > 0 && (
+                  <div className="md:hidden relative w-px h-10 -mt-2 mb-2 overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/0 via-indigo-500/30 to-indigo-500/0" />
+                  </div>
+                )}
+
+                {/* Step illustration — transparent asset, no card/frame */}
+                <div className="w-full max-w-[168px] aspect-square flex items-center justify-center">
+                  <img
+                    src={item.image}
+                    alt=""
+                    aria-hidden="true"
+                    width={1254}
+                    height={1254}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+
+                {/* Step number node (sits on the pipeline line) */}
+                <span className="relative z-10 -mt-2 mb-3 bg-gradient-to-r from-indigo-600 to-indigo-500 border border-indigo-400/30 text-[10px] font-mono font-bold text-white w-7 h-7 rounded-full flex items-center justify-center shadow-lg shadow-indigo-950">
                   {item.step}
                 </span>
-              </div>
 
-              <h3 className="text-xs font-bold text-gray-200 mt-6 mb-3 font-display uppercase tracking-wider relative z-10 group-hover:text-white transition-colors duration-300">
-                {item.title}
-              </h3>
-              <p className="text-[11px] text-gray-400 leading-relaxed max-w-[260px] text-center relative z-10 group-hover:text-gray-300 transition-colors duration-300">
-                {item.desc}
-              </p>
-            </div>
-          ))}
-
+                <h3 className="text-xs font-bold text-gray-200 mb-2 font-display uppercase tracking-wider">
+                  {item.title}
+                </h3>
+                <p className="text-[11px] text-gray-400 leading-relaxed max-w-[220px] text-center">
+                  {item.desc}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
         </div>
       </section>
 
+      <WaveDivider from={TONE_VOID} to={TONE_INDIGO} variant={2} />
+
       {/* BENEFÍCIOS (PREMIUM BENTO GRID) */}
-      <section id="recursos" className="py-24 border-t border-gray-900/40 bg-gray-950/10 max-w-7xl mx-auto px-6 relative z-10">
-        <div className="space-y-4 max-w-2xl mx-auto mb-16 text-center">
+      <section id="recursos" className="relative z-10" style={{ backgroundColor: TONE_INDIGO }}>
+        <div className="py-24 md:py-28 max-w-7xl mx-auto px-6">
+        <Reveal className="space-y-4 max-w-2xl mx-auto mb-16 text-center">
           <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Recursos de Alto Nível</span>
           <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight">
-            Tudo o que você precisa para dominar os algoritmos
+            Tudo para produzir vídeos em escala
           </h2>
           <p className="text-gray-400 text-xs md:text-sm">
-            Criado por profissionais de crescimento para criadores profissionais. Sem promessas vazias, focado em alta conversão e escala real.
+            Automatize tarefas repetitivas e transforme um template em dezenas de vídeos finalizados.
           </p>
-        </div>
+        </Reveal>
 
-        {/* Bento Grid (12 items matching the list in requirements) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {/* Bento Grid — varied card weights + color-coded icon chips, dense auto-flow to close gaps */}
+        <Reveal delay={0.1} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 grid-flow-row-dense">
           {[
             {
               title: 'Produção em Escala',
               desc: 'Gere lotes enormes de vídeos curtos verticalizados prontos de uma só vez.',
-              icon: <Zap className="w-4 h-4 text-indigo-400" />
+              icon: <Zap className="w-4.5 h-4.5 text-indigo-400" />,
+              tint: 'indigo',
+              span: true
             },
             {
               title: 'Templates Reutilizáveis',
               desc: 'Salve seus layouts vencedores e repita fórmulas de sucesso indefinidamente.',
-              icon: <Layers className="w-4 h-4 text-purple-400" />
+              icon: <Layers className="w-4.5 h-4.5 text-purple-400" />,
+              tint: 'purple'
             },
             {
               title: 'Legendas Automáticas',
               desc: 'Sincronização impecável com realce dinâmico por palavra para manter retenção alta.',
-              icon: <Play className="w-4 h-4 text-pink-400" />
+              icon: <Play className="w-4.5 h-4.5 text-pink-400" />,
+              tint: 'pink'
             },
             {
               title: 'Uploads em Lote',
               desc: 'Envie múltiplos assets de fundo simultaneamente sem travar seu navegador.',
-              icon: <Cloud className="w-4 h-4 text-indigo-400" />
+              icon: <Cloud className="w-4.5 h-4.5 text-indigo-400" />,
+              tint: 'indigo'
             },
             {
               title: 'Headlines Dinâmicas',
               desc: 'Varie e teste diferentes títulos para descobrir o que gera mais cliques de curiosidade.',
-              icon: <Sparkles className="w-4 h-4 text-purple-400" />
+              icon: <Sparkles className="w-4.5 h-4.5 text-purple-400" />,
+              tint: 'purple'
             },
             {
               title: 'Organização por Projetos',
               desc: 'Pastas dedicadas por nicho, marca ou canal para manter sua operação em ordem.',
-              icon: <FolderOpen className="w-4 h-4 text-pink-400" />
+              icon: <FolderOpen className="w-4.5 h-4.5 text-pink-400" />,
+              tint: 'pink'
             },
             {
               title: 'Renderização em Massa',
               desc: 'Nossa fila concorrente processa seus lotes na nuvem sem consumir sua RAM.',
-              icon: <Activity className="w-4 h-4 text-indigo-400" />
+              icon: <Activity className="w-4.5 h-4.5 text-indigo-400" />,
+              tint: 'indigo',
+              span: true
             },
             {
               title: 'Pré-visualização Rápida',
               desc: 'Veja exatamente como cada variação do seu lote ficará antes de iniciar o render.',
-              icon: <Eye className="w-4 h-4 text-purple-400" />
+              icon: <Eye className="w-4.5 h-4.5 text-purple-400" />,
+              tint: 'purple'
             },
             {
               title: 'Automação Completa',
               desc: 'Deixe o trabalho chato e repetitivo de edição manual no passado de uma vez por todas.',
-              icon: <CheckSquare className="w-4 h-4 text-pink-400" />
+              icon: <CheckSquare className="w-4.5 h-4.5 text-pink-400" />,
+              tint: 'pink'
             },
             {
               title: 'Dashboard Intuitivo',
               desc: 'Métricas visuais que mostram o tempo poupado e o volume da sua esteira criativa.',
-              icon: <LayoutGrid className="w-4 h-4 text-indigo-400" />
+              icon: <LayoutGrid className="w-4.5 h-4.5 text-indigo-400" />,
+              tint: 'indigo'
             },
             {
               title: 'Sincronização na Nuvem',
               desc: 'Seus projetos salvos de forma segura e acessíveis de qualquer computador.',
-              icon: <Globe className="w-4 h-4 text-purple-400" />
+              icon: <Globe className="w-4.5 h-4.5 text-purple-400" />,
+              tint: 'purple'
             },
             {
               title: 'Sistema Multiusuário',
               desc: 'Pronto para receber sua equipe de roteiristas ou gestores de conteúdo no futuro.',
-              icon: <Users className="w-4 h-4 text-pink-400" />
+              icon: <Users className="w-4.5 h-4.5 text-pink-400" />,
+              tint: 'pink'
             }
-          ].map((item, i) => (
-            <div
-              key={i}
-              className="bg-gray-900/40 border border-gray-900/80 hover:border-gray-800/80 hover:bg-gray-900/60 p-5 rounded-xl transition-all duration-300 hover:shadow-lg group text-left"
-            >
-              <div className="w-8 h-8 rounded-lg bg-gray-950 flex items-center justify-center border border-gray-800 mb-4 group-hover:scale-105 transition-transform">
-                {item.icon}
+          ].map((item, i) => {
+            const chip = {
+              indigo: 'bg-indigo-500/10 border-indigo-500/20',
+              purple: 'bg-purple-500/10 border-purple-500/20',
+              pink: 'bg-pink-500/10 border-pink-500/20'
+            }[item.tint];
+            return (
+              <div
+                key={i}
+                className={`bg-gray-900/40 border border-gray-900/80 hover:border-gray-800 hover:bg-gray-900/60 p-6 rounded-2xl transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 group text-left ${item.span ? 'lg:col-span-2' : ''}`}
+              >
+                <div className={`w-10 h-10 rounded-xl ${chip} border flex items-center justify-center mb-4 group-hover:scale-105 transition-transform`}>
+                  {item.icon}
+                </div>
+                <h3 className="text-sm font-bold text-gray-100 font-display mb-1.5">{item.title}</h3>
+                <p className="text-[12px] text-gray-400 leading-relaxed">{item.desc}</p>
               </div>
-              <h3 className="text-xs font-bold text-gray-200 font-display mb-1.5">{item.title}</h3>
-              <p className="text-[11px] text-gray-400 leading-relaxed">{item.desc}</p>
-            </div>
-          ))}
+            );
+          })}
+        </Reveal>
         </div>
       </section>
 
-      {/* DEMONSTRAÇÃO INTERATIVA DO SAAS */}
-      <section id="demonstracao" className="py-24 max-w-7xl mx-auto px-6 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          
-          {/* Tabs Menu Column */}
-          <div className="lg:col-span-5 space-y-6 text-left">
-            <div className="space-y-4">
-              <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">SaaS Simulator</span>
-              <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight leading-none">
-                Conheça a Plataforma por dentro
-              </h2>
-              <p className="text-gray-400 text-xs leading-relaxed">
-                Navegue pelas abas interativas do simulador para visualizar como é simples operar nossa interface profissional de alta performance.
-              </p>
-            </div>
+      <WaveDivider from={TONE_INDIGO} to={TONE_VOID} variant={0} />
 
-            {/* Vertical Tab Selector buttons */}
-            <div className="space-y-2 pt-2">
-              {[
-                { id: 'dashboard', label: 'Dashboard de Performance', icon: <LayoutGrid className="w-4 h-4" /> },
-                { id: 'projetos', label: 'Campanhas & Projetos', icon: <FolderOpen className="w-4 h-4" /> },
-                { id: 'templates', label: 'Modelos & Templates', icon: <Layers className="w-4 h-4" /> },
-                { id: 'editor', label: 'Canva/Figma Video Editor', icon: <Sliders className="w-4 h-4" /> },
-                { id: 'renders', label: 'Fila & Anti-Detecção', icon: <Activity className="w-4 h-4" /> }
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold text-left transition border cursor-pointer ${
-                    activeTab === tab.id
-                      ? 'bg-indigo-600/10 border-indigo-500/30 text-white'
-                      : 'bg-transparent border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-900/40'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {tab.icon}
-                    <span>{tab.label}</span>
-                  </div>
-                  {activeTab === tab.id && (
-                    <motion.div layoutId="active-indicator" className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                  )}
-                </button>
-              ))}
-            </div>
+      {/* CONHEÇA A PLATAFORMA POR DENTRO */}
+      <section id="demonstracao" className="relative z-10" style={{ backgroundColor: TONE_VOID }}>
+        <div className="py-24 md:py-28 max-w-7xl mx-auto px-6">
+        <Reveal className="space-y-4 max-w-2xl mb-12 text-left">
+          <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Fluxo Real do Produto</span>
+          <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight leading-none">
+            Conheça a Plataforma por dentro
+          </h2>
+          <p className="text-gray-400 text-xs md:text-sm leading-relaxed">
+            Template, posicionamento, lote e renderização — as quatro etapas reais que levam do seu template a um lote de vídeos finalizados.
+          </p>
+        </Reveal>
+
+        {/* Segmented Tab Selector */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {[
+            { id: 'template', label: 'Template' },
+            { id: 'posicionamento', label: 'Posicionamento' },
+            { id: 'videos', label: 'Vídeos' },
+            { id: 'renderizacao', label: 'Renderização' }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`relative px-4 py-2.5 rounded-xl text-xs font-semibold transition border cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-indigo-600/10 border-indigo-500/30 text-white'
+                  : 'bg-transparent border-gray-900 text-gray-400 hover:text-gray-200 hover:bg-gray-900/40'
+              }`}
+            >
+              {activeTab === tab.id && (
+                <motion.div layoutId="active-tab-indicator" className="absolute inset-0 rounded-xl border border-indigo-500/30 bg-indigo-600/10 -z-10" />
+              )}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Large Product Display */}
+        <Reveal delay={0.1} className="w-full bg-[#0b0f19]/90 border border-gray-800/80 rounded-2xl p-5 md:p-8 shadow-2xl relative">
+          <div className="flex items-center gap-1.5 mb-6 border-b border-gray-900 pb-3 text-left">
+            <div className="w-2 h-2 rounded-full bg-gray-700" />
+            <span className="text-[10px] text-gray-500 font-mono">viral_factory_workspace / {activeTab}</span>
           </div>
 
-          {/* Interactive Screen Display Column */}
-          <div className="lg:col-span-7 bg-[#0b0f19]/90 border border-gray-800/80 rounded-2xl p-6 shadow-2xl relative">
-            <div className="absolute top-4 right-4 bg-indigo-500/10 text-indigo-300 text-[9px] font-mono uppercase px-2 py-0.5 rounded-md border border-indigo-500/20">
-              Demo Interativa
-            </div>
-
-            <div className="flex items-center gap-1.5 mb-6 border-b border-gray-900 pb-3 text-left">
-              <div className="w-2 h-2 rounded-full bg-gray-700" />
-              <span className="text-[10px] text-gray-500 font-mono">viral_factory_workspace / {demoTabs[activeTab].title.toLowerCase().replace(/ /g, '_')}</span>
-            </div>
-
-            {/* Simulated Window Content with animation wrapper */}
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25 }}
-                className="space-y-4 text-left"
-              >
-                <div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+            <div className="text-left order-2 lg:order-1">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25 }}
+                >
                   <div className="inline-flex items-center gap-1.5 text-[9px] font-mono text-indigo-400 font-bold bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10 uppercase">
                     {demoTabs[activeTab].badge}
                   </div>
-                  <h3 className="text-sm font-bold text-white font-display mt-2">{demoTabs[activeTab].title}</h3>
-                  <p className="text-[11px] text-gray-400 leading-relaxed mt-1">
+                  <h3 className="text-lg font-bold text-white font-display mt-3">{demoTabs[activeTab].title}</h3>
+                  <p className="text-xs text-gray-400 leading-relaxed mt-2 max-w-md">
                     {demoTabs[activeTab].desc}
                   </p>
-                </div>
+                </motion.div>
+              </AnimatePresence>
+            </div>
 
-                <div className="bg-[#03050a]/60 border border-gray-900/80 rounded-xl p-4 min-h-[220px] flex flex-col justify-center">
+            <div className="order-1 lg:order-2">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25 }}
+                  className="bg-[#03050a]/60 border border-gray-900/80 rounded-xl p-4 min-h-[260px] flex flex-col justify-center"
+                >
                   {demoTabs[activeTab].content}
-                </div>
-              </motion.div>
-            </AnimatePresence>
+                </motion.div>
+              </AnimatePresence>
+            </div>
           </div>
-
+        </Reveal>
         </div>
       </section>
 
-      {/* COMPARAÇÃO (PRODUÇÃO MANUAL VS VIRAL FACTORY - PRÓS E CONTRAS) */}
-      <section className="py-24 border-t border-gray-900/40 bg-gray-950/20 max-w-7xl mx-auto px-6 relative z-10 text-center">
-        <div className="space-y-4 max-w-2xl mx-auto mb-16">
-          <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Comparativo de Eficiência</span>
+      <WaveDivider from={TONE_VOID} to={TONE_VIOLET} variant={1} />
+
+      {/* COMPARAÇÃO (PRODUÇÃO MANUAL VS PRODUÇÃO COM VIRAL FACTORY) */}
+      <section className="relative z-10" style={{ backgroundColor: TONE_VIOLET }}>
+        <div className="py-24 md:py-28 max-w-7xl mx-auto px-6 text-center">
+        <Reveal className="space-y-4 max-w-2xl mx-auto mb-16">
+          <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Comparativo de Processo</span>
           <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight">
-            Edite <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">centenas de vídeos</span> virais para sua página ao mesmo tempo
+            Configure uma vez. <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">Renderize o lote inteiro.</span>
           </h2>
           <p className="text-gray-400 text-xs md:text-sm">
-            Compare o método tradicional e lento com a escala massiva e automatizada do Viral Factory.
+            Compare o processo manual, repetido vídeo por vídeo, com o pipeline automatizado do Viral Factory.
           </p>
-        </div>
+        </Reveal>
 
-        {/* Side by Side Pros & Cons Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-          
-          {/* SEM VIRAL FACTORY CARD (CONTRAS) */}
+        {/* Side by Side Comparison Layout */}
+        <Reveal delay={0.1} className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-5xl mx-auto items-start">
+
+          {/* PRODUÇÃO MANUAL CARD */}
           <div className="bg-gradient-to-b from-red-950/10 to-transparent border border-red-500/10 rounded-2xl p-8 text-left shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-3xl rounded-full pointer-events-none" />
-            
+
             <div className="flex items-center gap-2 mb-6 pb-4 border-b border-gray-900/60">
-              <span className="bg-red-500/10 text-red-400 text-[10px] font-mono uppercase px-3 py-1 rounded-lg border border-red-500/25 font-bold flex items-center gap-1.5">
-                <span className="text-[12px]">❌</span> SEM VIRAL FACTORY
+              <span className="bg-red-500/10 text-red-400 text-[10px] font-mono uppercase px-3 py-1 rounded-lg border border-red-500/25 font-bold">
+                Produção manual
               </span>
             </div>
 
-            <ul className="space-y-4 text-xs text-gray-400">
+            <ol className="space-y-3 text-xs text-gray-400">
               {[
-                "Edição 1 a 1",
-                "10 a 20 min por post",
-                "Maior risco de identificação de conteúdo inautêntico",
-                "Você trava a página inteira esperando \"dar tempo\" de editar",
-                "Depende de você estar online todo dia pra manter o ritmo"
+                "Abrir editor",
+                "Importar template/background",
+                "Importar vídeo",
+                "Posicionar manualmente",
+                "Ajustar escala/enquadramento",
+                "Exportar",
+                "Esperar renderização",
+                "Repetir para o próximo",
+                "Organizar arquivos"
               ].map((text, i) => (
                 <li key={i} className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0 mt-0.5 text-red-400 font-bold text-[10px]">
-                    ✕
+                  <div className="w-5 h-5 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0 mt-0.5 text-red-400 font-bold text-[10px] font-mono">
+                    {i + 1}
                   </div>
                   <span className="leading-relaxed">{text}</span>
                 </li>
               ))}
-            </ul>
+            </ol>
+
+            <p className="text-[11px] text-red-300/80 mt-6 pt-4 border-t border-gray-900/60 leading-relaxed">
+              O processo inteiro precisa ser repetido para cada vídeo.
+            </p>
           </div>
 
-          {/* COM VIRAL FACTORY CARD (PRÓS) */}
+          {/* Mobile transformation arrow */}
+          <div className="md:hidden flex justify-center -my-2">
+            <div className="w-8 h-8 rounded-full bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center">
+              <ChevronDown className="w-4 h-4 text-indigo-400" />
+            </div>
+          </div>
+
+          {/* PRODUÇÃO COM VIRAL FACTORY CARD */}
           <div className="bg-gradient-to-b from-indigo-950/20 to-transparent border border-indigo-500/30 rounded-2xl p-8 text-left shadow-2xl relative overflow-hidden ring-1 ring-indigo-500/20">
             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-3xl rounded-full pointer-events-none" />
-            
-            <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-900/60">
-              <span className="bg-indigo-500/10 text-indigo-300 text-[10px] font-mono uppercase px-3 py-1 rounded-lg border border-indigo-500/25 font-bold flex items-center gap-1.5">
-                <span className="text-[12px]">⚡</span> COM VIRAL FACTORY
-              </span>
-              <span className="bg-emerald-500/10 text-emerald-400 text-[9px] font-mono uppercase px-2 py-0.5 rounded border border-emerald-500/25 font-bold">
-                100x Mais Rápido
+
+            <div className="flex items-center gap-2 mb-6 pb-4 border-b border-gray-900/60">
+              <span className="bg-indigo-500/10 text-indigo-300 text-[10px] font-mono uppercase px-3 py-1 rounded-lg border border-indigo-500/25 font-bold">
+                Produção com Viral Factory
               </span>
             </div>
 
-            <ul className="space-y-4 text-xs text-gray-300">
+            <ol className="space-y-3 text-xs text-gray-300">
               {[
-                "Edição em massa",
-                "1 minuto para 100 vídeos",
-                "Sistema Anti-Detecção",
-                "Você posta uma semana de conteúdo em uma sentada",
-                "Escala quantas páginas quiser sem precisar contratar editor"
+                "Envie o template",
+                "Defina a área uma vez",
+                "Envie o lote",
+                "Inicie a renderização",
+                "O sistema aplica os conteúdos",
+                "Receba os outputs",
+                "Metadados tratados no fluxo"
               ].map((text, i) => (
                 <li key={i} className="flex items-start gap-3 group">
-                  <div className="w-5 h-5 rounded-full bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center shrink-0 mt-0.5 text-indigo-400 font-bold text-[10px] group-hover:scale-110 transition-transform">
-                    ✓
+                  <div className="w-5 h-5 rounded-full bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center shrink-0 mt-0.5 text-indigo-400 font-bold text-[10px] font-mono group-hover:scale-110 transition-transform">
+                    {i + 1}
                   </div>
                   <span className="leading-relaxed font-medium text-gray-200">{text}</span>
                 </li>
               ))}
-            </ul>
+            </ol>
+
+            <p className="text-[11px] text-indigo-300/90 mt-6 pt-4 border-t border-gray-900/60 leading-relaxed">
+              Configure uma vez e processe o lote inteiro.
+            </p>
           </div>
 
+        </Reveal>
+
+        {/* Scale comparison strip */}
+        <Reveal delay={0.15} className="max-w-3xl mx-auto mt-12 pt-10 border-t border-gray-900/40">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-gray-500 mb-6">Exemplo de escala — 50 vídeos</p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8">
+            <div className="text-center">
+              <p className="text-sm font-bold text-red-300/90 font-display">Manual</p>
+              <p className="text-[11px] text-gray-500 mt-1">repetir o processo 50×</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-700 rotate-90 sm:rotate-0 shrink-0" />
+            <div className="text-center">
+              <p className="text-sm font-bold text-indigo-300 font-display">Viral Factory</p>
+              <p className="text-[11px] text-gray-500 mt-1">1 configuração + 1 lote</p>
+            </div>
+          </div>
+        </Reveal>
         </div>
       </section>
 
+      <WaveDivider from={TONE_VIOLET} to={TONE_INDIGO} variant={2} />
+
       {/* EXEMPLOS DE SUCESSO (AUTOPLAY SMARTPHONE CAROUSEL) */}
-      <section id="exemplos" className="py-24 border-t border-gray-900/40 bg-gray-950/10 max-w-7xl mx-auto px-6 relative z-10 text-center overflow-hidden">
-        <div className="space-y-4 max-w-2xl mx-auto mb-12">
-          <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Nichos Lucrativos</span>
+      <section id="exemplos" className="relative z-10" style={{ backgroundColor: TONE_INDIGO }}>
+        <div className="py-24 md:py-28 max-w-7xl mx-auto px-6 text-center overflow-hidden">
+        <Reveal className="space-y-4 max-w-2xl mx-auto mb-12">
+          <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Produção Real</span>
           <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight">
-            Exemplos de Páginas de Sucesso
+            Resultados produzidos com o Viral Factory
           </h2>
           <p className="text-gray-400 text-xs md:text-sm">
-            Veja canais reais em diversos nichos escalando visualizações, seguidores e engajamento diariamente com nosso sistema automatizado de edição em lote.
+            Cada miniatura abaixo é um vídeo final, gerado a partir de um template configurado uma única vez e aplicado a um lote inteiro.
           </p>
-        </div>
+        </Reveal>
 
         {/* Carousel Container */}
         <div className="relative max-w-full mx-auto overflow-hidden">
@@ -1082,11 +1094,15 @@ export const LandingPage: React.FC = () => {
             </div>
           </div>
         </div>
+        </div>
       </section>
 
+      <WaveDivider from={TONE_INDIGO} to={TONE_VOID} variant={0} />
+
       {/* DEPOIMENTOS (AUTOPLAY CAROUSEL) */}
-      <section id="depoimentos" className="py-24 border-t border-gray-900/40 max-w-7xl mx-auto px-6 relative z-10 text-center">
-        <div className="space-y-4 max-w-2xl mx-auto mb-16">
+      <section id="depoimentos" className="relative z-10" style={{ backgroundColor: TONE_VOID }}>
+        <div className="py-24 md:py-28 max-w-7xl mx-auto px-6 text-center">
+        <Reveal className="space-y-4 max-w-2xl mx-auto mb-16">
           <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Depoimentos Reais</span>
           <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight">
             Aprovado pelos maiores estrategistas
@@ -1094,10 +1110,11 @@ export const LandingPage: React.FC = () => {
           <p className="text-gray-400 text-xs md:text-sm">
             Quem experimentou a automação em massa de vídeos curtos não consegue voltar a editar manualmente.
           </p>
-        </div>
+        </Reveal>
 
         {/* Carousel Card Wrapper */}
-        <div
+        <Reveal
+          delay={0.1}
           className="max-w-2xl mx-auto bg-gray-900/35 border border-gray-800/60 rounded-2xl p-8 shadow-2xl relative"
           onMouseEnter={() => setIsHoveringTestimonial(true)}
           onMouseLeave={() => setIsHoveringTestimonial(false)}
@@ -1157,12 +1174,16 @@ export const LandingPage: React.FC = () => {
               />
             ))}
           </div>
+        </Reveal>
         </div>
       </section>
 
+      <WaveDivider from={TONE_VOID} to={TONE_VIOLET} variant={1} />
+
       {/* PLANOS (PREÇOS) */}
-      <section id="precos" className="py-24 border-t border-gray-900/40 bg-gray-950/10 max-w-7xl mx-auto px-6 relative z-10 text-center">
-        <div className="space-y-4 max-w-2xl mx-auto mb-16">
+      <section id="precos" className="relative z-10" style={{ backgroundColor: TONE_VIOLET }}>
+        <div className="py-24 md:py-28 max-w-7xl mx-auto px-6 text-center">
+        <Reveal className="space-y-4 max-w-2xl mx-auto mb-16">
           <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Planos Flexíveis</span>
           <h2 className="text-3xl md:text-4xl font-bold font-display text-white tracking-tight">
             Escolha o combustível da sua máquina de virais
@@ -1170,10 +1191,10 @@ export const LandingPage: React.FC = () => {
           <p className="text-gray-400 text-xs md:text-sm">
             Selecione o plano ideal para a sua produção de conteúdo. Atualize ou cancele de forma extremamente simples quando desejar.
           </p>
-        </div>
+        </Reveal>
 
         {/* Plan Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch max-w-5xl mx-auto">
+        <Reveal delay={0.1} className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch max-w-5xl mx-auto">
           {plans.map((plan, i) => (
             <div
               key={i}
@@ -1224,12 +1245,16 @@ export const LandingPage: React.FC = () => {
               </div>
             </div>
           ))}
+        </Reveal>
         </div>
       </section>
 
+      <WaveDivider from={TONE_VIOLET} to={TONE_VOID} variant={2} />
+
       {/* FAQ (ACCORDION) */}
-      <section id="faq" className="py-24 border-t border-gray-900/40 max-w-3xl mx-auto px-6 relative z-10 text-center">
-        <div className="space-y-4 mb-16">
+      <section id="faq" className="relative z-10" style={{ backgroundColor: TONE_VOID }}>
+        <div className="py-24 md:py-28 max-w-3xl mx-auto px-6 text-center">
+        <Reveal className="space-y-4 mb-16">
           <span className="text-xs font-mono font-semibold uppercase text-indigo-400 tracking-wider">Dúvidas Frequentes</span>
           <h2 className="text-3xl font-bold font-display text-white tracking-tight">
             Perguntas mais comuns
@@ -1237,10 +1262,10 @@ export const LandingPage: React.FC = () => {
           <p className="text-gray-400 text-xs">
             Tudo o que você precisa saber sobre o funcionamento e o suporte do Viral Factory.
           </p>
-        </div>
+        </Reveal>
 
         {/* Accordions */}
-        <div className="space-y-3 text-left">
+        <Reveal delay={0.1} className="space-y-3 text-left">
           {faqs.map((faq, i) => (
             <div
               key={i}
@@ -1274,25 +1299,40 @@ export const LandingPage: React.FC = () => {
               </AnimatePresence>
             </div>
           ))}
+        </Reveal>
         </div>
       </section>
 
       {/* CTA FINAL */}
       <section className="py-24 max-w-7xl mx-auto px-6 relative z-10">
-        <div className="relative rounded-3xl overflow-hidden border border-gray-800/80 bg-gradient-to-br from-indigo-950/20 via-slate-950/90 to-purple-950/20 p-12 text-center shadow-2xl">
-          
+        <Reveal className="relative rounded-3xl overflow-hidden border border-gray-800/80 bg-gradient-to-br from-indigo-950/20 via-slate-950/90 to-purple-950/20 p-12 text-center shadow-2xl">
+
           {/* Subtle Ambient light behind visual content */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/10 blur-[100px] pointer-events-none" />
 
           <div className="relative z-10 max-w-2xl mx-auto space-y-8">
+
+            {/* Closing pipeline motif — template + lote → processamento → outputs (decorative) */}
+            <div className="hidden sm:flex items-center justify-center gap-3 opacity-[0.18] pointer-events-none" aria-hidden="true">
+              {[0, 1, 2].map((i) => (
+                <Video key={`in-${i}`} className="w-5 h-5 text-indigo-300" />
+              ))}
+              <ArrowRight className="w-4 h-4 text-gray-500 mx-2" />
+              <Layers className="w-6 h-6 text-purple-300" />
+              <ArrowRight className="w-4 h-4 text-gray-500 mx-2" />
+              {[0, 1, 2].map((i) => (
+                <CheckCircle2 key={`out-${i}`} className="w-5 h-5 text-indigo-300" />
+              ))}
+            </div>
+
             <span className="inline-flex items-center gap-1.5 text-[10px] font-mono tracking-widest text-indigo-300 uppercase bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
-              <Sparkles className="w-3.5 h-3.5" /> Acelerador de Escala Ativo
+              <Sparkles className="w-3.5 h-3.5" /> Pipeline pronto para o seu lote
             </span>
             <h2 className="text-4xl md:text-5xl font-bold font-display text-white tracking-tight leading-none">
               Comece agora e transforme sua produção de vídeos.
             </h2>
             <p className="text-gray-400 text-sm leading-relaxed max-w-lg mx-auto">
-              Junte-se a milhares de criadores e agências que escalaram seu tráfego orgânico gerando centenas de vídeos curtos em minutos.
+              Configure um template, envie o lote e receba seus vídeos finalizados prontos para publicar — em escala, sem repetir o processo a cada arquivo.
             </p>
 
             <div className="pt-4 flex justify-center">
@@ -1309,12 +1349,15 @@ export const LandingPage: React.FC = () => {
               Sem cartão de crédito necessário • Teste imediatamente
             </p>
           </div>
-        </div>
+        </Reveal>
       </section>
 
+      <WaveDivider from={TONE_VOID} to={TONE_FOOTER} variant={0} />
+
       {/* FOOTER */}
-      <footer className="border-t border-gray-900/60 bg-gray-950/60 py-12 max-w-7xl mx-auto px-6 relative z-10">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+      <footer className="relative z-10" style={{ backgroundColor: TONE_FOOTER }}>
+        <div className="py-12 max-w-7xl mx-auto px-6">
+        <Reveal y={16} className="grid grid-cols-1 md:grid-cols-4 gap-8">
           
           {/* Column 1: Brand */}
           <div className="space-y-4 text-left">
@@ -1356,15 +1399,17 @@ export const LandingPage: React.FC = () => {
             </div>
           </div>
 
-        </div>
+        </Reveal>
 
         {/* Bottom copyright */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-12 pt-8 border-t border-gray-900/60 text-[10px] font-mono text-gray-600">
           <span>Viral Factory © 2026. Todos os direitos reservados.</span>
           <span>SaaS Internacional de Produção Massiva de Vídeo.</span>
         </div>
+        </div>
       </footer>
 
     </div>
+    </MotionConfig>
   );
 };

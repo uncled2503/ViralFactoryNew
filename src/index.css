@@ -95,3 +95,40 @@ html, body, #root {
   animation-play-state: paused;
 }
 
+/* Pipeline glow node — travels slowly along the "Como usar" connector line */
+@keyframes pipelineTravel {
+  0% {
+    left: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+.pipeline-glow-node {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #a5b4fc;
+  box-shadow: 0 0 10px 2px rgba(129, 140, 248, 0.8);
+  transform: translate(-50%, -50%);
+  animation: pipelineTravel 6s ease-in-out infinite;
+}
+
+/* Respect the user's motion preference for looping decorative animations */
+@media (prefers-reduced-motion: reduce) {
+  .animate-infinite-scroll {
+    animation: none;
+  }
+}
+
