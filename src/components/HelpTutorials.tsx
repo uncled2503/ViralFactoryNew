@@ -29,9 +29,7 @@ interface Chapter {
   description: string;
 }
 
-// TODO(product): replace with the real support channel (email, WhatsApp, Discord...)
-// before this ships to real users — placeholder until the team decides.
-const SUPPORT_CONTACT_URL = 'mailto:suporte@viralfactory.com';
+const SUPPORT_CONTACT_URL = 'mailto:contato@viralfactory.site';
 
 export const HelpTutorials: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
