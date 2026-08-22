@@ -40,6 +40,63 @@ import {
   Edit3
 } from 'lucide-react';
 
+// Real thumbnail — plays the actual video/image from `file.url` instead of a generic
+// icon. Falls back to an icon if the URL fails to load (e.g. a stale record from
+// before real uploads existed).
+export const FileThumbnail: React.FC<{ file: StorageFile }> = ({ file }) => {
+  const [errored, setErrored] = useState(false);
+
+  if (!errored && (file.type === 'video' || file.type === 'render')) {
+    return (
+      <video
+        src={file.url}
+        className="absolute inset-0 w-full h-full object-cover bg-slate-950"
+        muted
+        preload="metadata"
+        playsInline
+        onError={() => setErrored(true)}
+        onMouseOver={(e) => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
+        onMouseOut={(e) => {
+          const v = e.currentTarget as HTMLVideoElement;
+          v.pause();
+          v.currentTime = 0;
+        }}
+      />
+    );
+  }
+
+  if (!errored && file.type === 'image') {
+    return (
+      <img
+        src={file.url}
+        alt={file.name}
+        className="absolute inset-0 w-full h-full object-cover bg-slate-950"
+        loading="lazy"
+        onError={() => setErrored(true)}
+      />
+    );
+  }
+
+  if (file.type === 'audio') {
+    return (
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-950/20 to-slate-900 flex items-center justify-center">
+        <div className="flex gap-0.5 items-end h-5">
+          <span className="w-1 bg-blue-500 h-2 animate-pulse" />
+          <span className="w-1 bg-blue-400 h-4 animate-pulse" />
+          <span className="w-1 bg-blue-500 h-3 animate-pulse" />
+          <span className="w-1 bg-blue-300 h-1 animate-pulse" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="absolute inset-0 bg-gray-950 flex items-center justify-center">
+      <File className="w-8 h-8 text-gray-700" />
+    </div>
+  );
+};
+
 export const StorageManager: React.FC = () => {
   const { 
     folders, 
@@ -166,49 +223,7 @@ export const StorageManager: React.FC = () => {
     }
   };
 
-  const getFileThumbnail = (file: StorageFile) => {
-    switch (file.type) {
-      case 'video':
-      case 'render':
-        return (
-          <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-2 text-center overflow-hidden">
-            <div className="w-full h-full bg-gradient-to-br from-purple-950/20 to-slate-900 rounded border border-purple-500/10 flex flex-col items-center justify-center gap-1">
-              <FileVideo className="w-6 h-6 text-purple-500" />
-              <span className="text-[8px] font-mono text-gray-500 truncate w-[90%]">{file.name}</span>
-            </div>
-          </div>
-        );
-      case 'image':
-        return (
-          <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-2 text-center overflow-hidden">
-            <div className="w-full h-full bg-gradient-to-br from-emerald-950/20 to-slate-900 rounded border border-emerald-500/10 flex flex-col items-center justify-center gap-1">
-              <FileImage className="w-6 h-6 text-emerald-500" />
-              <span className="text-[8px] font-mono text-gray-500 truncate w-[90%]">{file.name}</span>
-            </div>
-          </div>
-        );
-      case 'audio':
-        return (
-          <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-2 text-center overflow-hidden">
-            <div className="w-full h-full bg-gradient-to-br from-blue-950/20 to-slate-900 rounded border border-blue-500/10 flex flex-col items-center justify-center gap-1">
-              <div className="flex gap-0.5 items-end h-5">
-                <span className="w-1 bg-blue-500 h-2 animate-pulse"></span>
-                <span className="w-1 bg-blue-400 h-4 animate-pulse"></span>
-                <span className="w-1 bg-blue-500 h-3 animate-pulse"></span>
-                <span className="w-1 bg-blue-300 h-1 animate-pulse"></span>
-              </div>
-              <span className="text-[8px] font-mono text-gray-500 truncate w-[90%]">{file.name}</span>
-            </div>
-          </div>
-        );
-      default:
-        return (
-          <div className="absolute inset-0 bg-gray-950 flex items-center justify-center">
-            <File className="w-8 h-8 text-gray-700" />
-          </div>
-        );
-    }
-  };
+  const getFileThumbnail = (file: StorageFile) => <FileThumbnail file={file} />;
 
   const handleUploadInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && selectedFolderId) {
@@ -681,35 +696,21 @@ export const StorageManager: React.FC = () => {
               </button>
             </div>
 
-            {/* Media Body visual representation */}
-            <div className="p-6 bg-black flex items-center justify-center relative min-h-[220px]">
+            {/* Real media playback */}
+            <div className="bg-black flex items-center justify-center relative min-h-[220px] max-h-[60vh] overflow-hidden">
               {previewFile.type === 'video' || previewFile.type === 'render' ? (
-                <div className="w-full flex flex-col items-center gap-2 p-4 text-center">
-                  <FileVideo className="w-12 h-12 text-purple-500 animate-pulse" />
-                  <span className="text-[11px] text-gray-400 font-mono">[Reprodução de Vídeo .mp4]</span>
-                  <div className="flex gap-2 text-[10px] text-gray-600 mt-2 font-mono">
-                    <span>FPS: 24</span>
-                    <span>•</span>
-                    <span>1080x1920 (Vertical)</span>
-                  </div>
-                </div>
+                <video src={previewFile.url} controls autoPlay className="max-h-[60vh] w-full" />
               ) : previewFile.type === 'audio' ? (
-                <div className="w-full flex flex-col items-center gap-3 p-4">
-                  <div className="flex gap-1 items-end h-10">
-                    {[2, 4, 6, 8, 5, 3, 1, 4, 7, 8, 3, 5].map((h, i) => (
-                      <span 
-                        key={i} 
-                        className="w-1.5 bg-blue-500 rounded-full animate-pulse" 
-                        style={{ height: `${h * 4}px`, animationDelay: `${i * 0.08}s` }}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-[11px] text-gray-400 font-mono">[Sinal de Áudio .wav]</span>
+                <div className="w-full flex flex-col items-center gap-4 p-8">
+                  <FileAudio className="w-10 h-10 text-blue-400" />
+                  <audio src={previewFile.url} controls className="w-full" />
                 </div>
+              ) : previewFile.type === 'image' ? (
+                <img src={previewFile.url} alt={previewFile.name} className="max-h-[60vh] w-full object-contain" />
               ) : (
-                <div className="w-full flex flex-col items-center gap-2 p-4">
-                  <FileImage className="w-12 h-12 text-emerald-500" />
-                  <span className="text-[11px] text-gray-400 font-mono">[Visualização de Imagem]</span>
+                <div className="w-full flex flex-col items-center gap-2 p-8">
+                  <FileCode className="w-12 h-12 text-indigo-500" />
+                  <span className="text-[11px] text-gray-400 font-mono">Pré-visualização não disponível para este tipo de arquivo.</span>
                 </div>
               )}
             </div>
@@ -720,29 +721,28 @@ export const StorageManager: React.FC = () => {
                 <span>Tamanho: <strong className="text-gray-300">{previewFile.size}</strong></span>
                 <span>Tipo: <strong className="text-gray-300">{previewFile.type.toUpperCase()}</strong></span>
                 <span>Registrado em: <strong className="text-gray-300">{new Date(previewFile.createdAt).toLocaleDateString('pt-BR')}</strong></span>
-                <span>Formato: <strong className="text-gray-300">{previewFile.name.split('.').pop()?.toUpperCase() || 'MOCK'}</strong></span>
+                <span>Formato: <strong className="text-gray-300">{previewFile.name.split('.').pop()?.toUpperCase() || '—'}</strong></span>
               </div>
 
               {/* Actions footer */}
-              <div className="pt-2 flex justify-between items-center">
-                <span className="text-[9px] text-indigo-400 uppercase font-bold tracking-wider">Cloud Storage OK</span>
-                <button
-                  onClick={() => {
-                    alert('Download simulado concluído!');
-                    setPreviewFile(null);
-                  }}
+              <div className="pt-2 flex justify-end items-center">
+                <a
+                  href={previewFile.url}
+                  download={previewFile.name}
+                  target="_blank"
+                  rel="noreferrer"
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/10"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Fazer Download</span>
-                </button>
+                </a>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal: Simulate Bulk File Upload */}
+      {/* Modal: Upload Files */}
       {isUploadOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-gray-950 border border-gray-900 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">

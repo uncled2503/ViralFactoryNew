@@ -21,9 +21,12 @@ import {
   Sparkles,
   AlertCircle,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  HardDrive
 } from 'lucide-react';
 import { uploadFileToServer } from '../utils/uploadFile';
+import { StorageFilePicker } from './StorageFilePicker';
+import { StorageFile } from '../types';
 
 interface NewProjectWizardProps {
   isOpen: boolean;
@@ -46,6 +49,7 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
   const [templateUploadProgress, setTemplateUploadProgress] = useState<number | null>(null);
   const [templateDragActive, setTemplateDragActive] = useState(false);
   const templateFileInputRef = useRef<HTMLInputElement>(null);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   // Step 2 States (Custom Figma/Canva Video Area Editor)
   const [templateFileUrl, setTemplateFileUrl] = useState<string | null>(null);
@@ -68,6 +72,7 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
   const sourceFileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
   const [batchResult, setBatchResult] = useState<{ total: number; successCount: number; blocked: boolean } | null>(null);
+  const [showVideoPicker, setShowVideoPicker] = useState(false);
 
   // Template Drag & Drop Handlers
   const handleTemplateDrag = (e: React.DragEvent) => {
@@ -173,6 +178,30 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
     setSourceVideos(prev => prev.filter(v => v.id !== id));
   };
 
+  // A file picked from Arquivos is already uploaded — use its real URL directly,
+  // no re-upload needed.
+  const handlePickTemplateFile = (files: StorageFile[]) => {
+    const file = files[0];
+    if (!file) return;
+    setSelectedTemplateId('');
+    setTemplateFile({ name: file.name, size: file.size, url: file.url });
+    setTemplateFileUrl(file.url);
+  };
+
+  const handlePickSourceVideos = (files: StorageFile[]) => {
+    setSourceVideos(prev => [
+      ...prev,
+      ...files.map((file) => ({
+        id: `saved-${file.id}`,
+        name: file.name,
+        size: file.size,
+        progress: 100,
+        status: 'completed' as const,
+        url: file.url
+      }))
+    ]);
+  };
+
   const handleStartBatchProcessing = async () => {
     if (sourceVideos.length === 0) return;
     setIsProcessingBatch(true);
@@ -257,6 +286,7 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
   };
 
   return (
+    <>
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -419,6 +449,15 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
                         )}
                       </div>
 
+                      <button
+                        type="button"
+                        onClick={() => setShowTemplatePicker(true)}
+                        className="w-full py-2 px-3 bg-gray-900/60 hover:bg-gray-900 border border-gray-850 rounded-lg text-[11px] font-mono text-gray-300 hover:text-white transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Ou escolha um arquivo salvo em Arquivos</span>
+                      </button>
+
                       {/* Templates Rápidos */}
                       <div className="space-y-2">
                         <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider font-mono">Ou use um template existente</label>
@@ -545,12 +584,23 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
                         </div>
                       </div>
 
+                      <button
+                        type="button"
+                        onClick={() => setShowVideoPicker(true)}
+                        className="w-full py-2 px-3 bg-gray-900/60 hover:bg-gray-900 border border-gray-850 rounded-lg text-[11px] font-mono text-gray-300 hover:text-white transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Ou escolha vídeos salvos em Arquivos</span>
+                      </button>
+
                       {/* Lista de vídeos de origem carregados */}
                       {sourceVideos.length > 0 && (
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider font-mono flex justify-between">
                             <span>Fila de Mídias de Origem ({sourceVideos.length})</span>
-                            <span className="text-indigo-400 font-bold">Enviando para a nuvem</span>
+                            <span className="text-indigo-400 font-bold">
+                              {sourceVideos.some(v => v.status === 'uploading') ? 'Enviando para a nuvem' : 'Pronto'}
+                            </span>
                           </label>
                           <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 border border-gray-900 rounded-lg p-2 bg-slate-950/50">
                             {sourceVideos.map((video) => (
@@ -780,5 +830,23 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
         </motion.div>
       )}
     </AnimatePresence>
+
+    <StorageFilePicker
+      isOpen={showTemplatePicker}
+      onClose={() => setShowTemplatePicker(false)}
+      fileTypes={['image', 'video']}
+      title="Escolher template salvo"
+      onSelect={handlePickTemplateFile}
+    />
+
+    <StorageFilePicker
+      isOpen={showVideoPicker}
+      onClose={() => setShowVideoPicker(false)}
+      fileTypes={['video']}
+      multiple
+      title="Escolher vídeos salvos"
+      onSelect={handlePickSourceVideos}
+    />
+    </>
   );
 };
