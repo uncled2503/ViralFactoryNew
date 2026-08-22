@@ -20,7 +20,7 @@ describe('JobQueue Unit & Integration Tests', () => {
     });
 
     expect(job).toBeDefined();
-    expect(job.id).toContain('job-');
+    expect(job.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     expect(job.status).toBe('Queued');
     expect(job.progress).toBe(0);
     expect(job.userId).toBe('user-test-123');

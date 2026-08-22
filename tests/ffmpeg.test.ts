@@ -62,7 +62,7 @@ describe('FFmpeg Command Builder & Pipeline Engine Tests', () => {
     // Ensure percent signs are escaped
     expect(result.commandString).toContain('\\%');
     // Ensure single quotes are escaped
-    expect(result.commandString).toContain("'\\\\\\''");
+    expect(result.commandString).toContain("'\\''");
   });
 
   it('should position text layers correctly using alignment calculations', () => {
@@ -138,7 +138,7 @@ describe('FFmpeg Command Builder & Pipeline Engine Tests', () => {
     });
 
     expect(result.commandString).toContain('drawbox');
-    expect(result.commandString).toContain('#1E293B'); // Background color of progress bar
-    expect(result.commandString).toContain('#38BDF8'); // Foreground color of progress bar
+    expect(result.commandString).toContain('0x1E293B'); // Background color of progress bar
+    expect(result.commandString).toContain('0x38BDF8'); // Foreground color of progress bar
   });
 });

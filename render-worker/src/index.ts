@@ -71,8 +71,12 @@ function runFFmpegDiagnosticSuite() {
   console.log(`[Diagnostic] Architecture:  ${process.arch}`);
   console.log(`[Diagnostic] Platform:      ${process.platform}`);
 
+  const fontConfigEnv = FontManager.getFontConfigEnv();
+  const spawnEnv = { ...process.env, ...fontConfigEnv };
+  console.log(`[Diagnostic] FONTCONFIG_FILE: ${fontConfigEnv.FONTCONFIG_FILE || '(not found, using FFmpeg defaults)'}`);
+
   try {
-    const verRes = spawnSync(FFMPEG_PATH, ['-version'], { encoding: 'utf8' });
+    const verRes = spawnSync(FFMPEG_PATH, ['-version'], { encoding: 'utf8', env: spawnEnv });
     const firstLine = (verRes.stdout || verRes.stderr || '').split('\n')[0];
     console.log(`[Diagnostic] Version: ${firstLine}`);
   } catch (err: any) {
@@ -80,7 +84,7 @@ function runFFmpegDiagnosticSuite() {
   }
 
   try {
-    const encRes = spawnSync(FFMPEG_PATH, ['-hide_banner', '-encoders'], { encoding: 'utf8' });
+    const encRes = spawnSync(FFMPEG_PATH, ['-hide_banner', '-encoders'], { encoding: 'utf8', env: spawnEnv });
     const hasX264 = (encRes.stdout || '').includes('libx264');
     console.log(`[Diagnostic] libx264 encoder support: ${hasX264 ? 'YES' : 'NO'}`);
   } catch (err: any) {
@@ -116,7 +120,7 @@ function runFFmpegDiagnosticSuite() {
   for (const t of tests) {
     const start = Date.now();
     try {
-      const res = spawnSync(FFMPEG_PATH, t.args, { encoding: 'utf8', timeout: 15000 });
+      const res = spawnSync(FFMPEG_PATH, t.args, { encoding: 'utf8', timeout: 15000, env: spawnEnv });
       const durationMs = Date.now() - start;
       const outFile = t.args[t.args.length - 1];
       const exists = fs.existsSync(outFile);
@@ -532,7 +536,9 @@ async function executeJob(
       abortCurrentJob(`FFmpeg processing got stuck or exceeded maximum local limit of ${localTimeoutLimitMs}ms.`);
     }, localTimeoutLimitMs);
 
-    currentFFmpegProcess = spawn(commandResult.command, commandResult.args);
+    currentFFmpegProcess = spawn(commandResult.command, commandResult.args, {
+      env: { ...process.env, ...FontManager.getFontConfigEnv() }
+    });
 
     await new Promise<void>((resolve, reject) => {
       let lastReportedPercent = 25;

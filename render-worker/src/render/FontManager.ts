@@ -44,7 +44,7 @@ export class FontManager {
     ];
 
     for (const fontPath of candidates) {
-      if (this.validateFontFile(fontPath)) {
+      if (this.validateFontFile(fontPath) && !this.isLikelyCorruptedFont(fontPath)) {
         const resolvedPath = path.resolve(fontPath);
         this.cachedFontPath = resolvedPath;
         return resolvedPath;
@@ -53,6 +53,72 @@ export class FontManager {
 
     const checkedList = candidates.join('\n  - ');
     throw new Error(`Default render font not found. Checked candidate paths:\n  - ${checkedList}`);
+  }
+
+  /**
+   * Resolves the absolute path to the bundled fontconfig configuration file, if present.
+   * Windows FFmpeg full builds link against libfontconfig for the drawtext filter and
+   * crash with an access violation when they can't locate a config file.
+   */
+  static getFontConfigFilePath(): string | null {
+    const currentCwd = process.cwd();
+    let moduleDir = '';
+    try {
+      if (typeof __dirname !== 'undefined') {
+        moduleDir = __dirname;
+      }
+    } catch {}
+
+    const candidates = [
+      path.resolve(currentCwd, 'render-worker/fonts/fonts.conf'),
+      ...(moduleDir ? [
+        path.resolve(moduleDir, '../../fonts/fonts.conf'),
+        path.resolve(moduleDir, '../fonts/fonts.conf'),
+      ] : []),
+      path.resolve(currentCwd, 'fonts/fonts.conf'),
+      path.resolve(currentCwd, 'server/fonts/fonts.conf'),
+    ];
+
+    for (const confPath of candidates) {
+      if (this.validateFontFile(confPath)) {
+        return path.resolve(confPath);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Env vars to merge into an FFmpeg child process so fontconfig can locate its config
+   * instead of crashing. Returns {} when no bundled fonts.conf is found (e.g. Linux
+   * containers with system fontconfig already configured).
+   */
+  static getFontConfigEnv(): Record<string, string> {
+    const confPath = this.getFontConfigFilePath();
+    return confPath ? { FONTCONFIG_FILE: confPath } : {};
+  }
+
+  /**
+   * Detects TTF/OTF binaries that were mangled by a text/UTF-8 processing step
+   * (e.g. a bad git filter or editor save), which is invisible to size/readability
+   * checks but makes FreeType fail to parse the font, crashing FFmpeg's drawtext
+   * filter. Mangled bytes get replaced with the UTF-8 replacement char (EF BF BD);
+   * a handful of coincidental occurrences in real glyph data is normal, thousands
+   * is corruption.
+   */
+  private static isLikelyCorruptedFont(filePath: string): boolean {
+    try {
+      const data = fs.readFileSync(filePath);
+      let replacementCount = 0;
+      for (let i = 0; i < data.length - 2; i++) {
+        if (data[i] === 0xef && data[i + 1] === 0xbf && data[i + 2] === 0xbd) {
+          replacementCount++;
+          if (replacementCount > 20) return true;
+        }
+      }
+      return false;
+    } catch {
+      return true;
+    }
   }
 
   /**
@@ -89,10 +155,17 @@ export class FontManager {
     // Convert Windows backslashes to forward slashes for FFmpeg compatibility
     let normalized = targetPath.replace(/\\/g, '/');
 
-    // DO NOT escape colons with backslashes when wrapped in single quotes!
-    // In FFmpeg, inside single quotes '...', colons are literal.
-    // Adding a backslash before the colon ('C\:') creates an invalid Win32 drive path in C runtime fopen.
+    // Escape single quotes first (order matters: this must run before the colon escape
+    // below, otherwise it would double-escape the backslash that colon escaping inserts).
     normalized = normalized.replace(/'/g, "'\\''");
+
+    // Escape colons even inside the single-quoted value. Despite appearances, FFmpeg's
+    // filtergraph parser does NOT treat ':' as literal within '...' — a drive-letter
+    // colon right after the opening quote (e.g. fontfile='C:/Windows/...') terminates
+    // the quoted value early and breaks parsing ("No option name near ..."). FFmpeg's
+    // drawtext filter unescapes '\:' back to ':' before the path reaches fopen, so this
+    // is safe for real filesystem paths.
+    normalized = normalized.replace(/:/g, '\\:');
 
     return normalized;
   }

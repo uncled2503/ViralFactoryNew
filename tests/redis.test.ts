@@ -54,7 +54,7 @@ describe('Redis Scale Engine, Pub/Sub, Cache & Coordination Tests', () => {
       process.env.REDIS_TLS = 'true';
 
       (RedisService as any).client = null;
-      (RedisService as any).rebuildClients();
+      (RedisService as any).buildClients();
 
       const client = (RedisService as any).client;
       expect(client).toBeDefined();
@@ -74,7 +74,7 @@ describe('Redis Scale Engine, Pub/Sub, Cache & Coordination Tests', () => {
       process.env.REDIS_TLS = 'false';
 
       (RedisService as any).client = null;
-      (RedisService as any).rebuildClients();
+      (RedisService as any).buildClients();
 
       const client = (RedisService as any).client;
       expect(client).toBeDefined();
@@ -187,6 +187,7 @@ describe('Redis Scale Engine, Pub/Sub, Cache & Coordination Tests', () => {
         const pushedLists = new Map<string, string[]>();
 
         const mockClient = {
+          status: 'ready',
           hset: async (key: string, field: string, val: string) => {
             hashKeys.set(`${key}:${field}`, val);
           },
