@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { authenticatedFetch } from '../utils/api';
 import { PLANS_DETAILS, PLAN_LIMITS_MAP, getPlanLimits } from '../config/plans';
 import { isAdminRole } from '../utils/rbac';
 import { EmptyState } from './ui/EmptyState';
@@ -101,7 +102,6 @@ export const SubscriptionDashboard: React.FC = () => {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'paid'>('pending');
   const [copied, setCopied] = useState(false);
-  const [simulating, setSimulating] = useState(false);
 
   // Poll transaction status
   useEffect(() => {
@@ -135,7 +135,6 @@ export const SubscriptionDashboard: React.FC = () => {
     setCheckoutError(null);
     setPaymentStatus('pending');
     setCopied(false);
-    setSimulating(false);
     setShowCheckout(tier);
   };
 
@@ -145,7 +144,6 @@ export const SubscriptionDashboard: React.FC = () => {
     setCheckoutError(null);
     setPaymentStatus('pending');
     setCopied(false);
-    setSimulating(false);
     setClientDocument('');
     setClientTelefone('');
   };
@@ -158,13 +156,9 @@ export const SubscriptionDashboard: React.FC = () => {
     setCheckoutError(null);
 
     try {
-      const response = await fetch('/api/payments/roypay/cashin', {
+      const response = await authenticatedFetch('/api/payments/roypay/cashin', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
-          userId: user.id,
           planTier: showCheckout,
           billingCycle,
           clientName,
@@ -191,30 +185,6 @@ export const SubscriptionDashboard: React.FC = () => {
       setCheckoutError(err.message || 'Erro ao comunicar com o servidor.');
     } finally {
       setProcessingSub(false);
-    }
-  };
-
-  const handleSimulateWebhook = async () => {
-    if (!pixData) return;
-    setSimulating(true);
-    try {
-      const res = await fetch('/api/payments/roypay/simulate-webhook', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          idTransaction: pixData.idTransaction
-        })
-      });
-      if (res.ok) {
-        setPaymentStatus('paid');
-        changeSubscription(showCheckout!, billingCycle);
-      }
-    } catch (err) {
-      console.warn('Erro ao simular confirmação:', err);
-    } finally {
-      setSimulating(false);
     }
   };
 

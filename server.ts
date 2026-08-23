@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import compression from 'compression';
 import { createServer as createViteServer } from 'vite';
 import { StorageManager } from './server/render/Storage';
@@ -129,10 +130,10 @@ async function startServer() {
   const BILLING_ENABLED = process.env.BILLING_ENABLED === 'true' || false;
 
   const BACKEND_PLAN_LIMITS: Record<string, { maxProjects: number; maxTemplates: number; maxVideosPerMonth: number; maxStorageMB: number }> = {
-    Free: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 999999, maxStorageMB: 9999999 },
-    Starter: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 999999, maxStorageMB: 9999999 },
-    Pro: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 999999, maxStorageMB: 9999999 },
-    Business: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 999999, maxStorageMB: 9999999 }
+    Free: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 5, maxStorageMB: 9999999 },
+    Starter: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 300, maxStorageMB: 9999999 },
+    Pro: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 1200, maxStorageMB: 9999999 },
+    Business: { maxProjects: 999999, maxTemplates: 999999, maxVideosPerMonth: 4000, maxStorageMB: 9999999 }
   };
 
   function parseSizeToMB(sizeStr: string | number): number {
@@ -418,14 +419,23 @@ async function startServer() {
 
   // Create a Render Job
   app.post('/api/render/job', async (req, res) => {
-    const { taskId, userId, projectId, projectName, templateId, templateName, duration, variables } = req.body;
+    const { taskId, projectId, projectName, templateId, templateName, duration, variables } = req.body;
 
-    if (!userId || !projectId || !projectName || !templateId) {
+    if (!projectId || !projectName || !templateId) {
       res.status(400).json({ error: 'Missing required render parameters' });
       return;
     }
 
     try {
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Faça login novamente.' });
+        return;
+      }
+      // SECURITY: always render as the authenticated caller — never trust a userId from the
+      // request body, which would let anyone trigger renders (and consume quota) as any account.
+      const userId = authUser.userId;
+
       const dbData = await LocalDbMutex.loadDb();
       const userInDb = (dbData.saas_users || []).find((u: any) => u.id === userId);
       
@@ -817,13 +827,16 @@ async function startServer() {
     }
   });
 
-  // Helper to extract authenticated user from Authorization Bearer token (Supabase Auth)
-  // falls back to query/body parameter with strict validation
+  // Helper to extract authenticated user from a verified Authorization Bearer token (Supabase
+  // Auth JWT). SECURITY: this must never trust a client-supplied userId from query/body — doing
+  // so lets anyone impersonate any account by simply passing its UUID, defeating every
+  // ownership/authorization check built on top of this helper. The only fallback is for fully
+  // offline/local dev setups where Supabase isn't configured at all (never true in production).
   async function getAuthenticatedUser(req: express.Request): Promise<{ userId: string; email: string | null } | null> {
     const authHeader = req.headers.authorization || req.headers.Authorization;
     if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
       if (isSupabaseConfigured() && supabaseAdmin) {
+        const token = authHeader.substring(7);
         try {
           const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
           if (!error && user) {
@@ -833,13 +846,20 @@ async function startServer() {
           console.error('[Auth Helper] Supabase JWT verification failed:', e.message);
         }
       }
+      // A Bearer token was presented but could not be verified — reject rather than falling
+      // through to the insecure client-supplied-id path below.
+      return null;
     }
-    
-    // Fallback to query/body parameters for sandbox/local-only or backward-compatible development
+
+    // No Authorization header at all. Only trust a client-supplied userId when Supabase auth
+    // isn't configured in this deployment (offline/local dev) — never reachable in production.
+    if (isSupabaseConfigured()) {
+      return null;
+    }
+
     const userId = (req.query.userId || req.body.userId) as string;
     if (!userId) return null;
-    
-    // Find user in cachedDbData to obtain email if possible
+
     try {
       const dbData = await LocalDbMutex.loadDb();
       const users = dbData.saas_users || dbData.users || [];
@@ -952,11 +972,15 @@ async function startServer() {
               name: incomingProfile.name || 'Gabriel Moura',
               email: incomingProfile.email || 'mouragabriel2011@gmail.com',
               company: incomingProfile.company || '',
-              role: isMasterUser ? 'SaaS_Owner' : (incomingProfile.role || 'Membro'),
+              // SECURITY: role and subscription_tier are never trusted from client input — a
+              // self-reported 'Owner'/'Business' here would be a free privilege escalation +
+              // billing bypass. New accounts always start as a plain, free member; role/tier
+              // changes only ever happen via admin action or the payment webhook.
+              role: isMasterUser ? 'SaaS_Owner' : 'Membro',
               avatar_url: incomingProfile.avatar_url || incomingProfile.avatarUrl || '',
               avatarUrl: incomingProfile.avatar_url || incomingProfile.avatarUrl || '',
-              subscription_tier: isMasterUser ? 'Pro' : (incomingProfile.subscription_tier || incomingProfile.subscription || 'Free'),
-              subscription: isMasterUser ? 'Pro' : (incomingProfile.subscription || incomingProfile.subscription_tier || 'Free'),
+              subscription_tier: isMasterUser ? 'Pro' : 'Free',
+              subscription: isMasterUser ? 'Pro' : 'Free',
               status: 'active',
               usage_current: incomingProfile.usage_current || incomingProfile.usageCurrent || 0,
               usageCurrent: incomingProfile.usage_current || incomingProfile.usageCurrent || 0,
@@ -994,13 +1018,11 @@ async function startServer() {
               existingUser.usage_limit = 999999;
               existingUser.usageLimit = 999999;
             } else {
-              if (incomingProfile.role && incomingProfile.role !== 'user') {
-                existingUser.role = incomingProfile.role;
-              }
-              if (incomingProfile.subscription_tier || incomingProfile.subscription) {
-                existingUser.subscription_tier = incomingProfile.subscription_tier || incomingProfile.subscription;
-                existingUser.subscription = existingUser.subscription_tier;
-              }
+              // SECURITY: role, subscription_tier, subscription and usage_limit are deliberately
+              // NOT taken from incomingProfile here — this endpoint is reachable by any
+              // authenticated user syncing their own data, so trusting client-supplied values
+              // for these fields would let anyone grant themselves admin access or a paid plan
+              // for free. They can only change via an admin action or the payment webhook.
               existingUser.status = existingUser.status || 'active';
             }
           }
@@ -1319,9 +1341,17 @@ async function startServer() {
   // 1. POST /api/payments/roypay/cashin
   app.post('/api/payments/roypay/cashin', async (req, res) => {
     try {
-      const { planTier, billingCycle, clientName, clientDocument, clientTelefone, clientEmail, userId } = req.body;
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Faça login novamente.' });
+        return;
+      }
+      // SECURITY: always charge/upgrade the authenticated caller — never a userId from the body.
+      const userId = authUser.userId;
 
-      if (!planTier || !billingCycle || !clientName || !clientDocument || !clientTelefone || !clientEmail || !userId) {
+      const { planTier, billingCycle, clientName, clientDocument, clientTelefone, clientEmail } = req.body;
+
+      if (!planTier || !billingCycle || !clientName || !clientDocument || !clientTelefone || !clientEmail) {
         res.status(400).json({ error: 'Parâmetros obrigatórios ausentes.' });
         return;
       }
@@ -1349,11 +1379,16 @@ async function startServer() {
       const totalAmount = billingCycle === 'annual' ? price * 12 : price;
       const apiKey = process.env.ROYPAY_API_KEY || "81bb141jmdaw9u32-d3q9md3qd-qdwq59";
 
+      // SECURITY: a random per-transaction token, known only to us and to RoyPay (via the
+      // callback URL we send them) — never exposed to the client. The webhook handler requires
+      // this to match before marking a transaction paid, so a client that only knows its own
+      // idTransaction (which we do return to it) cannot self-confirm payment for free.
+      const webhookToken = crypto.randomBytes(24).toString('hex');
+
       const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
       const host = req.get('host');
-      const callbackUrl = process.env.APP_URL 
-        ? `${process.env.APP_URL}/api/payments/roypay/webhook`
-        : `${protocol}://${host}/api/payments/roypay/webhook`;
+      const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
+      const callbackUrl = `${baseUrl}/api/payments/roypay/webhook?token=${webhookToken}`;
 
       const requestPayload = {
         "api-key": apiKey,
@@ -1396,6 +1431,7 @@ async function startServer() {
           billingCycle,
           amount: totalAmount,
           status: 'pending',
+          webhookToken,
           client: {
             name: clientName || 'Cliente Viral Factory',
             email: clientEmail || 'cliente@viralfactory.com'
@@ -1432,6 +1468,7 @@ async function startServer() {
         billingCycle,
         amount: totalAmount,
         status: 'pending',
+        webhookToken,
         client: {
           name: clientName,
           email: clientEmail
@@ -1496,6 +1533,17 @@ async function startServer() {
         return;
       }
 
+      // SECURITY: require the random per-transaction token minted at cashin time and known only
+      // to RoyPay (via the callback URL) — never returned to the client. Without this, anyone who
+      // knows their own idTransaction (returned to them by /cashin) could call this endpoint
+      // directly to mark their own unpaid transaction as paid and upgrade for free.
+      const providedToken = (req.query.token || req.body.token) as string | undefined;
+      if (!tx.webhookToken || providedToken !== tx.webhookToken) {
+        console.warn(`[RoyPay Webhook] Rejected webhook for ${idTransaction}: missing or invalid token.`);
+        res.status(403).json({ error: 'Token inválido.' });
+        return;
+      }
+
       if (status === 'paid') {
         tx.status = 'paid';
         tx.paidAt = new Date().toISOString();
@@ -1521,7 +1569,9 @@ async function startServer() {
           const userIdx = users.findIndex((u: any) => u.id === tx.userId);
           if (userIdx !== -1) {
             users[userIdx].subscription = tx.planTier;
-            users[userIdx].usageLimit = tx.planTier === 'Starter' ? 100 : tx.planTier === 'Pro' ? 2000 : 10000;
+            users[userIdx].subscription_tier = tx.planTier;
+            users[userIdx].usageLimit = BACKEND_PLAN_LIMITS[tx.planTier]?.maxVideosPerMonth ?? BACKEND_PLAN_LIMITS.Free.maxVideosPerMonth;
+            users[userIdx].usage_limit = users[userIdx].usageLimit;
           }
         });
         console.log('[RoyPay Webhook] Updated database invoices and users successfully!');
@@ -1535,7 +1585,10 @@ async function startServer() {
   });
 
   // 4. POST /api/payments/roypay/simulate-webhook
-  app.post('/api/payments/roypay/simulate-webhook', async (req, res) => {
+  // SECURITY: this manually marks a transaction paid without going through RoyPay at all — it
+  // exists only so admins can test the upgrade flow without a real payment. It must never be
+  // reachable by ordinary users, or anyone could grant themselves a paid plan for free.
+  app.post('/api/payments/roypay/simulate-webhook', adminAuthMiddleware, async (req, res) => {
     try {
       const { idTransaction } = req.body;
       if (!idTransaction) {
@@ -1576,7 +1629,9 @@ async function startServer() {
         const userIdx = users.findIndex((u: any) => u.id === tx.userId);
         if (userIdx !== -1) {
           users[userIdx].subscription = tx.planTier;
-          users[userIdx].usageLimit = tx.planTier === 'Starter' ? 100 : tx.planTier === 'Pro' ? 2000 : 10000;
+          users[userIdx].subscription_tier = tx.planTier;
+          users[userIdx].usageLimit = BACKEND_PLAN_LIMITS[tx.planTier]?.maxVideosPerMonth ?? BACKEND_PLAN_LIMITS.Free.maxVideosPerMonth;
+          users[userIdx].usage_limit = users[userIdx].usageLimit;
         }
       });
 

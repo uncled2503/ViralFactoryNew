@@ -31,12 +31,11 @@ interface AdminDashboardProps {
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeMenu }) => {
   const { 
-    allUsers, 
+    allUsers,
     refreshAdminData,
-    adminUpdateUser, 
-    adminDeleteUser, 
-    renderingTasks,
-    impersonateUser 
+    adminUpdateUser,
+    adminDeleteUser,
+    impersonateUser
   } = useApp();
 
   useEffect(() => {
@@ -64,7 +63,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeMenu }) =>
       
       {/* Dynamic Tab Router */}
       {(activeMenu === 'dashboard' || activeMenu === 'analytics') && (
-        <DashboardTab allUsers={allUsers} renderingTasks={renderingTasks} />
+        <DashboardTab />
       )}
 
       {activeMenu === 'users' && (
@@ -78,15 +77,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeMenu }) =>
       )}
 
       {activeMenu === 'subscriptions' && (
-        <PlansTab showToast={showToast} />
+        <PlansTab />
       )}
 
       {activeMenu === 'payments' && (
-        <FinanceTab showToast={showToast} />
+        <FinanceTab />
       )}
 
       {(activeMenu === 'renderings' || activeMenu === 'queue' || activeMenu === 'workers') && (
-        <RenderFarmTab renderingTasks={renderingTasks} showToast={showToast} />
+        <RenderFarmTab showToast={showToast} />
       )}
 
       {activeMenu === 'storage' && (
@@ -94,7 +93,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeMenu }) =>
       )}
 
       {activeMenu === 'logs' && (
-        <LogsTab showToast={showToast} />
+        <LogsTab />
       )}
 
       {activeMenu === 'coupons' && (

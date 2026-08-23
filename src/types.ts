@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { CanvasSettings, EditorLayer } from './components/editor/types';
+
 export type PlanTier = 'Free' | 'Starter' | 'Pro' | 'Business';
 export type BillingCycle = 'monthly' | 'quarterly' | 'semestral' | 'annual';
 export type SubscriptionStatus = 'active' | 'canceled' | 'suspended' | 'past_due';
@@ -181,6 +183,12 @@ export interface Project {
     logoUrl?: string;
     brandColor?: string;
     fontName?: string;
+    // Full visual editor state, persisted alongside the legacy fields above so the
+    // canvas/layers can be reloaded exactly as last saved.
+    layers?: EditorLayer[];
+    canvas?: CanvasSettings;
+    presetId?: string;
+    templateJson?: Record<string, unknown>;
   };
 }
 

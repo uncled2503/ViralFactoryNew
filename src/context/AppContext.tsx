@@ -456,7 +456,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Let's attempt to fetch synced DB snapshot from the server first to merge rendering changes
     let serverDb: any = {};
     try {
-      const res = await fetch(`/api/db/sync?userId=${userId}`);
+      const res = await authenticatedFetch(`/api/db/sync?userId=${userId}`);
       if (res.ok) {
         serverDb = await res.json();
       }
@@ -1264,9 +1264,8 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       }
 
       // Sync local DB snapshot to the server file database first
-      fetch(`/api/db/sync?userId=${user.id}`, {
+      authenticatedFetch(`/api/db/sync?userId=${user.id}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           saas_users: [user],
           projects: [updatedProj, ...projects.filter(p => p.id !== projectId)],
