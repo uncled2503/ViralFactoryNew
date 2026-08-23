@@ -16,7 +16,7 @@ export interface PlanConfig {
   features: string[];
 }
 
-export const BILLING_ENABLED = false;
+export const BILLING_ENABLED = true;
 
 export function getPlanLimits(tier?: string, role?: string, email?: string): PlanLimits {
   if (!BILLING_ENABLED || isAdminRole(role, email)) {
@@ -41,7 +41,7 @@ export function getPlanLimits(tier?: string, role?: string, email?: string): Pla
 
 export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
   Free: {
-    maxVideosPerMonth: 999999,
+    maxVideosPerMonth: 5,
     maxTemplates: 999999,
     maxProjects: 999999,
     maxStorageMB: 9999999,
@@ -53,7 +53,7 @@ export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
     hasTeamManagement: true,
   },
   Starter: {
-    maxVideosPerMonth: 999999,
+    maxVideosPerMonth: 300,
     maxTemplates: 999999,
     maxProjects: 999999,
     maxStorageMB: 9999999,
@@ -65,7 +65,7 @@ export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
     hasTeamManagement: true,
   },
   Pro: {
-    maxVideosPerMonth: 999999,
+    maxVideosPerMonth: 1200,
     maxTemplates: 999999,
     maxProjects: 999999,
     maxStorageMB: 9999999,
@@ -77,7 +77,7 @@ export const PLAN_LIMITS_MAP: Record<PlanTier, PlanLimits> = {
     hasTeamManagement: true,
   },
   Business: {
-    maxVideosPerMonth: 999999,
+    maxVideosPerMonth: 4000,
     maxTemplates: 999999,
     maxProjects: 999999,
     maxStorageMB: 9999999,
