@@ -44,11 +44,19 @@ export const StorageTab: React.FC<StorageTabProps> = ({ showToast }) => {
   }, []);
 
   const handleSweepOrphanFiles = async () => {
-    showToast('Iniciando varredura e limpeza de arquivos temporários órfãos no S3...', 'info');
-    setTimeout(() => {
-      showToast('Nenhum arquivo órfão encontrado no momento. Limpeza estável.', 'success');
+    showToast('Iniciando limpeza do cache temporário de renderização...', 'info');
+    try {
+      const res = await adminFetch('/api/admin/storage/sweep', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Falha ao limpar cache.');
+      }
+      const data = await res.json();
+      showToast(`Limpeza concluída: ${data.filesRemoved} arquivo(s) removido(s), ${data.sizeFreedMB} MB liberados.`, 'success');
       fetchStorageData();
-    }, 1500);
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao limpar cache.', 'error');
+    }
   };
 
   if (loading) {

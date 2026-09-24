@@ -52,23 +52,15 @@ export const CouponsTab: React.FC<CouponsTabProps> = ({ showToast }) => {
   const handleAddCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCode) return;
-    
+
     try {
-      // Create via system settings or a dummy post which is integrated
-      const res = await adminFetch('/api/admin/settings', {
+      const res = await adminFetch('/api/admin/coupons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          key: `coupon_${newCode.toUpperCase().trim()}`,
-          value: JSON.stringify({
-            code: newCode.toUpperCase().trim(),
-            type: newType,
-            value: Number(newValue),
-            status: 'active',
-            uses: 0,
-            maxUses: 150,
-            expires: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-          })
+          code: newCode.toUpperCase().trim(),
+          type: newType,
+          value: Number(newValue),
         })
       });
 
@@ -77,7 +69,8 @@ export const CouponsTab: React.FC<CouponsTabProps> = ({ showToast }) => {
         setNewCode('');
         fetchCoupons();
       } else {
-        throw new Error('Falha ao cadastrar cupom.');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Falha ao cadastrar cupom.');
       }
     } catch (err: any) {
       showToast(err.message || 'Erro ao salvar cupom.', 'error');
@@ -85,7 +78,18 @@ export const CouponsTab: React.FC<CouponsTabProps> = ({ showToast }) => {
   };
 
   const handleDelete = async (id: string) => {
-    showToast('Ação restrita de exclusão para auditoria permanente.', 'info');
+    try {
+      const res = await adminFetch(`/api/admin/coupons/${id}/deactivate`, { method: 'PATCH' });
+      if (res.ok) {
+        showToast('Cupom desativado. O registro é mantido para fins de auditoria.', 'success');
+        fetchCoupons();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Falha ao desativar cupom.');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao desativar cupom.', 'error');
+    }
   };
 
   if (loading) {

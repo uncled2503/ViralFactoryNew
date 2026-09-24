@@ -15,6 +15,7 @@ router.get('/dashboard', AdminController.getDashboard);
 router.get('/users', AdminController.getUsers);
 router.patch('/users/:id', AdminValidators.validateUpdateUser, AdminController.updateUser);
 router.delete('/users/:id', AdminController.deleteUser);
+router.post('/users/reset-password', AdminController.resetUserPassword);
 
 // Render Farm Management (Jobs & Workers)
 router.get('/jobs', AdminController.getJobs);
@@ -52,15 +53,26 @@ router.post('/autoscaling/clear', (req, res) => {
 
 // Storage Management
 router.get('/storage', AdminController.getStorage);
+router.post('/storage/sweep', AdminController.sweepStorage);
 
 // Payment & Billing Management
 router.get('/payments', AdminController.getPayments);
+router.post('/payments/:id/refund', AdminController.refundInvoice);
 
 // Coupons Management
 router.get('/coupons', AdminController.getCoupons);
+router.post('/coupons', AdminValidators.validateCoupon, AdminController.createCoupon);
+router.patch('/coupons/:id/deactivate', AdminController.deactivateCoupon);
+
+// Plans Management
+router.get('/plans', AdminController.getPlans);
+router.post('/plans', AdminValidators.validatePlan, AdminController.createPlan);
+router.patch('/plans/:id', AdminValidators.validatePlanUpdate, AdminController.updatePlan);
+router.delete('/plans/:id', AdminController.archivePlan);
 
 // Customer Support Tickets
 router.get('/support', AdminController.getSupport);
+router.patch('/support/:id/reply', AdminController.replySupport);
 
 // System Settings Management
 router.get('/settings', AdminController.getSettings);

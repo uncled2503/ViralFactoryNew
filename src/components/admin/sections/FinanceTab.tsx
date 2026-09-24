@@ -27,7 +27,11 @@ interface Invoice {
   stripeId: string;
 }
 
-export const FinanceTab: React.FC = () => {
+interface FinanceTabProps {
+  showToast: (msg: string, type: 'success' | 'error' | 'info') => void;
+}
+
+export const FinanceTab: React.FC<FinanceTabProps> = ({ showToast }) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,6 +68,25 @@ export const FinanceTab: React.FC = () => {
   useEffect(() => {
     fetchPayments();
   }, []);
+
+  const handleRefund = async (invoiceId: string) => {
+    if (!confirm('Marcar esta fatura como reembolsada? Isso apenas atualiza o registro interno — o estorno em si ainda precisa ser feito manualmente no painel da RoyPay.')) {
+      return;
+    }
+    try {
+      const res = await adminFetch(`/api/admin/payments/${invoiceId}/refund`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Falha ao marcar fatura como reembolsada.');
+      }
+      showToast('Fatura marcada como reembolsada. Lembre-se de processar o estorno na RoyPay.', 'success');
+      setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, status: 'refunded' } : inv));
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao marcar reembolso.', 'error');
+    }
+  };
+
+  const failedCount = useMemo(() => invoices.filter(inv => inv.status === 'failed').length, [invoices]);
 
   const totalRevenue = useMemo(() => {
     return invoices
@@ -133,7 +156,7 @@ export const FinanceTab: React.FC = () => {
           </div>
           <div>
             <h3 className="text-2xl font-black text-white tracking-tight">{invoices.length}</h3>
-            <p className="text-[10px] text-slate-500 font-mono">Sinalizações de chargeback: 0</p>
+            <p className="text-[10px] text-slate-500 font-mono">Falhas de pagamento: {failedCount}</p>
           </div>
         </div>
       </div>
@@ -190,6 +213,7 @@ export const FinanceTab: React.FC = () => {
                   <th className="py-3 px-6">Valor</th>
                   <th className="py-3 px-6">Status</th>
                   <th className="py-3 px-6">Data</th>
+                  <th className="py-3 px-6 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-900/40 font-medium font-mono text-[11px] text-slate-300">
@@ -218,6 +242,16 @@ export const FinanceTab: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3 px-6 text-slate-500 font-mono">{inv.date}</td>
+                    <td className="py-3 px-6 text-right font-sans">
+                      {inv.status === 'paid' && (
+                        <button
+                          onClick={() => handleRefund(inv.id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-slate-900 hover:bg-red-950/20 border border-slate-800 hover:border-red-500/20 text-slate-400 hover:text-red-300 text-[10px] font-bold rounded-lg transition cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Marcar Reembolso
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

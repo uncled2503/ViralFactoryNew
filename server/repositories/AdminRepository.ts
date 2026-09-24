@@ -1,6 +1,9 @@
 import { randomUUID } from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { supabaseAdmin, isSupabaseConfigured } from '../database/supabaseClient';
 import { LocalDbMutex } from '../database/LocalDbMutex';
+import { StorageManager } from '../render/Storage';
 
 function mapDbUserToFrontendUser(u: any): any {
   if (!u) return null;
@@ -61,6 +64,41 @@ function mapFrontendUserToDbUser(u: any): any {
   if (u.projectsActive !== undefined) dbUser.projects_active = u.projectsActive;
   dbUser.updated_at = new Date().toISOString();
   return dbUser;
+}
+
+function mapDbPlanToFrontendPlan(p: any): any {
+  if (!p) return null;
+  return {
+    id: p.id,
+    tier: p.tier,
+    name: p.name,
+    monthlyPrice: Number(p.monthly_price !== undefined ? p.monthly_price : p.monthlyPrice || 0),
+    annualPrice: Number(p.annual_price !== undefined ? p.annual_price : p.annualPrice || 0),
+    maxVideos: Number(p.max_videos !== undefined ? p.max_videos : p.maxVideos || 0),
+    maxStorageGB: Number(p.max_storage_gb !== undefined ? p.max_storage_gb : p.maxStorageGB || 0),
+    priority: p.priority || 'normal',
+    watermark: !!p.watermark,
+    aiSubtitles: p.ai_subtitles !== undefined ? !!p.ai_subtitles : !!p.aiSubtitles,
+    batchRender: p.batch_render !== undefined ? !!p.batch_render : !!p.batchRender,
+    status: p.status || 'active',
+  };
+}
+
+function mapFrontendPlanToDbPlan(p: any): any {
+  const dbPlan: any = {};
+  if (p.id !== undefined) dbPlan.id = p.id;
+  if (p.tier !== undefined) dbPlan.tier = p.tier;
+  if (p.name !== undefined) dbPlan.name = p.name;
+  if (p.monthlyPrice !== undefined) dbPlan.monthly_price = Number(p.monthlyPrice);
+  if (p.annualPrice !== undefined) dbPlan.annual_price = Number(p.annualPrice);
+  if (p.maxVideos !== undefined) dbPlan.max_videos = Number(p.maxVideos);
+  if (p.maxStorageGB !== undefined) dbPlan.max_storage_gb = Number(p.maxStorageGB);
+  if (p.priority !== undefined) dbPlan.priority = p.priority;
+  if (p.watermark !== undefined) dbPlan.watermark = !!p.watermark;
+  if (p.aiSubtitles !== undefined) dbPlan.ai_subtitles = !!p.aiSubtitles;
+  if (p.batchRender !== undefined) dbPlan.batch_render = !!p.batchRender;
+  if (p.status !== undefined) dbPlan.status = p.status;
+  return dbPlan;
 }
 
 export class AdminRepository {
@@ -211,6 +249,38 @@ export class AdminRepository {
   }
 
   /**
+   * Reply to and resolve a support ticket
+   */
+  static async replyToSupportTicket(id: string, replyMessage: string): Promise<any | null> {
+    const update = { status: 'resolved', reply_message: replyMessage, replied_at: new Date().toISOString() };
+
+    if (isSupabaseConfigured() && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('saas_support_tickets')
+          .update(update)
+          .eq('id', id)
+          .select()
+          .maybeSingle();
+
+        if (!error && data) {
+          return data;
+        }
+      } catch (err) {
+        console.error('replyToSupportTicket Supabase error:', err);
+      }
+    }
+
+    return LocalDbMutex.runLocked((dbData) => {
+      const tickets = dbData.support_tickets || [];
+      const index = tickets.findIndex((t: any) => t.id === id);
+      if (index === -1) return null;
+      tickets[index] = { ...tickets[index], status: 'resolved', reply_message: replyMessage };
+      return tickets[index];
+    });
+  }
+
+  /**
    * Fetch audit logs
    */
   static async getAuditLogs(): Promise<any[]> {
@@ -294,6 +364,180 @@ export class AdminRepository {
   }
 
   /**
+   * Create a new SaaS coupon
+   */
+  static async createCoupon(coupon: any): Promise<any> {
+    const newCoupon = {
+      id: randomUUID(),
+      code: coupon.code,
+      type: coupon.type,
+      value: Number(coupon.value),
+      status: 'active',
+      uses: 0,
+      maxUses: Number(coupon.maxUses) || 150,
+      expires: coupon.expires || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+    };
+
+    if (isSupabaseConfigured() && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('saas_coupons')
+          .insert(newCoupon)
+          .select()
+          .maybeSingle();
+
+        if (!error && data) {
+          return data;
+        }
+        if (error) console.error('createCoupon Supabase error:', error.message);
+      } catch (err) {
+        console.error('createCoupon Supabase error:', err);
+      }
+    }
+
+    return LocalDbMutex.runLocked((dbData) => {
+      if (!dbData.coupons) dbData.coupons = [];
+      dbData.coupons.unshift(newCoupon);
+      return newCoupon;
+    });
+  }
+
+  /**
+   * Deactivate a coupon (soft-delete, keeps the row for audit purposes)
+   */
+  static async deactivateCoupon(id: string): Promise<boolean> {
+    if (isSupabaseConfigured() && supabaseAdmin) {
+      try {
+        const { error } = await supabaseAdmin
+          .from('saas_coupons')
+          .update({ status: 'expired' })
+          .eq('id', id);
+
+        if (!error) return true;
+      } catch (err) {
+        console.error('deactivateCoupon Supabase error:', err);
+      }
+    }
+
+    return LocalDbMutex.runLocked((dbData) => {
+      const coupons = dbData.coupons || [];
+      const index = coupons.findIndex((c: any) => c.id === id);
+      if (index === -1) return false;
+      coupons[index] = { ...coupons[index], status: 'expired' };
+      return true;
+    });
+  }
+
+  /**
+   * Fetch all custom SaaS plans
+   */
+  static async getPlans(): Promise<any[]> {
+    if (isSupabaseConfigured() && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('saas_plans')
+          .select('*')
+          .order('monthly_price', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          return data.map(mapDbPlanToFrontendPlan);
+        }
+      } catch (err) {
+        console.error('getPlans Supabase error:', err);
+      }
+    }
+    return LocalDbMutex.getDbDataSync().plans || [];
+  }
+
+  /**
+   * Create a new custom plan
+   */
+  static async createPlan(plan: any): Promise<any> {
+    const newPlan = {
+      id: randomUUID(),
+      tier: plan.tier,
+      name: plan.name,
+      monthlyPrice: Number(plan.monthlyPrice) || 0,
+      annualPrice: Number(plan.annualPrice) || 0,
+      maxVideos: Number(plan.maxVideos) || 0,
+      maxStorageGB: Number(plan.maxStorageGB) || 0,
+      priority: plan.priority || 'normal',
+      watermark: !!plan.watermark,
+      aiSubtitles: !!plan.aiSubtitles,
+      batchRender: !!plan.batchRender,
+      status: 'active',
+    };
+
+    if (isSupabaseConfigured() && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('saas_plans')
+          .insert(mapFrontendPlanToDbPlan(newPlan))
+          .select()
+          .maybeSingle();
+
+        if (!error && data) {
+          return mapDbPlanToFrontendPlan(data);
+        }
+        if (error) console.error('createPlan Supabase error:', error.message);
+      } catch (err) {
+        console.error('createPlan Supabase error:', err);
+      }
+    }
+
+    return LocalDbMutex.runLocked((dbData) => {
+      if (!dbData.plans) dbData.plans = [];
+      dbData.plans.push(newPlan);
+      return newPlan;
+    });
+  }
+
+  /**
+   * Update an existing custom plan
+   */
+  static async updatePlan(id: string, updates: any): Promise<any | null> {
+    if (isSupabaseConfigured() && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('saas_plans')
+          .update(mapFrontendPlanToDbPlan(updates))
+          .eq('id', id)
+          .select()
+          .maybeSingle();
+
+        if (!error && data) {
+          return mapDbPlanToFrontendPlan(data);
+        }
+      } catch (err) {
+        console.error('updatePlan Supabase error:', err);
+      }
+    }
+
+    const numericFields = ['monthlyPrice', 'annualPrice', 'maxVideos', 'maxStorageGB'];
+    const coercedUpdates = { ...updates };
+    for (const field of numericFields) {
+      if (coercedUpdates[field] !== undefined) coercedUpdates[field] = Number(coercedUpdates[field]);
+    }
+
+    return LocalDbMutex.runLocked((dbData) => {
+      const plans = dbData.plans || [];
+      const index = plans.findIndex((p: any) => p.id === id);
+      if (index === -1) return null;
+      plans[index] = { ...plans[index], ...coercedUpdates, id };
+      return plans[index];
+    });
+  }
+
+  /**
+   * Archive a custom plan (soft-delete; existing subscribers keep their plan reference)
+   */
+  static async archivePlan(id: string): Promise<boolean> {
+    const updated = await this.updatePlan(id, { status: 'archived' });
+    return !!updated;
+  }
+
+  /**
    * Fetch all invoices / financial stats
    */
   static async getInvoices(): Promise<any[]> {
@@ -312,6 +556,38 @@ export class AdminRepository {
       }
     }
     return LocalDbMutex.getDbDataSync().invoices || [];
+  }
+
+  /**
+   * Mark an invoice as refunded. This is a bookkeeping-only action — it does not call out to the
+   * payment gateway (RoyPay) to move money. The actual refund/cashout must still be issued
+   * manually in the RoyPay dashboard; this just keeps the SaaS's own records in sync and audited.
+   */
+  static async markInvoiceRefunded(id: string): Promise<any | null> {
+    if (isSupabaseConfigured() && supabaseAdmin) {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('saas_invoices')
+          .update({ status: 'refunded', refunded_at: new Date().toISOString() })
+          .eq('id', id)
+          .select()
+          .maybeSingle();
+
+        if (!error && data) {
+          return data;
+        }
+      } catch (err) {
+        console.error('markInvoiceRefunded Supabase error:', err);
+      }
+    }
+
+    return LocalDbMutex.runLocked((dbData) => {
+      const invoices = dbData.invoices || [];
+      const index = invoices.findIndex((i: any) => i.id === id);
+      if (index === -1) return null;
+      invoices[index] = { ...invoices[index], status: 'refunded' };
+      return invoices[index];
+    });
   }
 
   /**
@@ -412,9 +688,96 @@ export class AdminRepository {
       }
     }
 
+    const cache = this.readLocalDir(path.join(process.cwd(), 'temp_render'));
+
     return {
       totalSizeMB: parseFloat(assetsSize.toFixed(2)),
-      filesCount: assetsCount
+      filesCount: assetsCount,
+      cacheSizeMB: cache.sizeMB,
+      cacheFilesCount: cache.count,
     };
+  }
+
+  /**
+   * Real breakdown of local on-disk storage directories (uploads/rendered/templates permanent
+   * storage + the temp render cache). Supabase-hosted assets are reported as a single aggregate
+   * row since individual object listing isn't needed for this admin view.
+   */
+  static async getStorageDirectories(): Promise<any[]> {
+    const base = path.join(process.cwd(), 'public', 'storage');
+    const dirs = [
+      { key: 'uploads', desc: 'Uploads de mídia enviados pelos usuários' },
+      { key: 'rendered', desc: 'Vídeos finais renderizados' },
+      { key: 'templates', desc: 'Templates públicos e assets reutilizáveis' },
+    ];
+
+    const rows = dirs.map(d => {
+      const stats = this.readLocalDir(path.join(base, d.key));
+      return {
+        path: `local:/public/storage/${d.key}`,
+        count: stats.count,
+        size: `${stats.sizeMB.toFixed(2)} MB`,
+        desc: d.desc,
+      };
+    });
+
+    const cache = this.readLocalDir(path.join(process.cwd(), 'temp_render'));
+    rows.push({
+      path: 'local:/temp_render',
+      count: cache.count,
+      size: `${cache.sizeMB.toFixed(2)} MB`,
+      desc: 'Cache de renderização temporário (expurgável)',
+    });
+
+    if (isSupabaseConfigured() && supabaseAdmin) {
+      try {
+        const { data: assets, error } = await supabaseAdmin.from('assets').select('size_mb');
+        if (!error && assets) {
+          const sizeMB = assets.reduce((acc, a) => acc + Number(a.size_mb || 0), 0);
+          rows.push({
+            path: 'supabase:/assets',
+            count: assets.length,
+            size: `${sizeMB.toFixed(2)} MB`,
+            desc: 'Ativos hospedados no Supabase Storage',
+          });
+        }
+      } catch (err) {
+        console.error('getStorageDirectories assets Supabase error:', err);
+      }
+    }
+
+    return rows;
+  }
+
+  /**
+   * Deletes every file inside the local temp render cache directory. This only touches transient
+   * working files created mid-render (temp_render/) — never final outputs or user uploads, which
+   * live in public/storage or Supabase Storage instead.
+   */
+  static async sweepTempCache(): Promise<{ filesRemoved: number; sizeFreedMB: number }> {
+    const before = this.readLocalDir(path.join(process.cwd(), 'temp_render'));
+    StorageManager.clearTempDir();
+    return { filesRemoved: before.count, sizeFreedMB: parseFloat(before.sizeMB.toFixed(2)) };
+  }
+
+  private static readLocalDir(dirPath: string): { count: number; sizeMB: number } {
+    if (!fs.existsSync(dirPath)) return { count: 0, sizeMB: 0 };
+    try {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      let count = 0;
+      let sizeBytes = 0;
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        count++;
+        try {
+          sizeBytes += fs.statSync(path.join(dirPath, entry.name)).size;
+        } catch {
+          // file may have been removed concurrently; skip
+        }
+      }
+      return { count, sizeMB: sizeBytes / (1024 * 1024) };
+    } catch {
+      return { count: 0, sizeMB: 0 };
+    }
   }
 }

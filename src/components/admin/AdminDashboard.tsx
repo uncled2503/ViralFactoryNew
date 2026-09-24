@@ -77,11 +77,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ activeMenu }) =>
       )}
 
       {activeMenu === 'subscriptions' && (
-        <PlansTab />
+        <PlansTab showToast={showToast} />
       )}
 
       {activeMenu === 'payments' && (
-        <FinanceTab />
+        <FinanceTab showToast={showToast} />
       )}
 
       {(activeMenu === 'renderings' || activeMenu === 'queue' || activeMenu === 'workers') && (

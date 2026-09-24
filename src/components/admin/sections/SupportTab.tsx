@@ -66,12 +66,25 @@ export const SupportTab: React.FC<SupportTabProps> = ({ showToast }) => {
     e.preventDefault();
     if (!replyText || !activeTicket) return;
 
-    showToast(`Resposta enviada com sucesso para ${activeTicket.customerEmail}!`, 'success');
-    setReplyText('');
-    
-    // Simulate updating ticket state to resolved via settings/POST mock
-    setActiveTicket({ ...activeTicket, status: 'resolved' });
-    setTickets(prev => prev.map(t => t.id === activeTicket.id ? { ...t, status: 'resolved' } : t));
+    try {
+      const res = await adminFetch(`/api/admin/support/${activeTicket.id}/reply`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: replyText }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Falha ao enviar resposta.');
+      }
+
+      showToast(`Resposta enviada com sucesso para ${activeTicket.customerEmail}!`, 'success');
+      setReplyText('');
+      setActiveTicket({ ...activeTicket, status: 'resolved' });
+      setTickets(prev => prev.map(t => t.id === activeTicket.id ? { ...t, status: 'resolved' } : t));
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao enviar resposta.', 'error');
+    }
   };
 
   if (loading) {

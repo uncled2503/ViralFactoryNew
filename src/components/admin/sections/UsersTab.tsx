@@ -3,30 +3,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
-import { 
-  Search, 
-  UserX, 
-  UserCheck, 
-  Eye, 
-  Trash2, 
-  Mail, 
-  ShieldAlert, 
-  Settings, 
-  Clock, 
-  HardDrive, 
-  Key, 
-  Activity, 
-  Smartphone, 
-  Laptop, 
-  ArrowLeftRight, 
-  Lock, 
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  Search,
+  UserX,
+  UserCheck,
+  Eye,
+  Trash2,
+  ShieldAlert,
+  Settings,
+  Clock,
+  HardDrive,
+  Key,
+  Activity,
+  ArrowLeftRight,
+  Lock,
   AlertCircle,
-  Plus
+  Plus,
+  RefreshCw
 } from 'lucide-react';
 import { User, PlanTier, UserRole } from '../../../types';
 import { ROLE_DETAILS_MAP } from '../../../utils/rbac';
 import { PLANS_DETAILS } from '../../../config/plans';
+import { adminFetch } from '../../../utils/api';
 
 interface UsersTabProps {
   allUsers: User[];
@@ -51,8 +50,9 @@ export const UsersTab: React.FC<UsersTabProps> = ({
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<DrawerSubTab>('profile');
   const [passwordResetSuccess, setPasswordResetSuccess] = useState(false);
-  const [emailDraftSubject, setEmailDraftSubject] = useState('');
-  const [emailDraftBody, setEmailDraftBody] = useState('');
+  const [passwordResetLoading, setPasswordResetLoading] = useState(false);
+  const [userActivity, setUserActivity] = useState<any[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   // Filtering user records
   const filteredUsers = useMemo(() => {
@@ -104,22 +104,43 @@ export const UsersTab: React.FC<UsersTabProps> = ({
     showToast(`Cargo de ${selectedUser?.name} alterado para ${newRole}.`, 'success');
   };
 
-  const handleResetPassword = () => {
-    setPasswordResetSuccess(true);
-    showToast('Um link seguro para redefinição de senha foi gerado e enviado.', 'success');
-    setTimeout(() => setPasswordResetSuccess(false), 3000);
+  const handleResetPassword = async () => {
+    if (!selectedUser) return;
+    setPasswordResetLoading(true);
+    try {
+      const res = await adminFetch('/api/admin/users/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: selectedUser.email }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Falha ao enviar link de redefinição.');
+      }
+      setPasswordResetSuccess(true);
+      showToast('Um link seguro para redefinição de senha foi gerado e enviado.', 'success');
+      setTimeout(() => setPasswordResetSuccess(false), 3000);
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao enviar link de redefinição.', 'error');
+    } finally {
+      setPasswordResetLoading(false);
+    }
   };
 
-  const handleSendDraftEmail = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!emailDraftSubject || !emailDraftBody) {
-      showToast('Preencha o assunto e corpo do email.', 'error');
-      return;
-    }
-    showToast(`Simulado: Email enviado para ${selectedUser?.email} via SMTP Queue.`, 'success');
-    setEmailDraftSubject('');
-    setEmailDraftBody('');
-  };
+  useEffect(() => {
+    if (activeSubTab !== 'history' || !selectedUser) return;
+    setActivityLoading(true);
+    adminFetch('/api/admin/audit-logs')
+      .then(res => res.ok ? res.json() : [])
+      .then((logs: any[]) => {
+        const relevant = (logs || []).filter((l: any) =>
+          l.target_user === selectedUser.name || l.target_user === selectedUser.id
+        );
+        setUserActivity(relevant);
+      })
+      .catch(() => setUserActivity([]))
+      .finally(() => setActivityLoading(false));
+  }, [activeSubTab, selectedUser]);
 
   const handleQuotaAdjustment = (type: 'renders' | 'storage', value: number) => {
     if (!selectedUser) return;
@@ -433,10 +454,10 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                     </div>
                     <button
                       onClick={handleResetPassword}
-                      disabled={passwordResetSuccess}
-                      className="px-3 py-1.5 bg-slate-950 border border-slate-900 hover:bg-slate-900 rounded-lg text-[10px] font-bold text-slate-300 hover:text-white transition cursor-pointer"
+                      disabled={passwordResetSuccess || passwordResetLoading}
+                      className="px-3 py-1.5 bg-slate-950 border border-slate-900 hover:bg-slate-900 rounded-lg text-[10px] font-bold text-slate-300 hover:text-white transition cursor-pointer disabled:opacity-60"
                     >
-                      {passwordResetSuccess ? 'Link Enviado!' : 'Resetar Senha'}
+                      {passwordResetSuccess ? 'Link Enviado!' : passwordResetLoading ? 'Enviando...' : 'Resetar Senha'}
                     </button>
                   </div>
                 </div>
@@ -504,66 +525,45 @@ export const UsersTab: React.FC<UsersTabProps> = ({
               {/* HISTORY SUB-TAB */}
               {activeSubTab === 'history' && (
                 <div className="space-y-3">
-                  <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">Histórico de Ações Recentes</h4>
-                  <div className="space-y-2">
-                    {[
-                      { action: 'Renderização Completa', details: 'Renderizou prj-302 em 32s', date: 'Há 12m', status: 'success' },
-                      { action: 'Upload de Logo', details: 'Logo transparente.png (2.4MB)', date: 'Há 1h', status: 'success' },
-                      { action: 'Criação de Projeto', details: 'Iniciou template Reddit Stories', date: 'Há 4h', status: 'success' },
-                      { action: 'Falha de Render', details: 'Codec de áudio inválido no codec stream', date: 'Ontem', status: 'error' }
-                    ].map((h, idx) => (
-                      <div key={idx} className="p-3 bg-slate-900/20 border border-slate-900/60 rounded-xl flex items-center justify-between text-[11px]">
-                        <div>
-                          <span className={`font-semibold block ${h.status === 'error' ? 'text-red-400' : 'text-slate-200'}`}>
-                            {h.action}
+                  <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">Ações Administrativas Registradas</h4>
+                  {activityLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <RefreshCw className="w-5 h-5 text-slate-600 animate-spin" />
+                    </div>
+                  ) : userActivity.length === 0 ? (
+                    <div className="p-6 bg-slate-900/20 border border-slate-900/60 rounded-xl text-center text-[11px] text-slate-500">
+                      Nenhuma ação administrativa registrada para este usuário no log de auditoria.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {userActivity.map((h, idx) => (
+                        <div key={h.id || idx} className="p-3 bg-slate-900/20 border border-slate-900/60 rounded-xl flex items-center justify-between text-[11px]">
+                          <div>
+                            <span className={`font-semibold block ${h.status === 'ERROR' ? 'text-red-400' : 'text-slate-200'}`}>
+                              {h.action}
+                            </span>
+                            <span className="text-slate-500 text-[10px]">Por {h.admin_name}</span>
+                          </div>
+                          <span className="text-slate-600 font-mono text-[10px] shrink-0">
+                            {h.timestamp ? new Date(h.timestamp).toLocaleString('pt-BR') : ''}
                           </span>
-                          <span className="text-slate-500 text-[10px]">{h.details}</span>
                         </div>
-                        <span className="text-slate-600 font-mono text-[10px] shrink-0">{h.date}</span>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* SECURITY SUB-TAB */}
               {activeSubTab === 'security' && (
                 <div className="space-y-4">
-                  <div className="p-4 bg-slate-900/30 border border-slate-900 rounded-2xl space-y-3 text-[11px]">
-                    <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase">Status de Autenticação</h4>
-                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                      <span className="text-slate-500">Duplo Fator (2FA)</span>
-                      <span className="text-amber-400 font-semibold flex items-center gap-1">
-                        <Lock className="w-3 h-3" /> Desativado
-                      </span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-900/60 pb-2">
-                      <span className="text-slate-500">Chave Física (Passkey)</span>
-                      <span className="text-slate-500 font-semibold">Inativo</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Último IP Registrado</span>
-                      <span className="text-indigo-400 font-mono">191.182.14.9 (São Paulo)</span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-slate-900/30 border border-slate-900 rounded-2xl space-y-3">
-                    <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">Dispositivos Conectados</h4>
-                    {[
-                      { type: 'Desktop', name: 'macOS Monterey • Chrome 114', geo: 'São Paulo - BR', current: true },
-                      { type: 'Mobile', name: 'iPhone 14 Pro • Safari Mobile', geo: 'São Paulo - BR', current: false }
-                    ].map((d, i) => (
-                      <div key={i} className="flex items-center gap-3 p-2 bg-slate-950 rounded-xl border border-slate-900 text-xs">
-                        {d.type === 'Desktop' ? <Laptop className="w-4 h-4 text-slate-400" /> : <Smartphone className="w-4 h-4 text-slate-400" />}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-slate-200 font-semibold truncate">{d.name}</span>
-                            {d.current && <span className="bg-emerald-500/10 text-emerald-400 text-[8px] px-1 rounded">Atual</span>}
-                          </div>
-                          <span className="text-[10px] text-slate-500 font-mono block">{d.geo}</span>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="p-6 bg-slate-900/20 border border-dashed border-slate-800 rounded-2xl text-center space-y-2">
+                    <Lock className="w-8 h-8 text-slate-700 mx-auto" />
+                    <p className="text-xs font-bold text-slate-400">Rastreamento de sessão não disponível</p>
+                    <p className="text-[10px] text-slate-500 leading-relaxed max-w-xs mx-auto">
+                      Este projeto ainda não registra 2FA, dispositivos conectados ou IPs de acesso por usuário.
+                      Nenhuma informação fictícia é exibida aqui até que esse rastreamento seja implementado.
+                    </p>
                   </div>
                 </div>
               )}
@@ -588,35 +588,6 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                       </button>
                     </div>
                   )}
-
-                  {/* Mail composer */}
-                  <div className="p-4 bg-slate-900/30 border border-slate-900 rounded-2xl">
-                    <h4 className="text-xs font-bold text-white mb-2 flex items-center gap-1.5">
-                      <Mail className="w-4 h-4 text-indigo-400" /> Enviar Mensagem via SMTP
-                    </h4>
-                    <form onSubmit={handleSendDraftEmail} className="space-y-3">
-                      <input
-                        type="text"
-                        placeholder="Assunto da Mensagem"
-                        value={emailDraftSubject}
-                        onChange={e => setEmailDraftSubject(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-pink-500"
-                      />
-                      <textarea
-                        placeholder="Escreva a mensagem de suporte para o cliente..."
-                        rows={4}
-                        value={emailDraftBody}
-                        onChange={e => setEmailDraftBody(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-pink-500 resize-none"
-                      />
-                      <button
-                        type="submit"
-                        className="w-full py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg border border-slate-850 transition cursor-pointer"
-                      >
-                        Enviar Email
-                      </button>
-                    </form>
-                  </div>
 
                   {/* Danger Zone */}
                   <div className="p-4 border border-red-900/40 bg-red-950/5 rounded-2xl space-y-2">
