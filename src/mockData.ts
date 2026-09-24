@@ -130,7 +130,7 @@ export const INITIAL_FOLDERS: StorageFolder[] = [
   },
   {
     id: 'fld-rendered',
-    name: 'Arquivos Renderizados',
+    name: 'Vídeos Renderizados',
     path: '/storage/rendered',
     description: 'Vídeos finais prontos, codificados e compactados para download.',
     files: []

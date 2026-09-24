@@ -290,18 +290,23 @@ export class RenderEngine {
       }
     }
 
-    // Sync to Server JSON database folders uploads structure
+    // Sync to Server JSON database folders uploads structure — "fld-rendered" is per-account
+    // (tagged with userId), never a shared row other accounts' files could leak into.
     await LocalDbMutex.runLocked((dbData) => {
       if (!dbData.storage_folders) dbData.storage_folders = [];
-      
-      let renderedFolder = dbData.storage_folders.find((f: any) => f.id === 'fld-rendered');
+
+      let renderedFolder = dbData.storage_folders.find(
+        (f: any) => f.id === 'fld-rendered' && (f.userId === userId || f.user_id === userId)
+      );
       if (!renderedFolder) {
         renderedFolder = {
           id: 'fld-rendered',
           name: 'Vídeos Renderizados',
           path: '/rendered',
           description: 'Vídeos finais prontos para publicação',
-          files: []
+          files: [],
+          userId,
+          user_id: userId
         };
         dbData.storage_folders.push(renderedFolder);
       }

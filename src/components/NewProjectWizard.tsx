@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { uploadFileToServer } from '../utils/uploadFile';
 import { StorageFilePicker } from './StorageFilePicker';
-import { StorageFile } from '../types';
+import { StorageFile, Project, RenderingTask } from '../types';
 
 interface NewProjectWizardProps {
   isOpen: boolean;
@@ -39,7 +39,7 @@ interface NewProjectWizardProps {
 // "Novo Projeto" button open the exact same, actually-working flow instead of two
 // diverging implementations (one real, one simulated).
 export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flowType, onClose }) => {
-  const { triggerRender, createProject, templates, showToast, setActiveTab } = useApp();
+  const { triggerRender, createProject, templates, showToast, setActiveTab, organizeBatchOutputs, addPlaceholderTasks, removePlaceholderTasks } = useApp();
 
   const [flowStep, setFlowStep] = useState(1); // 1: Enviar Template, 2: Posicionar Vídeo, 3: Enviar Vídeos, 4: Revisão, 5: Sucesso
 
@@ -71,6 +71,7 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
   const [sourceDragActive, setSourceDragActive] = useState(false);
   const sourceFileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [batchResult, setBatchResult] = useState<{ total: number; successCount: number; blocked: boolean } | null>(null);
   const [showVideoPicker, setShowVideoPicker] = useState(false);
 
@@ -205,50 +206,122 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
   const handleStartBatchProcessing = async () => {
     if (sourceVideos.length === 0) return;
     setIsProcessingBatch(true);
+    setBatchProgress({ current: 0, total: sourceVideos.length });
 
     const defaultTemplate = templates[0] || { id: 'tmp-reels-subtitles', name: 'Legendas Dinâmicas Neon' };
     const templateId = selectedTemplateId || defaultTemplate.id;
+    const templateName = templates.find(t => t.id === templateId)?.name || defaultTemplate.name;
+
+    // Show every video in the batch as a queued card in Renderizações immediately, instead of
+    // them trickling in one by one as each one's actual turn to render comes up — each
+    // placeholder is swapped for its real task the moment that video's render actually starts.
+    const placeholderIds = sourceVideos.map((_, i) => `placeholder-${Date.now()}-${i}`);
+    const placeholders: RenderingTask[] = sourceVideos.map((video, i) => ({
+      id: placeholderIds[i],
+      projectId: '',
+      projectName: `Render [Customizado] - ${video.name.replace(/\.[^/.]+$/, "")}`,
+      templateName,
+      status: 'queued',
+      progress: 0,
+      duration: '0:30',
+      createdAt: new Date().toISOString()
+    }));
+    addPlaceholderTasks(placeholders);
 
     let successCount = 0;
     let blocked = false;
+    const organizedSourceFiles: { name: string; size?: string; url: string }[] = [];
+    const renderedOutputFiles: { name: string; url: string }[] = [];
 
-    for (const video of sourceVideos) {
-      if (!video.url) {
-        blocked = true;
-        continue;
-      }
+    // Renders happen strictly one at a time: each video's job is created and awaited to
+    // completion (or failure) before the next one is even created. This used to fire every
+    // project-create + render-trigger for the whole batch in the same tick, which both blew
+    // past the backend's rate limits (429s, some jobs never created, others raced the DB and
+    // rendered with a stale/default video position) AND rendered several videos in parallel,
+    // which isn't what was wanted here.
+    const RENDER_TIMEOUT_MS = 10 * 60 * 1000; // don't hang the whole batch forever on one stuck job
 
-      const projectName = `Render [Customizado] - ${video.name.replace(/\.[^/.]+$/, "")}`;
-      const description = `Vídeo renderizado via Pipeline Inteligente. Moldura: Customizada (${videoZone.width}x${videoZone.height}).`;
+    const waitForRender = (createdProject: Project): Promise<boolean> => {
+      return new Promise<boolean>((resolve) => {
+        let settled = false;
+        const cancelSignal = { cancelled: false };
+        const timeoutId = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          // Stop the poll loop too — otherwise a truly stuck job keeps being polled every 3s
+          // for the rest of the page's lifetime even after we've given up waiting on it.
+          cancelSignal.cancelled = true;
+          resolve(false);
+        }, RENDER_TIMEOUT_MS);
 
-      const createdProject = createProject(
-        projectName,
-        description,
-        templateId,
-        '9:16',
-        {
-          layoutPosition: 'custom',
-          videoZone: { ...videoZone },
-          backgroundImageUrl: templateFile?.url,
-          backgroundVideoUrl: video.url,
-          // This wizard only composites template + video — no on-screen text unless the
-          // user explicitly adds it later in an editor. Override createProject's defaults
-          // (which otherwise burn the project name in as a headline).
-          title: undefined,
-          subtitles: undefined
+        const started = triggerRender(createdProject, false, (status, data) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+          if (status === 'completed' && data?.outputUrl) {
+            renderedOutputFiles.push({ name: `${data.projectName || createdProject.name}.mp4`, url: data.outputUrl });
+          }
+          resolve(status === 'completed');
+        }, cancelSignal);
+
+        if (!started) {
+          settled = true;
+          clearTimeout(timeoutId);
+          resolve(false);
         }
-      );
+      });
+    };
 
-      if (createdProject) {
-        const renderSuccess = triggerRender(createdProject);
-        if (renderSuccess) {
-          successCount++;
+    try {
+      for (let i = 0; i < sourceVideos.length; i++) {
+        const video = sourceVideos[i];
+        setBatchProgress({ current: i + 1, total: sourceVideos.length });
+
+        if (!video.url) {
+          blocked = true;
+          removePlaceholderTasks([placeholderIds[i]]);
+          continue;
+        }
+
+        // Swap the placeholder out right as this video's real task is about to be created.
+        removePlaceholderTasks([placeholderIds[i]]);
+
+        const projectName = `Render [Customizado] - ${video.name.replace(/\.[^/.]+$/, "")}`;
+        const description = `Vídeo renderizado via Pipeline Inteligente. Moldura: Customizada (${videoZone.width}x${videoZone.height}).`;
+
+        const createdProject = createProject(
+          projectName,
+          description,
+          templateId,
+          '9:16',
+          {
+            layoutPosition: 'custom',
+            videoZone: { ...videoZone },
+            backgroundImageUrl: templateFile?.url,
+            backgroundVideoUrl: video.url,
+            // This wizard only composites template + video — no on-screen text unless the
+            // user explicitly adds it later in an editor. Override createProject's defaults
+            // (which otherwise burn the project name in as a headline).
+            title: undefined,
+            subtitles: undefined
+          }
+        );
+
+        if (createdProject) {
+          const renderCompletedOk = await waitForRender(createdProject);
+          if (renderCompletedOk) {
+            successCount++;
+            organizedSourceFiles.push({ name: video.name, size: video.size, url: video.url });
+          } else {
+            blocked = true;
+          }
         } else {
           blocked = true;
         }
-      } else {
-        blocked = true;
       }
+    } finally {
+      // Guarantee no placeholder is left stuck on screen even if something above throws.
+      removePlaceholderTasks(placeholderIds);
     }
 
     setBatchResult({
@@ -257,7 +330,13 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
       blocked
     });
 
+    if (renderedOutputFiles.length > 0) {
+      const batchLabel = `Lote ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+      organizeBatchOutputs(organizedSourceFiles, renderedOutputFiles, batchLabel);
+    }
+
     setIsProcessingBatch(false);
+    setBatchProgress(null);
     setFlowStep(5);
   };
 
@@ -455,7 +534,7 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
                         className="w-full py-2 px-3 bg-gray-900/60 hover:bg-gray-900 border border-gray-850 rounded-lg text-[11px] font-mono text-gray-300 hover:text-white transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>Ou escolha um arquivo salvo em Arquivos</span>
+                        <span>Ou escolha um arquivo salvo em Pastas</span>
                       </button>
 
                       {/* Templates Rápidos */}
@@ -590,7 +669,7 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
                         className="w-full py-2 px-3 bg-gray-900/60 hover:bg-gray-900 border border-gray-850 rounded-lg text-[11px] font-mono text-gray-300 hover:text-white transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>Ou escolha vídeos salvos em Arquivos</span>
+                        <span>Ou escolha vídeos salvos em Pastas</span>
                       </button>
 
                       {/* Lista de vídeos de origem carregados */}
@@ -799,7 +878,9 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
                   <div className="flex gap-2 w-full justify-end">
                     <button
                       onClick={resetFlow}
-                      className="py-2 px-4 bg-gray-950 hover:bg-gray-900 text-gray-400 hover:text-white border border-gray-900 rounded-lg text-xs font-semibold transition cursor-pointer"
+                      disabled={isProcessingBatch}
+                      className="py-2 px-4 bg-gray-950 hover:bg-gray-900 text-gray-400 hover:text-white border border-gray-900 rounded-lg text-xs font-semibold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={isProcessingBatch ? 'Aguarde o lote terminar de renderizar' : undefined}
                     >
                       Cancelar
                     </button>
@@ -811,7 +892,11 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
                       {isProcessingBatch ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Iniciando Fábrica...</span>
+                          <span>
+                            {batchProgress
+                              ? `Renderizando ${batchProgress.current} de ${batchProgress.total}...`
+                              : 'Iniciando Fábrica...'}
+                          </span>
                         </>
                       ) : (
                         <>

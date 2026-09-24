@@ -25,7 +25,22 @@ A nova arquitetura distribui o processamento pesado de vídeos (FFmpeg) para má
 
 ---
 
-## ⚙ Instalação e Execução
+## ⚡ Instalação Rápida em um Novo Computador (Windows, recomendado)
+
+1. Copie a pasta `render-worker` inteira (pode excluir `node_modules`, ela é recriada) para o computador de destino, via pendrive, rede ou zip.
+2. Abra o PowerShell **como Administrador** dentro da pasta copiada.
+3. Rode:
+   ```powershell
+   .\install-worker.ps1
+   ```
+4. O script verifica/instala Node.js e FFmpeg (via `winget`), roda `npm install`, confirma o `.env` (copiando de `.env.example` e pedindo os valores se faltar) e cria uma **Tarefa Agendada do Windows** que inicia o worker sozinho a cada boot da máquina — mesmo sem ninguém logar — com reinício automático em caso de falha.
+5. Pronto. Acompanhe a conexão em **Painel ADM → Render Farm**, que mostra quantos workers estão ativos, ocupados e seus recursos em tempo real.
+
+Para reinstalar/reconfigurar, é só rodar `install-worker.ps1` de novo (ele substitui a tarefa agendada existente). Para remover o auto-start: `Unregister-ScheduledTask -TaskName ViralFactoryRenderWorker` num PowerShell como Administrador.
+
+---
+
+## ⚙ Instalação Manual e Execução
 
 ### 1. Clonar ou mover a pasta do Worker
 Mova a pasta `render-worker` para a máquina de destino desejada (pode ser o seu computador local, uma VPS, um servidor dedicado, etc.).

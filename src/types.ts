@@ -258,6 +258,9 @@ export interface StorageFolder {
   path: string;
   description: string;
   files: StorageFile[];
+  // When set, this folder is a subfolder nested under the folder with this id (e.g. a
+  // daily or batch folder auto-created inside "Vídeos" / "Vídeos Renderizados").
+  parentId?: string;
 }
 
 export interface SystemStats {

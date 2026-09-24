@@ -26,7 +26,7 @@ export class ExportPresetManager {
       crf: 20,
       audioCodec: 'aac',
       audioBitrate: '192k',
-      speedPreset: 'fast',
+      speedPreset: 'veryfast',
       description: 'Ideal portrait format (9:16) with optimized bitrate for TikTok upload.'
     },
     reels: {
@@ -40,7 +40,7 @@ export class ExportPresetManager {
       crf: 19,
       audioCodec: 'aac',
       audioBitrate: '192k',
-      speedPreset: 'medium',
+      speedPreset: 'fast',
       description: 'Optimized high-quality portrait output (9:16) for Instagram Reels.'
     },
     shorts: {
@@ -54,7 +54,7 @@ export class ExportPresetManager {
       crf: 18,
       audioCodec: 'aac',
       audioBitrate: '256k',
-      speedPreset: 'medium',
+      speedPreset: 'fast',
       description: 'Smooth 60fps portrait output (9:16) tuned for YouTube Shorts feed.'
     },
     stories: {
@@ -82,7 +82,7 @@ export class ExportPresetManager {
       crf: 20,
       audioCodec: 'aac',
       audioBitrate: '192k',
-      speedPreset: 'fast',
+      speedPreset: 'veryfast',
       description: 'Square aspect ratio (1:1) perfectly suited for main social media feeds.'
     },
     youtube_16_9: {
@@ -96,7 +96,7 @@ export class ExportPresetManager {
       crf: 18,
       audioCodec: 'aac',
       audioBitrate: '320k',
-      speedPreset: 'slow',
+      speedPreset: 'medium',
       description: 'Full HD high fidelity landscape video (16:9) with premium audio bitrate.'
     },
     facebook: {
@@ -110,7 +110,7 @@ export class ExportPresetManager {
       crf: 21,
       audioCodec: 'aac',
       audioBitrate: '128k',
-      speedPreset: 'fast',
+      speedPreset: 'veryfast',
       description: 'Standard landscape video format (16:9 / 720p) optimized for Facebook compression.'
     }
   };

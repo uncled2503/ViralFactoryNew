@@ -35,7 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', breadcrumbParent: 'Workspace', icon: LayoutDashboard },
   { id: 'templates', label: 'Templates', breadcrumbParent: 'Vídeo Engine', icon: Layers },
   { id: 'renderings', label: 'Renderizações', breadcrumbParent: 'Vídeo Engine', icon: Film },
-  { id: 'storage', label: 'Arquivos', breadcrumbParent: 'Arquivos', icon: HardDrive },
+  { id: 'storage', label: 'Pastas', breadcrumbParent: 'Pastas', icon: HardDrive },
   { id: 'subscription', label: 'Assinatura', breadcrumbParent: 'Minha Conta', icon: Sparkles },
   { id: 'profile-settings', label: 'Configurações', breadcrumbParent: 'Minha Conta', icon: Settings },
   { id: 'help', label: 'Ajuda & Tutoriais', breadcrumbParent: 'Suporte', icon: HelpCircle }

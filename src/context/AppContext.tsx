@@ -34,13 +34,104 @@ import { ProjectService } from '../services/ProjectService';
 import { TemplateService } from '../services/TemplateService';
 import { RenderService } from '../services/RenderService';
 import { SubscriptionService } from '../services/SubscriptionService';
-import { StorageService } from '../services/StorageService';
 import { PaymentService } from '../services/PaymentService';
 import { isAdminRole } from '../utils/rbac';
 import { adminFetch, authenticatedFetch } from '../utils/api';
 import { generateUUID } from '../utils/uuid';
 
 export type TabName = 'dashboard' | 'projects' | 'templates' | 'renderings' | 'storage' | 'subscription' | 'admin' | 'help' | 'profile-settings';
+
+// De-dupes folders by id, and additionally merges any folders that share the same name under
+// the same parent (a race between concurrent loads/tabs creating two "Lote ..." or "Renderizações
+// de ..." subfolders with different ids) by combining their files into one. This NEVER
+// resurrects a folder the user deleted — a folder that's genuinely absent from the data stays
+// absent. (An earlier version of this also re-seeded the 5 base folders whenever one was
+// missing, which undid deliberate deletions — that behavior was removed.)
+function sanitizeFolders(rawFolders: StorageFolder[]): StorageFolder[] {
+  const byId = new Map<string, StorageFolder>();
+  for (const folder of rawFolders) {
+    if (!folder || byId.has(folder.id)) continue;
+    byId.set(folder.id, { ...folder, files: [...folder.files] });
+  }
+
+  const byNameAndParent = new Map<string, StorageFolder>();
+  const result: StorageFolder[] = [];
+  for (const folder of byId.values()) {
+    const key = `${folder.parentId || 'root'}::${folder.name}`;
+    const existing = byNameAndParent.get(key);
+    if (existing) {
+      const existingUrls = new Set(existing.files.map(f => f.url));
+      existing.files.push(...folder.files.filter(f => !existingUrls.has(f.url)));
+      continue;
+    }
+    byNameAndParent.set(key, folder);
+    result.push(folder);
+  }
+  return result;
+}
+
+// Persists the user's full current folder list to the server (the only store the app actually
+// reads back on load — see loadUserWorkspace's GET /api/db/sync). The server replaces this
+// user's own custom (non-standard) folders with exactly what's sent here, so this must always
+// be called with the complete, already-mutated folders array, never a partial one.
+function syncFoldersToServer(userId: string, foldersToSync: StorageFolder[]) {
+  authenticatedFetch(`/api/db/sync?userId=${userId}`, {
+    method: 'POST',
+    body: JSON.stringify({ storage_folders: foldersToSync })
+  }).catch(err => console.warn('[syncFoldersToServer] failed:', err));
+}
+
+// Files completed renders from days before today into a dated subfolder under "Vídeos
+// Renderizados" ("Renderizações de DD/MM/YYYY"). This is a MANUAL action (see
+// organizeOldRenderings below, wired to a button in the Pastas tab) — it used to run
+// automatically on every workspace load, which is what caused folders to keep reappearing
+// unpredictably (loadUserWorkspace fires after nearly every action in the app). Renders already
+// filed (matched by url) are skipped, and today's renders are always left alone.
+function organizeStaleRenderingsIntoDailyFolders(tasks: RenderingTask[], baseFolders: StorageFolder[]): StorageFolder[] {
+  const todayLabel = new Date().toLocaleDateString('pt-BR');
+  const alreadyFiledUrls = new Set(
+    baseFolders.filter(f => f.parentId === 'fld-rendered').flatMap(f => f.files.map(file => file.url))
+  );
+
+  const staleByDay = new Map<string, RenderingTask[]>();
+  for (const t of tasks) {
+    if (t.status !== 'completed' || !t.outputUrl || !t.completedAt) continue;
+    if (alreadyFiledUrls.has(t.outputUrl)) continue;
+    const dayLabel = new Date(t.completedAt).toLocaleDateString('pt-BR');
+    if (dayLabel === todayLabel) continue;
+    if (!staleByDay.has(dayLabel)) staleByDay.set(dayLabel, []);
+    staleByDay.get(dayLabel)!.push(t);
+  }
+  if (staleByDay.size === 0) return baseFolders;
+
+  let next = baseFolders;
+  for (const [dayLabel, dayTasks] of staleByDay) {
+    const folderName = `Renderizações de ${dayLabel}`;
+    let sub = next.find(f => f.parentId === 'fld-rendered' && f.name === folderName);
+    if (!sub) {
+      sub = {
+        id: `fld-day-${dayLabel.replace(/\//g, '-')}-${Math.random().toString(36).substr(2, 6)}`,
+        name: folderName,
+        path: `/rendered/${dayLabel.replace(/\//g, '-')}`,
+        description: 'Renderizações organizadas automaticamente ao final do dia.',
+        files: [],
+        parentId: 'fld-rendered'
+      };
+      next = [...next, sub];
+    }
+    const subId = sub.id;
+    const newFiles: StorageFile[] = dayTasks.map(t => ({
+      id: `f-${Math.random().toString(36).substr(2, 9)}`,
+      name: `${t.projectName || 'video'}.mp4`,
+      size: '0 MB',
+      type: 'render',
+      url: t.outputUrl!,
+      createdAt: t.completedAt!
+    }));
+    next = next.map(f => f.id === subId ? { ...f, files: [...newFiles, ...f.files] } : f);
+  }
+  return next;
+}
 
 interface LimitExceededInfo {
   type: 'videos' | 'templates' | 'projects' | 'storage';
@@ -88,17 +179,31 @@ interface AppContextType {
   deleteTemplate: (id: string) => void;
   
   // Render System
-  triggerRender: (projectIdOrProject: string | Project, isSandbox?: boolean) => boolean;
+  triggerRender: (
+    projectIdOrProject: string | Project,
+    isSandbox?: boolean,
+    onComplete?: (status: 'completed' | 'failed', data?: { outputUrl?: string; projectName?: string }) => void,
+    cancelSignal?: { cancelled: boolean }
+  ) => boolean;
   deleteRenderingTask: (id: string) => void;
+  addPlaceholderTasks: (tasks: RenderingTask[]) => void;
+  removePlaceholderTasks: (ids: string[]) => void;
   duplicateRenderingTask: (id: string) => void;
   
   // Storage System
   uploadFileToFolder: (folderId: string, fileName: string, fileSize: string, fileType: StorageFile['type'], fileUrl?: string) => boolean;
   deleteFileFromFolder: (folderId: string, fileId: string) => void;
   createFolder: (name: string, description?: string) => void;
+  resetFolders: () => void;
+  organizeOldRenderings: () => void;
   renameFolder: (id: string, name: string) => void;
   deleteFolder: (id: string) => void;
   moveFile: (srcFolderId: string, destFolderId: string, fileId: string) => void;
+  organizeBatchOutputs: (
+    sourceFiles: { name: string; size?: string; url: string }[],
+    renderedFiles: { name: string; size?: string; url: string }[],
+    label: string
+  ) => void;
 
   // Subscription System
   changeSubscription: (tier: PlanTier, cycle: BillingCycle) => void;
@@ -445,12 +550,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loadUserWorkspace = async (targetUser: User) => {
     const userId = targetUser.id;
 
-    // Reset all workspace states instantly to prevent race conditions or data pollution during the fetch
-    setProjects([]);
-    setTemplates([]);
-    setRenderingTasks([]);
-    setFolders([]);
-    setInvoices([]);
+    // Note: we deliberately do NOT clear projects/templates/renderingTasks/folders to []
+    // before fetching. This function runs after almost every mutation (including once per
+    // finished render in a batch), and clearing first made every list flash empty and
+    // reappear each time — every card in "Renderizações" blinked out and back during a batch.
+    // Every section below unconditionally overwrites its state with the freshly loaded data
+    // once ready, so skipping the premature clear doesn't leave anything stale behind.
     setLimitError(null);
 
     // Let's attempt to fetch synced DB snapshot from the server first to merge rendering changes
@@ -540,7 +645,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       curFolders = INITIAL_FOLDERS;
       localStorage.setItem(userFoldersKey, JSON.stringify(INITIAL_FOLDERS));
     }
+    // Note: organizing old renders into dated folders is a manual action now (see
+    // organizeOldRenderings, triggered by a button in the Pastas tab) — it used to run
+    // automatically here on every load, which is what caused folders to keep reappearing
+    // unpredictably. Sanitizing (de-dupe/merge) is still safe to run on every load.
+    const beforeSanitize = JSON.stringify(curFolders);
+    curFolders = sanitizeFolders(curFolders);
     setFolders(curFolders);
+    // Only re-persist if something actually changed — loadUserWorkspace runs after nearly
+    // every action, and writing back on every single call is unnecessary churn.
+    if (JSON.stringify(curFolders) !== beforeSanitize) {
+      localStorage.setItem(userFoldersKey, JSON.stringify(curFolders));
+      if (isSupabaseConfigured()) {
+        syncFoldersToServer(userId, curFolders);
+      }
+    }
 
     // 5. Invoices
     const userInvoicesKey = `vf_invoices_${userId}`;
@@ -649,22 +768,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const dbProjects = await ProjectService.getProjects(userId);
           const dbTemplates = await TemplateService.getTemplates(userId);
           const dbTasks = await RenderService.getRenderingTasks(userId);
-          const dbFolders = await StorageService.getFolders(userId);
           const dbInvoices = await PaymentService.getInvoices(userId);
 
           const finalProjects = dbProjects && dbProjects.length > 0 ? dbProjects : curProjects;
           const finalTemplates = dbTemplates && dbTemplates.length > 0 ? dbTemplates : curTemplates;
           const finalTasks = dbTasks && dbTasks.length > 0 ? dbTasks : curTasks;
-          const finalFolders = dbFolders && dbFolders.length > 0 ? dbFolders : curFolders;
           const finalInvoices = dbInvoices && dbInvoices.length > 0 ? dbInvoices : curInvoices;
 
           if (dbProjects && dbProjects.length > 0) setProjects(dbProjects);
           if (dbTemplates && dbTemplates.length > 0) setTemplates(dbTemplates);
           if (dbTasks && dbTasks.length > 0) setRenderingTasks(dbTasks);
-          if (dbFolders && dbFolders.length > 0) setFolders(dbFolders);
           if (dbInvoices && dbInvoices.length > 0) setInvoices(dbInvoices);
 
-          computeAndSetStats(dbUser, finalProjects, finalTemplates, finalFolders);
+          // Folders deliberately come ONLY from /api/db/sync (curFolders, loaded earlier in
+          // this function) — never from StorageService's direct Supabase `storage_folders`
+          // table. That table was a second, independent write target every folder mutation
+          // used to also write to; it silently accumulated its own copy of every duplicate/
+          // stale folder from past bugs, and this fetch was overwriting the properly
+          // deduped/isolated data from /api/db/sync with that stale copy on every load — which
+          // is exactly why folders kept reverting no matter what was fixed server-side.
+          computeAndSetStats(dbUser, finalProjects, finalTemplates, curFolders);
         } else {
           // Sync current local profile to Supabase saas_users table
           await UserService.upsertUser(targetUser);
@@ -1217,7 +1340,12 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
   };
 
   // Trigger Render with limit check
-  const triggerRender = (projectIdOrProject: string | Project, isSandbox = false): boolean => {
+  const triggerRender = (
+    projectIdOrProject: string | Project,
+    isSandbox = false,
+    onComplete?: (status: 'completed' | 'failed', data?: { outputUrl?: string; projectName?: string }) => void,
+    cancelSignal?: { cancelled: boolean }
+  ): boolean => {
     if (!verifyAndTriggerLimitExceeded('videos')) {
       return false;
     }
@@ -1263,7 +1391,11 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
         RenderService.upsertRenderingTask(user.id, newTask);
       }
 
-      // Sync local DB snapshot to the server file database first
+      // Sync local DB snapshot to the server file database FIRST, and only then trigger
+      // the render. The backend reads the project straight from that database when the
+      // job starts — firing both requests in parallel let it read a stale/missing project
+      // (old or no videoZone, missing assets) whenever the sync hadn't landed yet, which is
+      // exactly what happens under batch load. Awaiting the sync removes that race.
       authenticatedFetch(`/api/db/sync?userId=${user.id}`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1276,6 +1408,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
               project_id: projectId,
               user_id: user.id,
               project_name: displayProjectName,
+              template_id: project.templateId,
               template_name: templateName,
               status: 'queued',
               progress: 0,
@@ -1285,8 +1418,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
           ],
           storage_folders: folders
         })
-      }).catch(e => console.error('Failed to pre-sync DB', e));
-
+      }).catch(e => console.error('Failed to pre-sync DB', e)).then(() => {
       // Trigger Backend Render Pipeline
       authenticatedFetch('/api/render/job', {
         method: 'POST',
@@ -1317,10 +1449,23 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
           const backendJobId = data.job.id;
           showToast(`Processamento do vídeo "${project.name}" enviado para a fila do servidor!`, 'info');
 
-          // Poll progress
+          // Poll progress. A busy batch can have many of these running at once, so we
+          // tolerate transient rate-limit/proxy error pages instead of throwing on them
+          // (they'd otherwise return HTML, not JSON, and crash this chain every tick).
           const pollInterval = setInterval(() => {
+            // The caller gave up (e.g. batch render's per-job timeout) — stop polling instead
+            // of hitting the backend every 3s for the rest of the page's lifetime.
+            if (cancelSignal?.cancelled) {
+              clearInterval(pollInterval);
+              return;
+            }
             authenticatedFetch(`/api/render/job/${backendJobId}`)
-              .then(res => res.json())
+              .then(res => {
+                if (!res.ok) return null;
+                const contentType = res.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) return null;
+                return res.json();
+              })
               .then(job => {
                 if (job) {
                   const mappedStatus = (
@@ -1374,6 +1519,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
                     // Trigger general workspace file systems refresh
                     loadUserWorkspace(user);
                     showToast(`Vídeo "${project.name}" renderizado com sucesso no backend!`, 'success');
+                    onComplete?.('completed', { outputUrl: job.outputUrl, projectName: displayProjectName });
                   } else if (job.status === 'Failed' || job.status === 'Canceled') {
                     clearInterval(pollInterval);
                     
@@ -1390,17 +1536,20 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
                     });
 
                     showToast(`Renderização falhou: ${job.error || 'Erro no motor de vídeo'}`, 'error');
+                    onComplete?.('failed');
                   }
                 }
               })
               .catch(e => console.error('Failed polling render job status:', e));
-          }, 1500);
+          }, 3000);
         }
       })
       .catch(err => {
         console.error('Render trigger API submission failed:', err);
         showToast(`Falha ao enviar renderização: ${err.message || 'Erro no servidor'}`, 'error');
         setRenderingTasks(prevTasks => prevTasks.map(t => t.id === taskId ? { ...t, status: 'failed', errorMessage: err.message } : t));
+        onComplete?.('failed');
+      });
       });
     }
 
@@ -1416,6 +1565,19 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
         RenderService.deleteRenderingTask(user.id, id);
       }
     }
+  };
+
+  // Purely client-side, never persisted — placeholder cards shown the instant a batch starts
+  // so the whole batch is visible (loading) immediately, instead of trickling in one by one as
+  // each video's turn to actually render comes up. Each one is swapped out for the real task
+  // (via removePlaceholderTasks) the moment its real triggerRender call creates it.
+  const addPlaceholderTasks = (tasks: RenderingTask[]) => {
+    setRenderingTasks(prev => [...tasks, ...prev]);
+  };
+
+  const removePlaceholderTasks = (ids: string[]) => {
+    const idSet = new Set(ids);
+    setRenderingTasks(prev => prev.filter(t => !idSet.has(t.id)));
   };
 
   const duplicateRenderingTask = (id: string) => {
@@ -1488,7 +1650,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       loadUserWorkspace(updatedUser);
 
       if (isSupabaseConfigured()) {
-        StorageService.upsertFolders(user.id, nextFolders);
+        syncFoldersToServer(user.id, nextFolders);
         UserService.upsertUser(updatedUser);
       }
     }
@@ -1527,10 +1689,38 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       loadUserWorkspace(updatedUser);
 
       if (isSupabaseConfigured()) {
-        StorageService.upsertFolders(user.id, nextFolders);
+        syncFoldersToServer(user.id, nextFolders);
         UserService.upsertUser(updatedUser);
       }
     }
+  };
+
+  // One-time cleanup for accounts that accumulated duplicate/corrupted folders from earlier
+  // bugs (unbounded auto-organize runs + an additive-only server merge, both now fixed) — wipes
+  // this account's folder tree back to the 5 clean base folders. Files already registered
+  // elsewhere (Supabase Storage, rendering_tasks) are untouched; this only resets the Pastas
+  // tab's folder/file catalog.
+  const resetFolders = () => {
+    if (!user) return;
+    setFolders(INITIAL_FOLDERS);
+    localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(INITIAL_FOLDERS));
+    syncFoldersToServer(user.id, INITIAL_FOLDERS);
+  };
+
+  // Manually files completed renders from previous days into dated "Renderizações de ..."
+  // subfolders. User-triggered only (see the "Organizar Renderizações Antigas" button in the
+  // Pastas tab) — no automatic/background trigger, by design.
+  const organizeOldRenderings = () => {
+    if (!user) return;
+    const next = organizeStaleRenderingsIntoDailyFolders(renderingTasks, folders);
+    if (next === folders) {
+      showToast('Nenhuma renderização antiga para organizar.', 'info');
+      return;
+    }
+    setFolders(next);
+    localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(next));
+    syncFoldersToServer(user.id, next);
+    showToast('Renderizações antigas organizadas em pastas por dia.', 'success');
   };
 
   const createFolder = (name: string, description?: string) => {
@@ -1546,7 +1736,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
     if (user) {
       localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
       if (isSupabaseConfigured()) {
-        StorageService.upsertFolders(user.id, nextFolders);
+        syncFoldersToServer(user.id, nextFolders);
       }
     }
   };
@@ -1566,7 +1756,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
     if (user) {
       localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
       if (isSupabaseConfigured()) {
-        StorageService.upsertFolders(user.id, nextFolders);
+        syncFoldersToServer(user.id, nextFolders);
       }
     }
   };
@@ -1577,7 +1767,66 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
     if (user) {
       localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
       if (isSupabaseConfigured()) {
-        StorageService.upsertFolders(user.id, nextFolders);
+        syncFoldersToServer(user.id, nextFolders);
+      }
+    }
+  };
+
+  // Files the source videos and rendered outputs of a just-finished batch into matching
+  // "Lote ..." subfolders under "Vídeos" and "Vídeos Renderizados" — called once the whole
+  // batch loop in NewProjectWizard settles, not per-video.
+  const organizeBatchOutputs = (
+    sourceFiles: { name: string; size?: string; url: string }[],
+    renderedFiles: { name: string; size?: string; url: string }[],
+    label: string
+  ) => {
+    if (sourceFiles.length === 0 && renderedFiles.length === 0) return;
+
+    let next = folders;
+
+    const ensureSubfolder = (parentId: string): string => {
+      const existing = next.find(f => f.parentId === parentId && f.name === label);
+      if (existing) return existing.id;
+      const created: StorageFolder = {
+        id: `fld-${parentId}-${Math.random().toString(36).substr(2, 9)}`,
+        name: label,
+        path: `/${parentId}/${label.toLowerCase().replace(/\s+/g, '-')}`,
+        description: 'Pasta criada automaticamente para este lote de renderização.',
+        files: [],
+        parentId
+      };
+      next = [...next, created];
+      return created.id;
+    };
+
+    const pushFiles = (
+      subfolderId: string,
+      items: { name: string; size?: string; url: string }[],
+      fileType: StorageFile['type']
+    ) => {
+      const newFiles: StorageFile[] = items.map(it => ({
+        id: `f-${Math.random().toString(36).substr(2, 9)}`,
+        name: it.name,
+        size: it.size || '0 MB',
+        type: fileType,
+        url: it.url,
+        createdAt: new Date().toISOString()
+      }));
+      next = next.map(f => f.id === subfolderId ? { ...f, files: [...newFiles, ...f.files] } : f);
+    };
+
+    if (sourceFiles.length > 0) {
+      pushFiles(ensureSubfolder('fld-videos'), sourceFiles, 'video');
+    }
+    if (renderedFiles.length > 0) {
+      pushFiles(ensureSubfolder('fld-rendered'), renderedFiles, 'render');
+    }
+
+    setFolders(next);
+    if (user) {
+      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(next));
+      if (isSupabaseConfigured()) {
+        syncFoldersToServer(user.id, next);
       }
     }
   };
@@ -1608,7 +1857,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
     if (user) {
       localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
       if (isSupabaseConfigured()) {
-        StorageService.upsertFolders(user.id, nextFolders);
+        syncFoldersToServer(user.id, nextFolders);
       }
     }
   };
@@ -1927,13 +2176,18 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
         deleteTemplate,
         triggerRender,
         deleteRenderingTask,
+        addPlaceholderTasks,
+        removePlaceholderTasks,
         duplicateRenderingTask,
         uploadFileToFolder,
         deleteFileFromFolder,
         createFolder,
+        resetFolders,
+        organizeOldRenderings,
         renameFolder,
         deleteFolder,
         moveFile,
+        organizeBatchOutputs,
         changeSubscription,
         cancelSubscription,
         invoices,

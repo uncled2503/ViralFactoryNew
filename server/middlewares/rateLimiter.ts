@@ -107,10 +107,15 @@ export function createRateLimiter(config: RateLimitConfig) {
   };
 }
 
-// Configurable defaults via environment variables
+// Configurable defaults via environment variables.
+// 100 req/min was sized for isolated actions, not this product's actual core workflow:
+// batch-rendering many videos at once means one browser tab can legitimately have a dozen+
+// render jobs in flight, each polling its own status every few seconds, on top of uploads
+// and job-trigger calls for the rest of the batch. That easily exceeds 100/min and was
+// tripping the limiter (and, on Cloudflare, a security block) during normal batch use.
 export const publicApiLimiter = createRateLimiter({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
-  max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
+  max: parseInt(process.env.RATE_LIMIT_MAX || '600', 10),
   type: 'PUBLIC_API'
 });
 

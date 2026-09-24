@@ -8,6 +8,7 @@ import { useApp } from '../context/AppContext';
 import { StorageFile, StorageFolder } from '../types';
 import { ConfirmModal } from './ConfirmModal';
 import { uploadFileToServer } from '../utils/uploadFile';
+import { downloadFolderAsZip } from '../utils/downloadFolderZip';
 import { EmptyState } from './ui/EmptyState';
 import { PageHeader } from './ui/PageHeader';
 import { motion, AnimatePresence } from 'motion/react';
@@ -98,17 +99,21 @@ export const FileThumbnail: React.FC<{ file: StorageFile }> = ({ file }) => {
 };
 
 export const StorageManager: React.FC = () => {
-  const { 
-    folders, 
-    uploadFileToFolder, 
-    deleteFileFromFolder, 
+  const {
+    folders,
+    uploadFileToFolder,
+    deleteFileFromFolder,
     stats,
     createFolder,
+    resetFolders,
+    organizeOldRenderings,
     renameFolder,
     deleteFolder,
     moveFile,
     showToast
   } = useApp();
+
+  const [isResetFoldersOpen, setIsResetFoldersOpen] = useState(false);
 
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -197,6 +202,7 @@ export const StorageManager: React.FC = () => {
 
   const [isDeleteFolderOpen, setIsDeleteFolderOpen] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<StorageFolder | null>(null);
+  const [zippingFolderId, setZippingFolderId] = useState<string | null>(null);
 
   const [isMoveFileOpen, setIsMoveFileOpen] = useState(false);
   const [fileToMove, setFileToMove] = useState<StorageFile | null>(null);
@@ -206,6 +212,9 @@ export const StorageManager: React.FC = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
   const selectedFolder = folders.find(f => f.id === selectedFolderId);
+  const topLevelFolders = folders.filter(f => !f.parentId);
+  const childFolders = selectedFolderId ? folders.filter(f => f.parentId === selectedFolderId) : [];
+  const parentFolder = selectedFolder?.parentId ? folders.find(f => f.id === selectedFolder.parentId) : undefined;
 
   const getFileIcon = (type: StorageFile['type']) => {
     switch (type) {
@@ -282,25 +291,58 @@ export const StorageManager: React.FC = () => {
     show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 100, damping: 15 } }
   };
 
+  const handleZipFolder = async (folder: StorageFolder) => {
+    if (folder.files.length === 0) {
+      showToast('Esta pasta não tem arquivos para baixar.', 'info');
+      return;
+    }
+    setZippingFolderId(folder.id);
+    try {
+      await downloadFolderAsZip(folder.name, folder.files);
+    } catch (err) {
+      showToast('Falha ao gerar o .zip da pasta.', 'error');
+    } finally {
+      setZippingFolderId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-12">
       <PageHeader
-        title="Arquivos"
+        title="Pastas"
         subtitle="Envie e organize templates, logos, fontes e vídeos de fundo em pastas."
         action={
           <div className="flex items-center gap-2">
             {!selectedFolderId && (
-              <button
-                onClick={() => {
-                  setNewFolderName('');
-                  setNewFolderDesc('');
-                  setIsCreateFolderOpen(true);
-                }}
-                className="py-2.5 px-4 bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <FolderPlus className="w-4 h-4 text-indigo-400" />
-                <span>Nova Pasta</span>
-              </button>
+              <>
+                <button
+                  onClick={() => setIsResetFoldersOpen(true)}
+                  className="py-2.5 px-4 bg-gray-900 hover:bg-red-950/20 border border-gray-850 hover:border-red-500/20 text-gray-400 hover:text-red-400 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  title="Limpa pastas e subpastas duplicadas/corrompidas e recomeça do zero"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Resetar Pastas</span>
+                </button>
+                <button
+                  onClick={() => organizeOldRenderings()}
+                  className="py-2.5 px-4 bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  title="Move renderizações concluídas de dias anteriores para pastas por data — só roda quando você clica"
+                >
+                  <Calendar className="w-4 h-4 text-indigo-400" />
+                  <span>Organizar Renderizações Antigas</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setNewFolderName('');
+                    setNewFolderDesc('');
+                    setIsCreateFolderOpen(true);
+                  }}
+                  className="py-2.5 px-4 bg-gray-900 hover:bg-gray-800 border border-gray-850 text-gray-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <FolderPlus className="w-4 h-4 text-indigo-400" />
+                  <span>Nova Pasta</span>
+                </button>
+              </>
             )}
 
             {selectedFolderId && (
@@ -323,8 +365,20 @@ export const StorageManager: React.FC = () => {
           className="hover:text-white font-bold transition flex items-center gap-1"
         >
           <HardDrive className="w-3.5 h-3.5" />
-          <span>Arquivos</span>
+          <span>Pastas</span>
         </button>
+
+        {parentFolder && (
+          <>
+            <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
+            <button
+              onClick={() => setSelectedFolderId(parentFolder.id)}
+              className="hover:text-white font-bold transition"
+            >
+              {parentFolder.name}
+            </button>
+          </>
+        )}
 
         {selectedFolder && (
           <>
@@ -348,8 +402,15 @@ export const StorageManager: React.FC = () => {
             initial="hidden"
             animate="show"
           >
-            {folders.map((folder) => {
-              const totalSize = folder.files.reduce((acc, f) => {
+            {topLevelFolders.map((folder) => {
+              // Include files that live inside this folder's auto-created subfolders (daily /
+              // batch groups) so the card's totals reflect everything filed under it, not just
+              // files dropped directly at this level.
+              const allFiles = [
+                ...folder.files,
+                ...folders.filter(f => f.parentId === folder.id).flatMap(f => f.files)
+              ];
+              const totalSize = allFiles.reduce((acc, f) => {
                 const num = parseFloat(f.size);
                 return isNaN(num) ? acc : acc + num;
               }, 0);
@@ -404,7 +465,7 @@ export const StorageManager: React.FC = () => {
                   </div>
 
                   <div className="pt-3 border-t border-gray-900/40 flex items-center justify-between text-[10px] font-mono text-gray-400">
-                    <span>{folder.files.length} arquivos</span>
+                    <span>{allFiles.length} arquivos</span>
                     <span className="text-gray-500">{totalSize > 0 ? `~${totalSize.toFixed(1)} MB` : 'Vazio'}</span>
                   </div>
                 </motion.div>
@@ -421,7 +482,7 @@ export const StorageManager: React.FC = () => {
             {/* Left: Back and Search */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
               <button
-                onClick={() => { setSelectedFolderId(null); setSearchQuery(''); }}
+                onClick={() => { setSelectedFolderId(selectedFolder?.parentId || null); setSearchQuery(''); }}
                 className="px-3 py-2 bg-gray-950 hover:bg-gray-900 text-gray-300 border border-gray-900 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -490,6 +551,47 @@ export const StorageManager: React.FC = () => {
 
             </div>
           </div>
+
+          {/* Subfolders (daily / batch groups auto-created inside this folder) */}
+          {childFolders.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-[10px] font-mono text-gray-500 uppercase tracking-widest">Subpastas</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {childFolders.map(sub => (
+                  <div
+                    key={sub.id}
+                    onClick={() => setSelectedFolderId(sub.id)}
+                    className="group bg-gray-950/40 border border-gray-900 rounded-xl p-4 cursor-pointer hover:border-indigo-500/20 transition flex flex-col gap-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="h-8 w-8 rounded-lg bg-indigo-950/40 border border-indigo-500/15 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                        <Folder className="w-4 h-4 fill-current opacity-80" />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleZipFolder(sub); }}
+                          disabled={zippingFolderId === sub.id}
+                          className="p-1 rounded text-gray-500 hover:text-emerald-400 hover:bg-gray-900 transition cursor-pointer disabled:opacity-40"
+                          title="Baixar pasta em .zip"
+                        >
+                          <Download className={`w-3.5 h-3.5 ${zippingFolderId === sub.id ? 'animate-pulse' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setFolderToDelete(sub); setIsDeleteFolderOpen(true); }}
+                          className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-900 transition cursor-pointer"
+                          title="Excluir pasta"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <h4 className="text-xs font-bold text-gray-200 group-hover:text-indigo-400 transition-colors truncate">{sub.name}</h4>
+                    <span className="text-[10px] font-mono text-gray-500">{sub.files.length} arquivo{sub.files.length === 1 ? '' : 's'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Drag & Drop Upload Zone */}
           <div
@@ -971,6 +1073,23 @@ export const StorageManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Non-blocking: Reset Folders Confirmation */}
+      <ConfirmModal
+        isOpen={isResetFoldersOpen}
+        onClose={() => setIsResetFoldersOpen(false)}
+        onConfirm={() => {
+          resetFolders();
+          setIsResetFoldersOpen(false);
+          showToast('Pastas resetadas. Recarregando...', 'success');
+          setTimeout(() => window.location.reload(), 800);
+        }}
+        title="Resetar Pastas"
+        message="Isso remove todas as pastas e subpastas (incluindo as automáticas de dia/lote) e recomeça do zero com as 5 pastas padrão. Use se estiver vendo pastas duplicadas ou corrompidas. Os vídeos em si continuam salvos — isso só reorganiza o catálogo de pastas."
+        confirmText="Resetar"
+        cancelText="Cancelar"
+        type="danger"
+      />
 
       {/* Non-blocking: Delete Folder Confirmation */}
       <ConfirmModal

@@ -10,6 +10,7 @@ import { RenderEngine } from './server/render/RenderEngine';
 import { WorkerWebSocketServer } from './server/render/WorkerWebSocketServer';
 import { adminRouter } from './server/routes/admin';
 import { adminAuthMiddleware } from './server/middlewares/adminAuth';
+import { getAuthenticatedUser } from './server/utils/authHelper';
 import { publicApiLimiter, adminApiLimiter } from './server/middlewares/rateLimiter';
 import { JobTimeoutMonitor } from './server/render/JobTimeoutMonitor';
 import { RedisService } from './server/services/RedisService';
@@ -124,6 +125,29 @@ async function startServer() {
   // Get active connected workers status for monitoring dashboard
   app.get('/api/render/workers', async (req, res) => {
     res.json(await WorkerWebSocketServer.getWorkers());
+  });
+
+  // Deploy-restart trigger: lets a local deploy script gracefully exit this process after new
+  // files have been copied in, so the Scheduled Task's auto-restart picks up the fresh build —
+  // without needing an elevated session to kill the process by hand. SECURITY: only accepted
+  // from loopback (never reachable over the public Cloudflare Tunnel/internet) AND only with the
+  // exact shared secret; both checks must pass.
+  app.post('/api/internal/restart', (req, res) => {
+    const remoteAddr = req.socket.remoteAddress || '';
+    const isLoopback = remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
+    const providedSecret = req.headers['x-restart-secret'];
+    const expectedSecret = process.env.DEPLOY_RESTART_SECRET;
+
+    if (!isLoopback || !expectedSecret || providedSecret !== expectedSecret) {
+      res.status(403).json({ error: 'Não autorizado.' });
+      return;
+    }
+
+    res.json({ success: true, message: 'Reiniciando...' });
+    console.log('[Deploy] Restart solicitado via /api/internal/restart — encerrando processo para a Tarefa Agendada reiniciar com o build novo.');
+    // A clean exit(0) reads as "success" to Task Scheduler, which only auto-restarts on
+    // failure — exit(1) is what actually makes RestartOnFailure kick in.
+    setTimeout(() => process.exit(1), 300);
   });
 
   // Flag single source of truth for temporary disabling of plans/limits
@@ -827,49 +851,6 @@ async function startServer() {
     }
   });
 
-  // Helper to extract authenticated user from a verified Authorization Bearer token (Supabase
-  // Auth JWT). SECURITY: this must never trust a client-supplied userId from query/body — doing
-  // so lets anyone impersonate any account by simply passing its UUID, defeating every
-  // ownership/authorization check built on top of this helper. The only fallback is for fully
-  // offline/local dev setups where Supabase isn't configured at all (never true in production).
-  async function getAuthenticatedUser(req: express.Request): Promise<{ userId: string; email: string | null } | null> {
-    const authHeader = req.headers.authorization || req.headers.Authorization;
-    if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-      if (isSupabaseConfigured() && supabaseAdmin) {
-        const token = authHeader.substring(7);
-        try {
-          const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-          if (!error && user) {
-            return { userId: user.id, email: user.email || null };
-          }
-        } catch (e: any) {
-          console.error('[Auth Helper] Supabase JWT verification failed:', e.message);
-        }
-      }
-      // A Bearer token was presented but could not be verified — reject rather than falling
-      // through to the insecure client-supplied-id path below.
-      return null;
-    }
-
-    // No Authorization header at all. Only trust a client-supplied userId when Supabase auth
-    // isn't configured in this deployment (offline/local dev) — never reachable in production.
-    if (isSupabaseConfigured()) {
-      return null;
-    }
-
-    const userId = (req.query.userId || req.body.userId) as string;
-    if (!userId) return null;
-
-    try {
-      const dbData = await LocalDbMutex.loadDb();
-      const users = dbData.saas_users || dbData.users || [];
-      const userObj = users.find((u: any) => u.id === userId);
-      return { userId, email: userObj?.email || null };
-    } catch {
-      return { userId, email: null };
-    }
-  }
-
   // Sync server database from/to client localStorage states when requested
   app.get('/api/db/sync', async (req, res) => {
     try {
@@ -891,21 +872,9 @@ async function startServer() {
         invoices: (dbData.invoices || []).filter((inv: any) => inv && (inv.userId === userId || inv.user_id === userId)),
         templates: (dbData.templates || []).filter((t: any) => t && (t.is_public || t.userId === userId || t.user_id === userId || !t.userId)),
         settings: (dbData.settings || []).filter((s: any) => s && s.key !== 'stripe_secret_key' && s.key !== 'stripe_webhook_secret' && !s.key.includes('key') && !s.key.includes('secret')),
-        storage_folders: (dbData.storage_folders || []).map((folder: any) => {
-          if (!folder) return null;
-          const isStandard = ['fld-uploads', 'fld-templates', 'fld-logos', 'fld-videos', 'fld-rendered', 'uploads', 'templates', 'rendered'].includes(folder.id);
-          if (isStandard) {
-            return {
-              ...folder,
-              files: (folder.files || []).filter((file: any) => file && (file.userId === userId || file.user_id === userId))
-            };
-          }
-          // Custom folders belong strictly to their creator
-          if (folder.userId === userId || folder.user_id === userId) {
-            return folder;
-          }
-          return null;
-        }).filter(Boolean),
+        // Every folder belongs to exactly one account — see the POST handler's "6. Sync Storage
+        // Folders" for how that's enforced on write.
+        storage_folders: (dbData.storage_folders || []).filter((f: any) => f && (f.userId === userId || f.user_id === userId)),
         support_tickets: userEmail 
           ? (dbData.support_tickets || []).filter((st: any) => st && (st.customer_email === userEmail || st.customerEmail === userEmail || st.user_id === userId || st.userId === userId))
           : []
@@ -1172,66 +1141,26 @@ async function startServer() {
           dbData.rendering_tasks = [...otherUsersTasks, ...resolvedUserTasks];
         }
 
-        // 6. Sync Storage Folders with perfect Tenant Isolation and Validate disk size limits
+        // 6. Sync Storage Folders — every folder (standard "fld-..." ones included) belongs to
+        // exactly one account, tagged via userId/user_id, exactly like projects/tasks/invoices
+        // above. There is no shared/global folder object anymore: two accounts can both have a
+        // folder literally named "fld-uploads" without either ever seeing the other's files.
+        // The client always sends its complete current folder list, so this user's folders are
+        // REPLACED with exactly what was sent (never unioned) — a union can't observe a
+        // deletion, which is what caused deleted folders to keep reappearing.
         let totalStorageMB = 0;
-        const standardFolderIds = ['fld-uploads', 'fld-templates', 'fld-logos', 'fld-videos', 'fld-rendered', 'uploads', 'templates', 'rendered'];
 
         if (req.body.storage_folders) {
           if (!dbData.storage_folders) dbData.storage_folders = [];
 
-          // Separate other users' custom folders
-          const otherUsersCustomFolders = dbData.storage_folders
-            .filter((f: any) => f && f.id && !standardFolderIds.includes(f.id) && f.userId !== userId && f.user_id !== userId);
+          const otherUsersFolders = dbData.storage_folders
+            .filter((f: any) => f && f.id && f.userId !== userId && f.user_id !== userId);
 
-          // Filter incoming custom folders (non-standard) to only those of this user, forcing tenancy
-          const incomingUserCustomFolders = req.body.storage_folders
-            .filter((f: any) => f && f.id && !standardFolderIds.includes(f.id))
+          const thisUsersFolders = req.body.storage_folders
+            .filter((f: any) => f && f.id)
             .map((f: any) => ({ ...f, userId, user_id: userId }));
 
-          // Combine custom folders list
-          const existingUserCustomFolders = dbData.storage_folders
-            .filter((f: any) => f && f.id && !standardFolderIds.includes(f.id) && (f.userId === userId || f.user_id === userId));
-
-          const mergedUserCustomFolders = mergeById(existingUserCustomFolders, incomingUserCustomFolders);
-
-          // Now, handle standard folders by merging/replacing files belonging to the current user only
-          const resolvedStandardFolders = standardFolderIds.map(folderId => {
-            const existingFolder = dbData.storage_folders.find((f: any) => f && f.id === folderId);
-            const incomingFolder = req.body.storage_folders.find((f: any) => f && f.id === folderId);
-
-            const standardFolderSkeleton = {
-              id: folderId,
-              name: folderId.replace('fld-', '').toUpperCase(),
-              path: `/storage/${folderId.replace('fld-', '')}`,
-              description: '',
-              files: []
-            };
-
-            const targetFolder = existingFolder ? { ...existingFolder } : { ...standardFolderSkeleton };
-
-            // Files from other users
-            const otherUsersFiles = (targetFolder.files || [])
-              .filter((file: any) => file && file.userId !== userId && file.user_id !== userId);
-
-            // Incoming files for this user, force tagged with userId
-            const incomingUserFiles = (incomingFolder?.files || [])
-              .map((file: any) => ({ ...file, userId, user_id: userId }));
-
-            // Update files for the target folder
-            targetFolder.files = [...incomingUserFiles, ...otherUsersFiles];
-            return targetFolder;
-          });
-
-          // Calculate total space in standard and custom folders
-          resolvedStandardFolders.forEach((folder: any) => {
-            (folder.files || []).forEach((file: any) => {
-              if (file && (file.userId === userId || file.user_id === userId)) {
-                totalStorageMB += parseSizeToMB(file.size || file.fileSize || 0);
-              }
-            });
-          });
-
-          mergedUserCustomFolders.forEach((folder: any) => {
+          thisUsersFolders.forEach((folder: any) => {
             (folder.files || []).forEach((file: any) => {
               totalStorageMB += parseSizeToMB(file.size || file.fileSize || 0);
             });
@@ -1241,30 +1170,15 @@ async function startServer() {
             throw new Error('LIMIT_STORAGE_EXCEEDED');
           }
 
-          // Set complete set of storage folders
-          dbData.storage_folders = [
-            ...resolvedStandardFolders,
-            ...otherUsersCustomFolders,
-            ...mergedUserCustomFolders
-          ];
-        } else {
-          // Calculate existing storage usage count
-          if (dbData.storage_folders) {
-            dbData.storage_folders.forEach((folder: any) => {
-              const isStandard = standardFolderIds.includes(folder.id);
-              if (isStandard) {
-                (folder.files || []).forEach((file: any) => {
-                  if (file && (file.userId === userId || file.user_id === userId)) {
-                    totalStorageMB += parseSizeToMB(file.size || 0);
-                  }
-                });
-              } else if (folder.userId === userId || folder.user_id === userId) {
-                (folder.files || []).forEach((file: any) => {
-                  totalStorageMB += parseSizeToMB(file.size || 0);
-                });
-              }
+          dbData.storage_folders = [...otherUsersFolders, ...thisUsersFolders];
+        } else if (dbData.storage_folders) {
+          dbData.storage_folders
+            .filter((f: any) => f && (f.userId === userId || f.user_id === userId))
+            .forEach((folder: any) => {
+              (folder.files || []).forEach((file: any) => {
+                totalStorageMB += parseSizeToMB(file.size || 0);
+              });
             });
-          }
         }
 
         if (activeUser) {
@@ -1656,7 +1570,11 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(PORT, '0.0.0.0', () => {
+  // No explicit host: Node binds the unspecified IPv6 address (::) when IPv6 is available, which
+  // on Windows also accepts IPv4 connections through the same dual-stack socket. Binding only
+  // '0.0.0.0' (IPv4-only) left this unreachable at ::1, which is what caused the Cloudflare
+  // Tunnel (targeting "localhost", resolved to ::1 first) to see the origin as down.
+  const server = app.listen(PORT, () => {
     console.log(`[ViralFactory Backend] Server listening at http://localhost:${PORT}`);
   });
 
