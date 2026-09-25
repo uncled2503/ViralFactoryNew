@@ -1,14 +1,9 @@
-version: '3.8'
-
 services:
   # ==========================================
   # REDIS: High Performance Memory Cache & PubSub
   # ==========================================
   redis:
     image: redis:7-alpine
-    container_name: viralfactory-redis
-    ports:
-      - "6379:6379"
     command: redis-server --loglevel warning
     volumes:
       - redis-data:/data
@@ -32,9 +27,6 @@ services:
       args:
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-https://your-project-id.supabase.co}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
-    container_name: viralfactory-coordinator
-    ports:
-      - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -66,7 +58,6 @@ services:
     build:
       context: ./render-worker
       dockerfile: Dockerfile
-    container_name: viralfactory-worker
     environment:
       - NODE_ENV=production
       - API_URL=http://coordinator:3000
