@@ -1,7 +1,7 @@
 # ==========================================
 # STAGE 1: Build TypeScript into JavaScript
 # ==========================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -20,7 +20,7 @@ RUN npm run build
 # ==========================================
 # STAGE 2: Lightweight Production Runtime with FFmpeg
 # ==========================================
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
