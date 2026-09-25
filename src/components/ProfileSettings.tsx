@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { supabaseClient, isSupabaseConfigured } from '../services/dbClient';
 import { User } from '../types';
@@ -76,6 +77,8 @@ export const ProfileSettings: React.FC = () => {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cropContainerRef = useRef<HTMLDivElement>(null);
+  const cropImageRef = useRef<HTMLImageElement>(null);
+  const cropCircleRef = useRef<HTMLDivElement>(null);
 
   // Preferences & Auto-Save Toggles
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark');
@@ -397,6 +400,7 @@ export const ProfileSettings: React.FC = () => {
   // Crop image and compress via canvas
   const handleConfirmCrop = async () => {
     if (!avatarImage || !user) return;
+    if (!cropImageRef.current || !cropCircleRef.current) return;
     setIsSaving(true);
 
     try {
@@ -422,15 +426,21 @@ export const ProfileSettings: React.FC = () => {
         ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
         ctx.clip();
 
-        // Calculations for zoom and offset positioning
-        const scaleWidth = img.width * cropZoom;
-        const scaleHeight = img.height * cropZoom;
+        // Map exactly what's visible inside the on-screen crop circle to the
+        // natural pixels of the source image, using the real rendered boxes
+        // (accounts for the preview's transform/scale and its non-square frame).
+        const imgRect = cropImageRef.current.getBoundingClientRect();
+        const circleRect = cropCircleRef.current.getBoundingClientRect();
 
-        // Base centered position
-        const dx = (size - scaleWidth) / 2 + cropPosition.x;
-        const dy = (size - scaleHeight) / 2 + cropPosition.y;
+        const scaleX = img.naturalWidth / imgRect.width;
+        const scaleY = img.naturalHeight / imgRect.height;
 
-        ctx.drawImage(img, dx, dy, scaleWidth, scaleHeight);
+        const sx = (circleRect.left - imgRect.left) * scaleX;
+        const sy = (circleRect.top - imgRect.top) * scaleY;
+        const sWidth = circleRect.width * scaleX;
+        const sHeight = circleRect.height * scaleY;
+
+        ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, size, size);
 
         // Compress and convert to base64 WebP (quality 0.8)
         const compressedDataUrl = canvas.toDataURL('image/webp', 0.8);
@@ -746,7 +756,7 @@ export const ProfileSettings: React.FC = () => {
                       </div>
 
                       {/* POPUP: INTERACTIVE IMAGE CROPPER MODULE */}
-                      {isCropping && avatarImage && (
+                      {isCropping && avatarImage && createPortal(
                         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
                           <motion.div 
                             initial={{ scale: 0.95, opacity: 0 }}
@@ -762,8 +772,9 @@ export const ProfileSettings: React.FC = () => {
                             </div>
 
                             {/* Cropping region window */}
-                            <div 
+                            <div
                               ref={cropContainerRef}
+                              onMouseDown={handleCropMouseDown}
                               onMouseMove={handleCropMouseMove}
                               onMouseUp={handleCropMouseUp}
                               onMouseLeave={handleCropMouseUp}
@@ -771,14 +782,14 @@ export const ProfileSettings: React.FC = () => {
                             >
                               {/* Overlay mask for circle preview */}
                               <div className="absolute inset-0 pointer-events-none border-[40px] border-black/60 z-10 flex items-center justify-center">
-                                <div className="w-44 h-44 rounded-full border border-indigo-500/50 shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]" />
+                                <div ref={cropCircleRef} className="w-44 h-44 rounded-full border border-indigo-500/50 shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]" />
                               </div>
 
                               {/* Draggable photo inside container */}
                               <img
+                                ref={cropImageRef}
                                 src={avatarImage}
                                 alt="Crop preview"
-                                onMouseDown={handleCropMouseDown}
                                 style={{
                                   transform: `translate(${cropPosition.x}px, ${cropPosition.y}px) scale(${cropZoom})`,
                                   transformOrigin: 'center center',
@@ -828,7 +839,8 @@ export const ProfileSettings: React.FC = () => {
                               </button>
                             </div>
                           </motion.div>
-                        </div>
+                        </div>,
+                        document.body
                       )}
                     </div>
 

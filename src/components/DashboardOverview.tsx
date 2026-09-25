@@ -185,7 +185,7 @@ export const DashboardOverview: React.FC = () => {
             >
               <HardDrive className="w-4 h-4 text-indigo-400" />
               <div>
-                <p className="text-xs font-semibold text-gray-200">Arquivos</p>
+                <p className="text-xs font-semibold text-gray-200">Pastas</p>
                 <p className="text-[10px] text-gray-500">{stats.storageUsed}</p>
               </div>
             </button>

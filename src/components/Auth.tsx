@@ -27,6 +27,7 @@ export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
   const [confirmEmail, setConfirmEmail] = useState('');
   const [company, setCompany] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -59,13 +60,18 @@ export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
         }
         await login(email, password);
       } else if (mode === 'register') {
-        if (!name || !email || !confirmEmail || !company || !password) {
+        if (!name || !email || !confirmEmail || !company || !password || !confirmPassword) {
           setError('Por favor, preencha todos os campos para se cadastrar.');
           setIsLoading(false);
           return;
         }
         if (email.toLowerCase().trim() !== confirmEmail.toLowerCase().trim()) {
           setError('Os e-mails informados não coincidem.');
+          setIsLoading(false);
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('As senhas informadas não coincidem.');
           setIsLoading(false);
           return;
         }
@@ -229,6 +235,23 @@ export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
               </div>
             )}
 
+            {mode === 'register' && (
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">Confirmar Senha</label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirme sua senha"
+                    className="w-full pl-10 pr-4 py-2.5 bg-gray-950/60 rounded-xl border border-gray-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-gray-200 text-sm outline-none transition"
+                  />
+                </div>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={isLoading}
@@ -294,7 +317,7 @@ export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
               <p className="text-gray-400 text-xs">
                 Ainda não tem conta?{' '}
                 <button
-                  onClick={() => { navigate('/register'); setMode('register'); setError(''); setMessage(''); setConfirmEmail(''); }}
+                  onClick={() => { navigate('/register'); setMode('register'); setError(''); setMessage(''); setConfirmEmail(''); setConfirmPassword(''); }}
                   className="text-indigo-400 hover:text-indigo-300 font-semibold transition cursor-pointer"
                 >
                   Cadastre-se grátis
@@ -306,7 +329,7 @@ export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
               <p className="text-gray-400 text-xs">
                 Já possui uma conta?{' '}
                 <button
-                  onClick={() => { navigate('/login'); setMode('login'); setError(''); setMessage(''); setConfirmEmail(''); }}
+                  onClick={() => { navigate('/login'); setMode('login'); setError(''); setMessage(''); setConfirmEmail(''); setConfirmPassword(''); }}
                   className="text-indigo-400 hover:text-indigo-300 font-semibold transition cursor-pointer"
                 >
                   Fazer login
@@ -316,7 +339,7 @@ export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
 
             {mode === 'recovery' && (
               <button
-                onClick={() => { navigate('/login'); setMode('login'); setError(''); setMessage(''); setConfirmEmail(''); }}
+                onClick={() => { navigate('/login'); setMode('login'); setError(''); setMessage(''); setConfirmEmail(''); setConfirmPassword(''); }}
                 className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition cursor-pointer"
               >
                 Voltar para o login

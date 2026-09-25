@@ -95,7 +95,7 @@ export const HelpTutorials: React.FC = () => {
       id: 'faq-6',
       category: 'render',
       question: 'Posso baixar os vídeos gerados para meu computador?',
-      answer: 'Sim! Assim que o render atinge 100% de progresso, o vídeo final é adicionado à pasta de arquivos renderizados. Você pode acessar a aba "Arquivos & Pastas", navegar até a pasta correspondente e realizar o download ou visualizá-lo em tela cheia.'
+      answer: 'Sim! Assim que o render atinge 100% de progresso, o vídeo final é adicionado à pasta de arquivos renderizados. Você pode acessar a aba "Pastas", navegar até a pasta correspondente e realizar o download ou visualizá-lo em tela cheia.'
     }
   ];
 
@@ -240,7 +240,7 @@ export const HelpTutorials: React.FC = () => {
               Dica Pro: Vídeos de Fundo
             </h4>
             <p className="text-[10px] text-gray-400 mt-1.5 leading-relaxed">
-              Você pode enviar seus próprios clipes de fundo em formato .mp4 na aba "Arquivos & Pastas" para usá-los como plano de fundo customizado em seus projetos.
+              Você pode enviar seus próprios clipes de fundo em formato .mp4 na aba "Pastas" para usá-los como plano de fundo customizado em seus projetos.
             </p>
           </div>
         </div>

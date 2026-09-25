@@ -94,8 +94,8 @@ export const StorageFilePicker: React.FC<StorageFilePickerProps> = ({
           {filtered.length === 0 ? (
             <EmptyState
               icon={HardDrive}
-              title={allFiles.length === 0 ? 'Nenhum arquivo compatível em Arquivos' : 'Nenhum arquivo encontrado'}
-              description={allFiles.length === 0 ? 'Envie arquivos na aba Arquivos para poder reutilizá-los aqui.' : 'Ajuste a busca para ver outros arquivos.'}
+              title={allFiles.length === 0 ? 'Nenhum arquivo compatível em Pastas' : 'Nenhum arquivo encontrado'}
+              description={allFiles.length === 0 ? 'Envie arquivos na aba Pastas para poder reutilizá-los aqui.' : 'Ajuste a busca para ver outros arquivos.'}
             />
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
