@@ -1183,11 +1183,19 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
         variables: variables ? { ...defaultVariables, ...variables } : defaultVariables
       };
 
-      const updated = [newProject, ...projects];
-      setProjects(updated);
-      
+      // Functional update — NewProjectWizard's batch loop calls createProject once per video in
+      // quick succession, and a closure-captured `projects` would make a later call's base list
+      // miss projects created earlier in the same batch.
+      let updated: Project[] = [];
+      setProjects(prev => {
+        updated = [newProject, ...prev];
+        if (user) {
+          localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(updated));
+        }
+        return updated;
+      });
+
       if (user) {
-        localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(updated));
         const updatedUser: User = {
           ...user,
           projectsActive: updated.length
@@ -1229,22 +1237,33 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
   };
 
   const updateProject = (updatedProject: Project) => {
-    const updated = projects.map(p => p.id === updatedProject.id ? { ...updatedProject, updatedAt: new Date().toISOString() } : p);
-    setProjects(updated);
-    if (user) {
-      localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(updated));
-      if (isSupabaseConfigured()) {
-        const fullProj = updated.find(p => p.id === updatedProject.id);
-        if (fullProj) ProjectService.upsertProject(user.id, fullProj);
+    let fullProj: Project | undefined;
+    setProjects(prev => {
+      const updated = prev.map(p => {
+        if (p.id !== updatedProject.id) return p;
+        fullProj = { ...updatedProject, updatedAt: new Date().toISOString() };
+        return fullProj;
+      });
+      if (user) {
+        localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(updated));
       }
+      return updated;
+    });
+    if (user && isSupabaseConfigured() && fullProj) {
+      ProjectService.upsertProject(user.id, fullProj);
     }
   };
 
   const deleteProject = (id: string) => {
-    const updated = projects.filter(p => p.id !== id);
-    setProjects(updated);
+    let updated: Project[] = [];
+    setProjects(prev => {
+      updated = prev.filter(p => p.id !== id);
+      if (user) {
+        localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(updated));
+      }
+      return updated;
+    });
     if (user) {
-      localStorage.setItem(`vf_projects_${user.id}`, JSON.stringify(updated));
       const updatedUser: User = {
         ...user,
         projectsActive: updated.length
@@ -1285,11 +1304,16 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       newTemplate.backgroundImageUrl = backgroundImageUrl;
     }
 
-    const updated = [newTemplate, ...templates];
-    setTemplates(updated);
+    let updated: Template[] = [];
+    setTemplates(prev => {
+      updated = [newTemplate, ...prev];
+      if (user) {
+        localStorage.setItem(`vf_templates_${user.id}`, JSON.stringify(updated));
+      }
+      return updated;
+    });
 
     if (user) {
-      localStorage.setItem(`vf_templates_${user.id}`, JSON.stringify(updated));
       const updatedUser: User = {
         ...user,
         templatesUsed: updated.length
@@ -1308,14 +1332,20 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
   };
 
   const updateTemplate = (updatedTemplate: Template) => {
-    const updated = templates.map(t => t.id === updatedTemplate.id ? { ...updatedTemplate, updatedAt: new Date().toISOString() } : t);
-    setTemplates(updated);
-    if (user) {
-      localStorage.setItem(`vf_templates_${user.id}`, JSON.stringify(updated));
-      if (isSupabaseConfigured()) {
-        const fullTpl = updated.find(t => t.id === updatedTemplate.id);
-        if (fullTpl) TemplateService.upsertTemplate(user.id, fullTpl);
+    let fullTpl: Template | undefined;
+    setTemplates(prev => {
+      const updated = prev.map(t => {
+        if (t.id !== updatedTemplate.id) return t;
+        fullTpl = { ...updatedTemplate, updatedAt: new Date().toISOString() };
+        return fullTpl;
+      });
+      if (user) {
+        localStorage.setItem(`vf_templates_${user.id}`, JSON.stringify(updated));
       }
+      return updated;
+    });
+    if (user && isSupabaseConfigured() && fullTpl) {
+      TemplateService.upsertTemplate(user.id, fullTpl);
     }
   };
 
@@ -1335,11 +1365,16 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       updatedAt: new Date().toISOString()
     };
 
-    const updated = [duplicated, ...templates];
-    setTemplates(updated);
+    let updated: Template[] = [];
+    setTemplates(prev => {
+      updated = [duplicated, ...prev];
+      if (user) {
+        localStorage.setItem(`vf_templates_${user.id}`, JSON.stringify(updated));
+      }
+      return updated;
+    });
 
     if (user) {
-      localStorage.setItem(`vf_templates_${user.id}`, JSON.stringify(updated));
       const updatedUser: User = {
         ...user,
         templatesUsed: updated.length
@@ -1357,10 +1392,15 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
   };
 
   const deleteTemplate = (id: string) => {
-    const updated = templates.filter(t => t.id !== id);
-    setTemplates(updated);
+    let updated: Template[] = [];
+    setTemplates(prev => {
+      updated = prev.filter(t => t.id !== id);
+      if (user) {
+        localStorage.setItem(`vf_templates_${user.id}`, JSON.stringify(updated));
+      }
+      return updated;
+    });
     if (user) {
-      localStorage.setItem(`vf_templates_${user.id}`, JSON.stringify(updated));
       const updatedUser: User = {
         ...user,
         templatesUsed: updated.length
@@ -1626,13 +1666,18 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
   };
 
   const deleteRenderingTask = (id: string) => {
-    const nextTasks = renderingTasks.filter(t => t.id !== id);
-    setRenderingTasks(nextTasks);
-    if (user) {
-      localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(nextTasks));
-      if (isSupabaseConfigured()) {
-        RenderService.deleteRenderingTask(user.id, id);
+    // Functional update — bulk delete calls this once per id in a tight loop (selectedIds.forEach),
+    // and a closure-captured `renderingTasks` would make every call but the last filter against
+    // the same stale pre-loop snapshot, so only one id would actually end up removed.
+    setRenderingTasks(prev => {
+      const nextTasks = prev.filter(t => t.id !== id);
+      if (user) {
+        localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(nextTasks));
       }
+      return nextTasks;
+    });
+    if (user && isSupabaseConfigured()) {
+      RenderService.deleteRenderingTask(user.id, id);
     }
   };
 
@@ -1659,13 +1704,15 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       progress: 0,
       createdAt: new Date().toISOString()
     };
-    const nextTasks = [newTask, ...renderingTasks];
-    setRenderingTasks(nextTasks);
-    if (user) {
-      localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(nextTasks));
-      if (isSupabaseConfigured()) {
-        RenderService.upsertRenderingTask(user.id, newTask);
+    setRenderingTasks(prev => {
+      const nextTasks = [newTask, ...prev];
+      if (user) {
+        localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(nextTasks));
       }
+      return nextTasks;
+    });
+    if (user && isSupabaseConfigured()) {
+      RenderService.upsertRenderingTask(user.id, newTask);
     }
   };
 
@@ -1688,21 +1735,24 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       createdAt: new Date().toISOString()
     };
 
-    const nextFolders = folders.map(folder => {
-      if (folder.id === folderId) {
-        return {
-          ...folder,
-          files: [newFile, ...folder.files]
-        };
+    let nextFolders: StorageFolder[] = [];
+    setFolders(prev => {
+      nextFolders = prev.map(folder => {
+        if (folder.id === folderId) {
+          return {
+            ...folder,
+            files: [newFile, ...folder.files]
+          };
+        }
+        return folder;
+      });
+      if (user) {
+        localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
       }
-      return folder;
+      return nextFolders;
     });
 
-    setFolders(nextFolders);
-    
     if (user) {
-      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
-      
       let nextStorageMB = 0;
       nextFolders.forEach(folder => {
         folder.files.forEach(file => {
@@ -1727,21 +1777,24 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
   };
 
   const deleteFileFromFolder = (folderId: string, fileId: string) => {
-    const nextFolders = folders.map(folder => {
-      if (folder.id === folderId) {
-        return {
-          ...folder,
-          files: folder.files.filter(f => f.id !== fileId)
-        };
+    let nextFolders: StorageFolder[] = [];
+    setFolders(prev => {
+      nextFolders = prev.map(folder => {
+        if (folder.id === folderId) {
+          return {
+            ...folder,
+            files: folder.files.filter(f => f.id !== fileId)
+          };
+        }
+        return folder;
+      });
+      if (user) {
+        localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
       }
-      return folder;
+      return nextFolders;
     });
 
-    setFolders(nextFolders);
-    
     if (user) {
-      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
-      
       let nextStorageMB = 0;
       nextFolders.forEach(folder => {
         folder.files.forEach(file => {
@@ -1800,45 +1853,51 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       path: `/${name.toLowerCase().replace(/\s+/g, '-')}`,
       files: []
     };
-    const nextFolders = [...folders, newFolder];
-    setFolders(nextFolders);
-    if (user) {
-      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
-      if (isSupabaseConfigured()) {
-        syncFoldersToServer(user.id, nextFolders);
+    setFolders(prev => {
+      const nextFolders = [...prev, newFolder];
+      if (user) {
+        localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
+        if (isSupabaseConfigured()) {
+          syncFoldersToServer(user.id, nextFolders);
+        }
       }
-    }
+      return nextFolders;
+    });
   };
 
   const renameFolder = (id: string, name: string) => {
-    const nextFolders = folders.map(f => {
-      if (f.id === id) {
-        return {
-          ...f,
-          name,
-          path: `/${name.toLowerCase().replace(/\s+/g, '-')}`
-        };
+    setFolders(prev => {
+      const nextFolders = prev.map(f => {
+        if (f.id === id) {
+          return {
+            ...f,
+            name,
+            path: `/${name.toLowerCase().replace(/\s+/g, '-')}`
+          };
+        }
+        return f;
+      });
+      if (user) {
+        localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
+        if (isSupabaseConfigured()) {
+          syncFoldersToServer(user.id, nextFolders);
+        }
       }
-      return f;
+      return nextFolders;
     });
-    setFolders(nextFolders);
-    if (user) {
-      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
-      if (isSupabaseConfigured()) {
-        syncFoldersToServer(user.id, nextFolders);
-      }
-    }
   };
 
   const deleteFolder = (id: string) => {
-    const nextFolders = folders.filter(f => f.id !== id);
-    setFolders(nextFolders);
-    if (user) {
-      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
-      if (isSupabaseConfigured()) {
-        syncFoldersToServer(user.id, nextFolders);
+    setFolders(prev => {
+      const nextFolders = prev.filter(f => f.id !== id);
+      if (user) {
+        localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
+        if (isSupabaseConfigured()) {
+          syncFoldersToServer(user.id, nextFolders);
+        }
       }
-    }
+      return nextFolders;
+    });
   };
 
   // Files the source videos and rendered outputs of a just-finished batch into matching
@@ -1851,84 +1910,90 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
   ) => {
     if (sourceFiles.length === 0 && renderedFiles.length === 0) return;
 
-    let next = folders;
+    // Functional update — this now also fires from RenderingsManager's "Mandar para Pasta",
+    // which a user can trigger right after a batch finishes; a closure-captured `folders` could
+    // target a pre-batch snapshot and silently drop whatever the batch just organized.
+    setFolders(prevFolders => {
+      let next = prevFolders;
 
-    const ensureSubfolder = (parentId: string): string => {
-      const existing = next.find(f => f.parentId === parentId && f.name === label);
-      if (existing) return existing.id;
-      const created: StorageFolder = {
-        id: `fld-${parentId}-${Math.random().toString(36).substr(2, 9)}`,
-        name: label,
-        path: `/${parentId}/${label.toLowerCase().replace(/\s+/g, '-')}`,
-        description: 'Pasta criada automaticamente para este lote de renderização.',
-        files: [],
-        parentId
+      const ensureSubfolder = (parentId: string): string => {
+        const existing = next.find(f => f.parentId === parentId && f.name === label);
+        if (existing) return existing.id;
+        const created: StorageFolder = {
+          id: `fld-${parentId}-${Math.random().toString(36).substr(2, 9)}`,
+          name: label,
+          path: `/${parentId}/${label.toLowerCase().replace(/\s+/g, '-')}`,
+          description: 'Pasta criada automaticamente para este lote de renderização.',
+          files: [],
+          parentId
+        };
+        next = [...next, created];
+        return created.id;
       };
-      next = [...next, created];
-      return created.id;
-    };
 
-    const pushFiles = (
-      subfolderId: string,
-      items: { name: string; size?: string; url: string }[],
-      fileType: StorageFile['type']
-    ) => {
-      const newFiles: StorageFile[] = items.map(it => ({
-        id: `f-${Math.random().toString(36).substr(2, 9)}`,
-        name: it.name,
-        size: it.size || '0 MB',
-        type: fileType,
-        url: it.url,
-        createdAt: new Date().toISOString()
-      }));
-      next = next.map(f => f.id === subfolderId ? { ...f, files: [...newFiles, ...f.files] } : f);
-    };
+      const pushFiles = (
+        subfolderId: string,
+        items: { name: string; size?: string; url: string }[],
+        fileType: StorageFile['type']
+      ) => {
+        const newFiles: StorageFile[] = items.map(it => ({
+          id: `f-${Math.random().toString(36).substr(2, 9)}`,
+          name: it.name,
+          size: it.size || '0 MB',
+          type: fileType,
+          url: it.url,
+          createdAt: new Date().toISOString()
+        }));
+        next = next.map(f => f.id === subfolderId ? { ...f, files: [...newFiles, ...f.files] } : f);
+      };
 
-    if (sourceFiles.length > 0) {
-      pushFiles(ensureSubfolder('fld-videos'), sourceFiles, 'video');
-    }
-    if (renderedFiles.length > 0) {
-      pushFiles(ensureSubfolder('fld-rendered'), renderedFiles, 'render');
-    }
-
-    setFolders(next);
-    if (user) {
-      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(next));
-      if (isSupabaseConfigured()) {
-        syncFoldersToServer(user.id, next);
+      if (sourceFiles.length > 0) {
+        pushFiles(ensureSubfolder('fld-videos'), sourceFiles, 'video');
       }
-    }
+      if (renderedFiles.length > 0) {
+        pushFiles(ensureSubfolder('fld-rendered'), renderedFiles, 'render');
+      }
+
+      if (user) {
+        localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(next));
+        if (isSupabaseConfigured()) {
+          syncFoldersToServer(user.id, next);
+        }
+      }
+      return next;
+    });
   };
 
   const moveFile = (srcFolderId: string, destFolderId: string, fileId: string) => {
-    const srcFolder = folders.find(f => f.id === srcFolderId);
-    if (!srcFolder) return;
-    const fileToMove = srcFolder.files.find(f => f.id === fileId);
-    if (!fileToMove) return;
+    setFolders(prev => {
+      const srcFolder = prev.find(f => f.id === srcFolderId);
+      const fileToMove = srcFolder?.files.find(f => f.id === fileId);
+      if (!fileToMove) return prev;
 
-    const nextFolders = folders.map(folder => {
-      if (folder.id === srcFolderId) {
-        return {
-          ...folder,
-          files: folder.files.filter(f => f.id !== fileId)
-        };
+      const nextFolders = prev.map(folder => {
+        if (folder.id === srcFolderId) {
+          return {
+            ...folder,
+            files: folder.files.filter(f => f.id !== fileId)
+          };
+        }
+        if (folder.id === destFolderId) {
+          return {
+            ...folder,
+            files: [fileToMove, ...folder.files]
+          };
+        }
+        return folder;
+      });
+
+      if (user) {
+        localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
+        if (isSupabaseConfigured()) {
+          syncFoldersToServer(user.id, nextFolders);
+        }
       }
-      if (folder.id === destFolderId) {
-        return {
-          ...folder,
-          files: [fileToMove, ...folder.files]
-        };
-      }
-      return folder;
+      return nextFolders;
     });
-
-    setFolders(nextFolders);
-    if (user) {
-      localStorage.setItem(`vf_folders_${user.id}`, JSON.stringify(nextFolders));
-      if (isSupabaseConfigured()) {
-        syncFoldersToServer(user.id, nextFolders);
-      }
-    }
   };
 
   // Change Subscription Plan Lógica
