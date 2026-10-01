@@ -98,6 +98,9 @@ export const RenderingsManager: React.FC = () => {
     });
 
   const downloadableTasks = filteredTasks.filter(t => t.status === 'completed' && !!t.outputUrl);
+  // Failed tasks can't be downloaded or sent to a folder, but selection mode still needs to
+  // let them be picked for bulk delete so a batch of failures doesn't have to be cleared one by one.
+  const selectableTasks = filteredTasks.filter(t => (t.status === 'completed' && !!t.outputUrl) || t.status === 'failed');
 
   const toggleSelected = (id: string) => {
     setSelectedIds(prev => {
@@ -110,8 +113,8 @@ export const RenderingsManager: React.FC = () => {
 
   const toggleSelectAll = () => {
     setSelectedIds(prev => {
-      if (prev.size === downloadableTasks.length) return new Set();
-      return new Set(downloadableTasks.map(t => t.id));
+      if (prev.size === selectableTasks.length) return new Set();
+      return new Set(selectableTasks.map(t => t.id));
     });
   };
 
@@ -270,13 +273,13 @@ export const RenderingsManager: React.FC = () => {
               setSelectionMode(prev => !prev);
               setSelectedIds(new Set());
             }}
-            disabled={downloadableTasks.length === 0}
+            disabled={selectableTasks.length === 0}
             className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border disabled:opacity-40 disabled:cursor-not-allowed ${
               selectionMode
                 ? 'bg-indigo-600 border-indigo-500 text-white'
                 : 'bg-gray-950 border-gray-900 text-gray-300 hover:border-gray-800'
             }`}
-            title="Selecionar vídeos para baixar em massa"
+            title="Selecionar vídeos para baixar ou excluir em massa"
           >
             <CheckSquare className="w-3.5 h-3.5" />
             Selecionar
@@ -299,12 +302,12 @@ export const RenderingsManager: React.FC = () => {
                   onClick={toggleSelectAll}
                   className="text-xs font-bold text-indigo-300 hover:text-indigo-200 transition cursor-pointer flex items-center gap-1.5"
                 >
-                  {selectedIds.size === downloadableTasks.length && downloadableTasks.length > 0 ? (
+                  {selectedIds.size === selectableTasks.length && selectableTasks.length > 0 ? (
                     <CheckSquare className="w-3.5 h-3.5" />
                   ) : (
                     <Square className="w-3.5 h-3.5" />
                   )}
-                  Selecionar Todos ({downloadableTasks.length} concluídos)
+                  Selecionar Todos ({selectableTasks.length})
                 </button>
                 <span className="text-[10px] text-gray-500 font-mono">{selectedIds.size} selecionado(s)</span>
               </div>
@@ -444,6 +447,7 @@ export const RenderingsManager: React.FC = () => {
           filteredTasks.map((task) => {
             const hasThumbnail = !!task.thumbnailUrl;
             const hasVideoFallback = task.status === 'completed' && !!task.outputUrl;
+            const canSelect = hasVideoFallback || task.status === 'failed';
 
             return (
               <motion.div
@@ -453,16 +457,16 @@ export const RenderingsManager: React.FC = () => {
               >
                 {/* 9:16 Preview */}
                 <div
-                  className={`relative w-full aspect-[9/16] bg-gray-900 overflow-hidden ${hasVideoFallback && !selectionMode ? 'cursor-pointer group/preview' : ''}`}
+                  className={`relative w-full aspect-[9/16] bg-gray-900 overflow-hidden ${hasVideoFallback && !selectionMode ? 'cursor-pointer group/preview' : ''} ${selectionMode && canSelect ? 'cursor-pointer' : ''}`}
                   onClick={() => {
                     if (selectionMode) {
-                      if (hasVideoFallback) toggleSelected(task.id);
+                      if (canSelect) toggleSelected(task.id);
                       return;
                     }
                     if (hasVideoFallback) setPreviewTask(task);
                   }}
                 >
-                  {selectionMode && hasVideoFallback && (
+                  {selectionMode && canSelect && (
                     <div className="absolute top-2 left-2 z-20">
                       {selectedIds.has(task.id) ? (
                         <CheckSquare className="w-5 h-5 text-indigo-400 bg-gray-950/80 rounded" />

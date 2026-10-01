@@ -161,7 +161,13 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
 
     setSourceVideos(prev => [...prev, ...newFiles.map(({ file, ...rest }) => rest)]);
 
-    newFiles.forEach(async (newFile) => {
+    // Uploading all files at once floods the server with simultaneous storage-limit
+    // checks (each reads the full local DB) — cap how many run concurrently.
+    const UPLOAD_CONCURRENCY = 3;
+    const queue = [...newFiles];
+    const runNext = async (): Promise<void> => {
+      const newFile = queue.shift();
+      if (!newFile) return;
       try {
         const assetUrl = await uploadFileToServer(newFile.file, (pct) => {
           setSourceVideos(prev => prev.map(f => f.id === newFile.id ? { ...f, progress: pct } : f));
@@ -172,7 +178,9 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
         setSourceVideos(prev => prev.map(f => f.id === newFile.id ? { ...f, status: 'error' as const } : f));
         showToast(`Falha ao enviar "${newFile.name}": ${err.message || 'erro desconhecido'}`, 'error');
       }
-    });
+      return runNext();
+    };
+    Array.from({ length: Math.min(UPLOAD_CONCURRENCY, queue.length) }, () => runNext());
   };
 
   const removeSourceVideo = (id: string) => {
