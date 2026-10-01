@@ -70,6 +70,18 @@ function sanitizeFolders(rawFolders: StorageFolder[]): StorageFolder[] {
   return result;
 }
 
+// Merges a freshly-fetched DB list with the local cache: dbItems is authoritative (an item it
+// doesn't have was genuinely deleted and must stay gone), but a local-only item not yet in
+// dbItems is kept — it may simply not have round-tripped through its own async upsert yet.
+// loadUserWorkspace fires after nearly every action, including right after a new item is
+// optimistically added locally, so without this merge a same-second refresh would wipe it from
+// the screen until the next load caught up.
+function mergeDbWithLocal<T extends { id: string }>(dbItems: T[], localItems: T[]): T[] {
+  const dbIds = new Set(dbItems.map(item => item.id));
+  const localOnly = localItems.filter(item => !dbIds.has(item.id));
+  return [...localOnly, ...dbItems];
+}
+
 // Persists the user's full current folder list to the server (the only store the app actually
 // reads back on load — see loadUserWorkspace's GET /api/db/sync). The server replaces this
 // user's own custom (non-standard) folders with exactly what's sent here, so this must always
@@ -771,32 +783,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const dbInvoices = await PaymentService.getInvoices(userId);
 
           // dbX is null only when the fetch itself failed (network/exception) — fall back to
-          // the local cache then. A successful fetch that legitimately returns fewer items (or
-          // none, e.g. after deleting everything) must still win over the stale local cache,
-          // or deleted items reappear on the next load.
-          const finalProjects = dbProjects !== null ? dbProjects : curProjects;
-          const finalTemplates = dbTemplates !== null ? dbTemplates : curTemplates;
-          const finalTasks = dbTasks !== null ? dbTasks : curTasks;
-          const finalInvoices = dbInvoices !== null ? dbInvoices : curInvoices;
+          // the local cache then. A successful fetch is authoritative for deletions (an id it
+          // doesn't have was genuinely removed), but merged with any local-only item so an
+          // optimistic addition that hasn't round-tripped through its own async upsert yet
+          // doesn't flicker away when this runs again moments later.
+          const finalProjects = dbProjects !== null ? mergeDbWithLocal(dbProjects, curProjects) : curProjects;
+          const finalTemplates = dbTemplates !== null ? mergeDbWithLocal(dbTemplates, curTemplates) : curTemplates;
+          const finalTasks = dbTasks !== null ? mergeDbWithLocal(dbTasks, curTasks) : curTasks;
+          const finalInvoices = dbInvoices !== null ? mergeDbWithLocal(dbInvoices, curInvoices) : curInvoices;
 
-          // Also write the authoritative DB result back into the local cache — otherwise the
-          // next page load's "fast local load" step starts from this same stale snapshot again,
-          // flashing it on screen before this async fetch corrects it, on every single reload.
+          // Also write the merged result back into the local cache — otherwise the next page
+          // load's "fast local load" step starts from the old stale snapshot again, flashing it
+          // on screen before this async fetch corrects it, on every single reload.
           if (dbProjects !== null) {
-            setProjects(dbProjects);
-            localStorage.setItem(`vf_projects_${userId}`, JSON.stringify(dbProjects));
+            setProjects(finalProjects);
+            localStorage.setItem(`vf_projects_${userId}`, JSON.stringify(finalProjects));
           }
           if (dbTemplates !== null) {
-            setTemplates(dbTemplates);
-            localStorage.setItem(`vf_templates_${userId}`, JSON.stringify(dbTemplates));
+            setTemplates(finalTemplates);
+            localStorage.setItem(`vf_templates_${userId}`, JSON.stringify(finalTemplates));
           }
           if (dbTasks !== null) {
-            setRenderingTasks(dbTasks);
-            localStorage.setItem(`vf_tasks_${userId}`, JSON.stringify(dbTasks));
+            setRenderingTasks(finalTasks);
+            localStorage.setItem(`vf_tasks_${userId}`, JSON.stringify(finalTasks));
           }
           if (dbInvoices !== null) {
-            setInvoices(dbInvoices);
-            localStorage.setItem(`vf_invoices_${userId}`, JSON.stringify(dbInvoices));
+            setInvoices(finalInvoices);
+            localStorage.setItem(`vf_invoices_${userId}`, JSON.stringify(finalInvoices));
           }
 
           // Folders deliberately come ONLY from /api/db/sync (curFolders, loaded earlier in
