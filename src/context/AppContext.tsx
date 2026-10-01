@@ -1665,7 +1665,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
     return true;
   };
 
-  const deleteRenderingTask = (id: string) => {
+  const deleteRenderingTask = async (id: string) => {
     // Functional update — bulk delete calls this once per id in a tight loop (selectedIds.forEach),
     // and a closure-captured `renderingTasks` would make every call but the last filter against
     // the same stale pre-loop snapshot, so only one id would actually end up removed.
@@ -1676,8 +1676,16 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       }
       return nextTasks;
     });
-    if (user && isSupabaseConfigured()) {
-      RenderService.deleteRenderingTask(user.id, id);
+    if (user) {
+      // If the job is still alive server-side (queued, retrying after a timeout/OOM kill, or
+      // mid-render), the backend keeps writing its progress/status back into this same row —
+      // undoing the delete within seconds. Cancel it FIRST and wait for that to land (a 404 just
+      // means the job was already finished/gone, which is fine) so nothing is still in flight to
+      // resurrect the row when the delete below runs.
+      await authenticatedFetch(`/api/render/job/${id}/cancel`, { method: 'POST' }).catch(() => {});
+      if (isSupabaseConfigured()) {
+        RenderService.deleteRenderingTask(user.id, id);
+      }
     }
   };
 
