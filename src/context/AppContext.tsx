@@ -1419,11 +1419,19 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
     const updatedProj: Project = { ...project, status: 'rendering' };
     updateProject(updatedProj);
 
-    const updatedTasks = [newTask, ...renderingTasks];
-    setRenderingTasks(updatedTasks);
-    
+    // Functional update, not `[newTask, ...renderingTasks]` — a batch calls triggerRender again
+    // for the next video right after the previous one's own functional update (poll handler)
+    // marks it completed, often before this component re-renders and refreshes the `renderingTasks`
+    // closure. Reading the stale pre-completion snapshot here would silently drop that update.
+    setRenderingTasks(prev => {
+      const updatedTasks = [newTask, ...prev];
+      if (user) {
+        localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(updatedTasks));
+      }
+      return updatedTasks;
+    });
+
     if (user) {
-      localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(updatedTasks));
       if (isSupabaseConfigured()) {
         RenderService.upsertRenderingTask(user.id, newTask);
       }
