@@ -35,8 +35,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Install system-level curl for container health check probes
-RUN apk add --no-cache curl
+# Install curl (health check probes) and ffmpeg (the coordinator's AutoScalingService /
+# server/render/Worker.ts can run a render job in-process — "elastic" workers have no real
+# remote machine behind them, see AutoScalingService.runRealElasticJob — so this container
+# needs the same FFmpeg + font setup as render-worker, not just the real distributed worker).
+RUN apk add --no-cache curl ffmpeg font-dejavu
+RUN mkdir -p /app/fonts && cp /usr/share/fonts/dejavu/DejaVuSans.ttf /app/fonts/DejaVuSans.ttf
 
 # Copy build artifacts and package manifests from builder
 COPY --from=builder /app/dist ./dist
