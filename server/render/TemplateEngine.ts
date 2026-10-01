@@ -110,8 +110,16 @@ export class TemplateEngine {
         : vars.templateJson;
 
       if (vars.videoZone && parsed.layers) {
+        const isVideoLayer = (layer: any) =>
+          String(layer.type || '').toLowerCase() === 'video' ||
+          String(layer.id || '').toLowerCase().includes('video');
+
+        if (!parsed.layers.some(isVideoLayer)) {
+          console.warn(`[TemplateEngine] videoZone was set but no layer in this template's saved templateJson matched a video layer (checked type==='video' or id containing 'video'). The user's chosen video position was NOT applied — layer ids: ${parsed.layers.map((l: any) => `${l.id}(${l.type})`).join(', ')}`);
+        }
+
         parsed.layers = parsed.layers.map((layer: any) => {
-          if (layer.type === 'video' || layer.id === 'layer-video') {
+          if (isVideoLayer(layer)) {
             return {
               ...layer,
               position: { x: vars.videoZone.x, y: vars.videoZone.y },
@@ -138,7 +146,7 @@ export class TemplateEngine {
         height: vars.canvas.height || 1920,
         duration: project.totalDuration || template?.duration_seconds || template?.default_duration || 30,
         layers: vars.layers.map((layer: any) => {
-          const isVideo = layer.type === 'video' || layer.id === 'layer-video';
+          const isVideo = String(layer.type || '').toLowerCase() === 'video' || String(layer.id || '').toLowerCase().includes('video');
           return {
             id: layer.id,
             type: layer.type,
