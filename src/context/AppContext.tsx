@@ -1506,10 +1506,11 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
                     job.status === 'Canceled' ? 'failed' : 'processing'
                   ) as any;
 
+                  let updatedTask: RenderingTask | undefined;
                   setRenderingTasks(prevTasks => {
                     const next = prevTasks.map(t => {
                       if (t.id === taskId) {
-                        return {
+                        updatedTask = {
                           ...t,
                           status: mappedStatus,
                           progress: job.progress,
@@ -1521,12 +1522,20 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
                           errorMessage: job.error || job.errorMessage,
                           debugInfo: job.debugInfo
                         };
+                        return updatedTask;
                       }
                       return t;
                     });
                     localStorage.setItem(`vf_tasks_${user.id}`, JSON.stringify(next));
                     return next;
                   });
+
+                  // Was only ever upserted once at creation (status 'queued') — without this,
+                  // Supabase keeps serving that stale snapshot on every later sync, reverting
+                  // progress/completion/failure right back on the next reload.
+                  if (updatedTask && isSupabaseConfigured()) {
+                    RenderService.upsertRenderingTask(user.id, updatedTask);
+                  }
 
                   if (job.status === 'Completed') {
                     clearInterval(pollInterval);
@@ -1548,8 +1557,15 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
                       return nextProjects;
                     });
 
-                    // Trigger general workspace file systems refresh
-                    loadUserWorkspace(user);
+                    // Trigger general workspace file systems refresh — but only for a standalone
+                    // render. A batch (onComplete present, driven by NewProjectWizard) awaits
+                    // each video sequentially and already updates project/task state directly;
+                    // calling this per-video raced its own folder sync mid-batch (loadUserWorkspace
+                    // replaces folders from whatever the server had at that instant) and could
+                    // wipe out files the batch had just organized a moment before this resolved.
+                    if (!onComplete) {
+                      loadUserWorkspace(user);
+                    }
                     showToast(`Vídeo "${project.name}" renderizado com sucesso no backend!`, 'success');
                     onComplete?.('completed', { outputUrl: job.outputUrl, projectName: displayProjectName });
                   } else if (job.status === 'Failed' || job.status === 'Canceled') {
@@ -1579,7 +1595,15 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       .catch(err => {
         console.error('Render trigger API submission failed:', err);
         showToast(`Falha ao enviar renderização: ${err.message || 'Erro no servidor'}`, 'error');
-        setRenderingTasks(prevTasks => prevTasks.map(t => t.id === taskId ? { ...t, status: 'failed', errorMessage: err.message } : t));
+        let failedTask: RenderingTask | undefined;
+        setRenderingTasks(prevTasks => prevTasks.map(t => {
+          if (t.id !== taskId) return t;
+          failedTask = { ...t, status: 'failed', errorMessage: err.message };
+          return failedTask;
+        }));
+        if (failedTask && isSupabaseConfigured()) {
+          RenderService.upsertRenderingTask(user.id, failedTask);
+        }
         onComplete?.('failed');
       });
       });

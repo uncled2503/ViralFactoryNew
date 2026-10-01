@@ -73,6 +73,7 @@ export const RenderingsManager: React.FC = () => {
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isSendToFolderOpen, setIsSendToFolderOpen] = useState(false);
   const [sendToFolderName, setSendToFolderName] = useState('');
+  const [selectedExistingFolderName, setSelectedExistingFolderName] = useState('__new__');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'queued' | 'processing' | 'completed' | 'failed'>('all');
@@ -101,6 +102,7 @@ export const RenderingsManager: React.FC = () => {
   // Failed tasks can't be downloaded or sent to a folder, but selection mode still needs to
   // let them be picked for bulk delete so a batch of failures doesn't have to be cleared one by one.
   const selectableTasks = filteredTasks.filter(t => (t.status === 'completed' && !!t.outputUrl) || t.status === 'failed');
+  const renderedSubfolders = folders.filter(f => f.parentId === 'fld-rendered');
 
   const toggleSelected = (id: string) => {
     setSelectedIds(prev => {
@@ -150,19 +152,30 @@ export const RenderingsManager: React.FC = () => {
     setSelectionMode(false);
   };
 
-  const handleSendSelectedToFolder = () => {
+  const handleSendSelectedToFolder = (alsoDelete: boolean) => {
     const tasks = downloadableTasks.filter(t => selectedIds.has(t.id));
     if (tasks.length === 0) return;
-    const folderName = sendToFolderName.trim() || `Selecionados ${new Date().toLocaleDateString('pt-BR')}`;
+    const folderName = selectedExistingFolderName !== '__new__'
+      ? selectedExistingFolderName
+      : (sendToFolderName.trim() || `Selecionados ${new Date().toLocaleDateString('pt-BR')}`);
     organizeBatchOutputs(
       [],
       tasks.map(t => ({ name: `${t.projectName || 'video'}.mp4`, url: t.outputUrl! })),
       folderName
     );
-    showToast(`${tasks.length} vídeo(s) enviado(s) para a pasta "${folderName}".`, 'success');
+    if (alsoDelete) {
+      tasks.forEach(t => deleteRenderingTask(t.id));
+    }
+    showToast(
+      alsoDelete
+        ? `${tasks.length} vídeo(s) enviado(s) para "${folderName}" e removido(s) de Renderizações.`
+        : `${tasks.length} vídeo(s) enviado(s) para a pasta "${folderName}".`,
+      'success'
+    );
     setSelectedIds(new Set());
     setIsSendToFolderOpen(false);
     setSendToFolderName('');
+    setSelectedExistingFolderName('__new__');
     setSelectionMode(false);
   };
 
@@ -388,18 +401,32 @@ export const RenderingsManager: React.FC = () => {
                 </button>
               </div>
               <p className="text-xs text-gray-400">
-                {selectedIds.size} vídeo(s) selecionado(s) serão movidos para uma subpasta dentro de "Vídeos Renderizados", na aba Pastas.
+                {selectedIds.size} vídeo(s) selecionado(s) serão enviados para uma subpasta dentro de "Vídeos Renderizados", na aba Pastas.
               </p>
               <div className="space-y-1">
-                <label className="text-[10px] text-gray-500 font-mono uppercase font-bold">Nome da Pasta</label>
-                <input
-                  type="text"
-                  autoFocus
-                  value={sendToFolderName}
-                  onChange={e => setSendToFolderName(e.target.value)}
-                  placeholder={`Selecionados ${new Date().toLocaleDateString('pt-BR')}`}
-                  className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
-                />
+                <label className="text-[10px] text-gray-500 font-mono uppercase font-bold">Pasta de Destino</label>
+                {renderedSubfolders.length > 0 && (
+                  <select
+                    value={selectedExistingFolderName}
+                    onChange={e => setSelectedExistingFolderName(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="__new__">+ Criar nova pasta</option>
+                    {renderedSubfolders.map(f => (
+                      <option key={f.id} value={f.name}>{f.name} ({f.files.length})</option>
+                    ))}
+                  </select>
+                )}
+                {selectedExistingFolderName === '__new__' && (
+                  <input
+                    type="text"
+                    autoFocus
+                    value={sendToFolderName}
+                    onChange={e => setSendToFolderName(e.target.value)}
+                    placeholder={`Selecionados ${new Date().toLocaleDateString('pt-BR')}`}
+                    className="w-full bg-gray-900 border border-gray-800 rounded-lg p-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+                  />
+                )}
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button
@@ -409,10 +436,18 @@ export const RenderingsManager: React.FC = () => {
                   Cancelar
                 </button>
                 <button
-                  onClick={handleSendSelectedToFolder}
-                  className="px-4 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold rounded-lg transition cursor-pointer"
+                  onClick={() => handleSendSelectedToFolder(true)}
+                  className="px-3 py-1.5 bg-gray-900 hover:bg-red-950/20 border border-gray-800 hover:border-red-500/20 text-red-400 hover:text-red-300 text-xs font-bold rounded-lg transition cursor-pointer"
+                  title="Envia para a pasta e remove de Renderizações"
                 >
-                  Mover
+                  Enviar e Excluir
+                </button>
+                <button
+                  onClick={() => handleSendSelectedToFolder(false)}
+                  className="px-4 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold rounded-lg transition cursor-pointer"
+                  title="Envia para a pasta, mantendo também em Renderizações"
+                >
+                  Enviar
                 </button>
               </div>
             </motion.div>

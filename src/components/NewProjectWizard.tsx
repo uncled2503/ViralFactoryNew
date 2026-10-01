@@ -338,9 +338,15 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
       blocked
     });
 
-    if (renderedOutputFiles.length > 0) {
+    // Rendered outputs are deliberately NOT auto-filed into a folder here anymore — they stay
+    // in Renderizações so the user can review the whole batch, then send the ones they want
+    // (optionally into a brand new folder) via the "Mandar para Pasta" action there. Auto-filing
+    // right as each render completed used to race loadUserWorkspace's full-replace folder sync
+    // (triggered by that same render's completion elsewhere), which could wipe the batch folder's
+    // files before they were ever durably saved.
+    if (organizedSourceFiles.length > 0) {
       const batchLabel = `Lote ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-      organizeBatchOutputs(organizedSourceFiles, renderedOutputFiles, batchLabel);
+      organizeBatchOutputs(organizedSourceFiles, [], batchLabel);
     }
 
     setIsProcessingBatch(false);
