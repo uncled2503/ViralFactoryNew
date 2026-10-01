@@ -770,15 +770,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const dbTasks = await RenderService.getRenderingTasks(userId);
           const dbInvoices = await PaymentService.getInvoices(userId);
 
-          const finalProjects = dbProjects && dbProjects.length > 0 ? dbProjects : curProjects;
-          const finalTemplates = dbTemplates && dbTemplates.length > 0 ? dbTemplates : curTemplates;
-          const finalTasks = dbTasks && dbTasks.length > 0 ? dbTasks : curTasks;
-          const finalInvoices = dbInvoices && dbInvoices.length > 0 ? dbInvoices : curInvoices;
+          // dbX is null only when the fetch itself failed (network/exception) — fall back to
+          // the local cache then. A successful fetch that legitimately returns fewer items (or
+          // none, e.g. after deleting everything) must still win over the stale local cache,
+          // or deleted items reappear on the next load.
+          const finalProjects = dbProjects !== null ? dbProjects : curProjects;
+          const finalTemplates = dbTemplates !== null ? dbTemplates : curTemplates;
+          const finalTasks = dbTasks !== null ? dbTasks : curTasks;
+          const finalInvoices = dbInvoices !== null ? dbInvoices : curInvoices;
 
-          if (dbProjects && dbProjects.length > 0) setProjects(dbProjects);
-          if (dbTemplates && dbTemplates.length > 0) setTemplates(dbTemplates);
-          if (dbTasks && dbTasks.length > 0) setRenderingTasks(dbTasks);
-          if (dbInvoices && dbInvoices.length > 0) setInvoices(dbInvoices);
+          if (dbProjects !== null) setProjects(dbProjects);
+          if (dbTemplates !== null) setTemplates(dbTemplates);
+          if (dbTasks !== null) setRenderingTasks(dbTasks);
+          if (dbInvoices !== null) setInvoices(dbInvoices);
 
           // Folders deliberately come ONLY from /api/db/sync (curFolders, loaded earlier in
           // this function) — never from StorageService's direct Supabase `storage_folders`

@@ -89,7 +89,9 @@ export class ProjectService {
    */
   static async deleteProject(projectId: string): Promise<boolean> {
     try {
-      return await db.delete(this.TABLE, { id: projectId });
+      // Must match the safeUUID conversion applied on upsert, or a non-UUID client-side id
+      // never matches the stored row's hashed id and this silently deletes 0 rows.
+      return await db.delete(this.TABLE, { id: safeUUID(projectId) });
     } catch (err) {
       console.error('ProjectService.deleteProject failed:', err);
       return false;

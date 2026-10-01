@@ -92,7 +92,12 @@ export class RenderService {
    */
   static async deleteRenderingTask(userId: string, taskId: string): Promise<boolean> {
     try {
-      const result = await db.delete(this.JOBS_TABLE, { id: taskId, user_id: userId });
+      // Must match the same safeUUID conversion upsertRenderingTask applies before writing —
+      // without it, a non-UUID client-side task id never matches the stored row's hashed id,
+      // so this silently deletes 0 rows (no error) and the task reappears on next load.
+      const validTaskId = safeUUID(taskId);
+      const validUserId = safeUUID(userId);
+      const result = await db.delete(this.JOBS_TABLE, { id: validTaskId, user_id: validUserId });
       return result;
     } catch (err) {
       console.error('RenderService.deleteRenderingTask failed:', err);

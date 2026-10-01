@@ -97,7 +97,9 @@ export class TemplateService {
    */
   static async deleteTemplate(templateId: string): Promise<boolean> {
     try {
-      return await db.delete(this.TABLE, { id: templateId });
+      // Must match the safeUUID conversion applied on upsert, or a non-UUID client-side id
+      // never matches the stored row's hashed id and this silently deletes 0 rows.
+      return await db.delete(this.TABLE, { id: safeUUID(templateId) });
     } catch (err) {
       console.error('TemplateService.deleteTemplate failed:', err);
       return false;
