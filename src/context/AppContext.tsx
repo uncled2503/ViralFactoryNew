@@ -180,7 +180,7 @@ interface AppContextType {
   updateUser: (updatedUser: User) => Promise<boolean>;
   
   // Projects Functions
-  createProject: (name: string, description: string, templateId: string, aspect: AspectRatio, variables?: any) => Project | null;
+  createProject: (name: string, description: string, templateId: string, aspect: AspectRatio, variables?: any, skipWorkspaceReload?: boolean) => Project | null;
   updateProject: (updatedProject: Project) => void;
   deleteProject: (id: string) => void;
   
@@ -1157,7 +1157,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
   };
 
   // Projects Functions with Limit Checks
-  const createProject = (name: string, description: string, templateId: string, aspect: AspectRatio, variables?: any): Project | null => {
+  const createProject = (name: string, description: string, templateId: string, aspect: AspectRatio, variables?: any, skipWorkspaceReload?: boolean): Project | null => {
     if (!verifyAndTriggerLimitExceeded('projects')) {
       showToast('Limite de projetos ativos atingido no seu plano atual!', 'error');
       return null;
@@ -1194,7 +1194,12 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
         };
         setUser(updatedUser);
         syncUserToAllUsers(updatedUser);
-        loadUserWorkspace(updatedUser);
+        // A batch (NewProjectWizard's mass_render flow) calls this once per video and already
+        // manages its own state — a full reload here, N times in a row, races its own
+        // in-progress folder/task sync the same way the per-render completion reload did.
+        if (!skipWorkspaceReload) {
+          loadUserWorkspace(updatedUser);
+        }
 
         if (isSupabaseConfigured()) {
           ProjectService.upsertProject(user.id, newProject)

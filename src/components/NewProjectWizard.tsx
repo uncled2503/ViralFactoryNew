@@ -312,7 +312,8 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
             // (which otherwise burn the project name in as a headline).
             title: undefined,
             subtitles: undefined
-          }
+          },
+          true // skipWorkspaceReload — this runs once per video in the batch loop
         );
 
         if (createdProject) {
