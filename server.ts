@@ -40,8 +40,10 @@ async function startServer() {
   SupabaseStorageService.init();
 
   // Express parser middlewares
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // Default 100kb limit is too small for /api/db/sync, which pushes a user's full
+  // folder/file metadata (not file content) on every save.
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Redirect storage access to Supabase signed URLs if Supabase is configured
   app.get('/storage/:folder/:filename', async (req, res, next) => {
