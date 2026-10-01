@@ -779,10 +779,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const finalTasks = dbTasks !== null ? dbTasks : curTasks;
           const finalInvoices = dbInvoices !== null ? dbInvoices : curInvoices;
 
-          if (dbProjects !== null) setProjects(dbProjects);
-          if (dbTemplates !== null) setTemplates(dbTemplates);
-          if (dbTasks !== null) setRenderingTasks(dbTasks);
-          if (dbInvoices !== null) setInvoices(dbInvoices);
+          // Also write the authoritative DB result back into the local cache — otherwise the
+          // next page load's "fast local load" step starts from this same stale snapshot again,
+          // flashing it on screen before this async fetch corrects it, on every single reload.
+          if (dbProjects !== null) {
+            setProjects(dbProjects);
+            localStorage.setItem(`vf_projects_${userId}`, JSON.stringify(dbProjects));
+          }
+          if (dbTemplates !== null) {
+            setTemplates(dbTemplates);
+            localStorage.setItem(`vf_templates_${userId}`, JSON.stringify(dbTemplates));
+          }
+          if (dbTasks !== null) {
+            setRenderingTasks(dbTasks);
+            localStorage.setItem(`vf_tasks_${userId}`, JSON.stringify(dbTasks));
+          }
+          if (dbInvoices !== null) {
+            setInvoices(dbInvoices);
+            localStorage.setItem(`vf_invoices_${userId}`, JSON.stringify(dbInvoices));
+          }
 
           // Folders deliberately come ONLY from /api/db/sync (curFolders, loaded earlier in
           // this function) — never from StorageService's direct Supabase `storage_folders`
