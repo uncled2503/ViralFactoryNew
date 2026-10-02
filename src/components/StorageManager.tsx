@@ -431,6 +431,17 @@ export const StorageManager: React.FC = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            handleZipFolder({ ...folder, files: allFiles });
+                          }}
+                          disabled={zippingFolderId === folder.id || allFiles.length === 0}
+                          className="p-1 rounded text-gray-500 hover:text-emerald-400 hover:bg-gray-900 transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          title="Baixar Pasta Inteira (.zip)"
+                        >
+                          <Download className={`w-3.5 h-3.5 ${zippingFolderId === folder.id ? 'animate-pulse' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setFolderToRename(folder);
                             setRenameFolderName(folder.name);
                             setIsRenameFolderOpen(true);
