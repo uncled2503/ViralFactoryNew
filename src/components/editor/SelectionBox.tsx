@@ -23,6 +23,20 @@ export const SelectionBox: React.FC<SelectionBoxProps> = ({
   onDuplicate,
 }) => {
   const boxRef = useRef<HTMLDivElement>(null);
+  // Tracks the currently-active drag/resize/rotate listener cleanup, if any. These are added
+  // directly from onMouseDown handlers (not useEffect) and only ever removed themselves on
+  // 'mouseup' — if this component unmounts while the mouse button is still held (e.g. the layer
+  // gets deleted mid-drag by another action), mouseup never fires on this element tree and the
+  // listeners leaked, continuing to call onUpdate/onChange for a layer id that may no longer
+  // exist. This ref lets the unmount effect below clean up whatever's still active.
+  const activeDragCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      activeDragCleanupRef.current?.();
+      activeDragCleanupRef.current = null;
+    };
+  }, []);
 
   if (layer.locked) {
     // Render a simplified locked border with lock badge
@@ -70,10 +84,12 @@ export const SelectionBox: React.FC<SelectionBoxProps> = ({
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      activeDragCleanupRef.current = null;
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    activeDragCleanupRef.current = handleMouseUp;
   };
 
   // Handle resizing from individual handles
@@ -129,10 +145,12 @@ export const SelectionBox: React.FC<SelectionBoxProps> = ({
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      activeDragCleanupRef.current = null;
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    activeDragCleanupRef.current = handleMouseUp;
   };
 
   // Handle rotating the layer
@@ -167,10 +185,12 @@ export const SelectionBox: React.FC<SelectionBoxProps> = ({
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      activeDragCleanupRef.current = null;
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    activeDragCleanupRef.current = handleMouseUp;
   };
 
   // Style helper for the anchor points

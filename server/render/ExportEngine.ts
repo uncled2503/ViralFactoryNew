@@ -36,7 +36,11 @@ export class ExportEngine {
             if (contentUrl.startsWith('http')) {
               // Remote asset
               const ext = path.extname(contentUrl.split('?')[0]) || '.bin';
-              const localPath = await StorageManager.downloadFile(contentUrl, `asset_${layer.id}_${Date.now()}${ext}`);
+              // layer.id is job-supplied with no format guarantee — sanitize before it's used to
+              // build a filesystem path (matches the fix applied to the equivalent spot in
+              // render-worker/src/downloader.ts).
+              const safeLayerId = String(layer.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+              const localPath = await StorageManager.downloadFile(contentUrl, `asset_${safeLayerId}_${Date.now()}${ext}`);
               resolvedAssets.set(layer.id, localPath);
               downloadedPaths.push(localPath);
             } else {

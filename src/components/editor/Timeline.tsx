@@ -41,6 +41,18 @@ export const Timeline: React.FC<TimelineProps> = ({
 }) => {
   const [zoom, setZoom] = useState<number>(30); // pixels per second
   const timelineRulerRef = useRef<HTMLDivElement>(null);
+  // Same leak risk as editor/SelectionBox.tsx: these listeners are added directly from
+  // onMouseDown handlers and only self-remove on 'mouseup' — if this component unmounts while
+  // the mouse button is still held, mouseup never fires and the listeners leak. Cleaned up on
+  // unmount below.
+  const activeDragCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      activeDragCleanupRef.current?.();
+      activeDragCleanupRef.current = null;
+    };
+  }, []);
 
   // Helper to format time as 00:00.00
   const formatTimecode = (seconds: number) => {
@@ -65,6 +77,7 @@ export const Timeline: React.FC<TimelineProps> = ({
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      activeDragCleanupRef.current = null;
     };
 
     // Trigger initial click position update
@@ -73,6 +86,7 @@ export const Timeline: React.FC<TimelineProps> = ({
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    activeDragCleanupRef.current = handleMouseUp;
   };
 
   // Moving or trimming timeline tracks
@@ -132,10 +146,12 @@ export const Timeline: React.FC<TimelineProps> = ({
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      activeDragCleanupRef.current = null;
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    activeDragCleanupRef.current = handleMouseUp;
   };
 
   // Render ticks on the timeline ruler
