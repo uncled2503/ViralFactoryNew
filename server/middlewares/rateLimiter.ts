@@ -124,3 +124,13 @@ export const adminApiLimiter = createRateLimiter({
   max: parseInt(process.env.ADMIN_RATE_LIMIT_MAX || '30', 10),
   type: 'ADMIN_API'
 });
+
+// Payment-initiation endpoints shared the generic 600/min publicApiLimiter (sized for render-
+// status polling during a batch), which let a user trigger up to 600 cash-in attempts/minute —
+// each either hitting the real RoyPay gateway or falling into its in-process "simulation mode"
+// fallback. A tighter, dedicated limit for anything that creates/confirms a payment attempt.
+export const paymentApiLimiter = createRateLimiter({
+  windowMs: parseInt(process.env.PAYMENT_RATE_LIMIT_WINDOW_MS || '60000', 10),
+  max: parseInt(process.env.PAYMENT_RATE_LIMIT_MAX || '10', 10),
+  type: 'PAYMENT_API'
+});

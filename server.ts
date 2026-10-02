@@ -11,7 +11,7 @@ import { WorkerWebSocketServer } from './server/render/WorkerWebSocketServer';
 import { adminRouter } from './server/routes/admin';
 import { adminAuthMiddleware } from './server/middlewares/adminAuth';
 import { getAuthenticatedUser } from './server/utils/authHelper';
-import { publicApiLimiter, adminApiLimiter } from './server/middlewares/rateLimiter';
+import { publicApiLimiter, adminApiLimiter, paymentApiLimiter } from './server/middlewares/rateLimiter';
 import { JobTimeoutMonitor } from './server/render/JobTimeoutMonitor';
 import { RedisService } from './server/services/RedisService';
 import { SupabaseStorageService } from './server/services/SupabaseStorageService';
@@ -1290,7 +1290,9 @@ async function startServer() {
   }
 
   // 1. POST /api/payments/roypay/cashin
-  app.post('/api/payments/roypay/cashin', async (req, res) => {
+  // Dedicated tighter limiter on top of the general publicApiLimiter (sized for render-status
+  // polling, far too loose for payment initiation) — this calls the real gateway per request.
+  app.post('/api/payments/roypay/cashin', paymentApiLimiter, async (req, res) => {
     try {
       const authUser = await getAuthenticatedUser(req);
       if (!authUser || !authUser.userId) {
