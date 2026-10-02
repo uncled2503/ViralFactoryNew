@@ -6,6 +6,8 @@ import compression from 'compression';
 import { createServer as createViteServer } from 'vite';
 import { StorageManager } from './server/render/Storage';
 import { JobQueue } from './server/render/JobQueue';
+import { PipelineManager } from './server/render/PipelineManager';
+import { WorkerRegistry } from './server/websocket/WorkerRegistry';
 import { RenderEngine } from './server/render/RenderEngine';
 import { WorkerWebSocketServer } from './server/render/WorkerWebSocketServer';
 import { adminRouter } from './server/routes/admin';
@@ -833,8 +835,18 @@ async function startServer() {
         return;
       }
 
-      // Update state in memory (if present)
+      // Update state in memory (if present) — this only transitions a still-Queued/Preparing
+      // job; a job that's already actively rendering needs its real process stopped instead.
       JobQueue.cancelJob(req.params.id);
+      const activeWorker = WorkerRegistry.getAll().find(w => w.currentJobId === req.params.id);
+      if (activeWorker) {
+        try {
+          activeWorker.send('abort_job', { jobId: req.params.id, reason: 'Cancelado pelo usuário.' });
+        } catch { /* ignore socket errors on cancel payload */ }
+      } else {
+        // Not on a remote worker — may be rendering in-process on this coordinator.
+        PipelineManager.killJob(req.params.id);
+      }
 
       // Persist the cancellation state to the DB immediately
       await RenderEngine.saveDbStatus(

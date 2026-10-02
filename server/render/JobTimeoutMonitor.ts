@@ -3,6 +3,7 @@ import { WorkerRegistry } from '../websocket/WorkerRegistry';
 import { RenderEngine } from './RenderEngine';
 import { JobDispatcher } from '../websocket/JobDispatcher';
 import { supabaseAdmin } from '../database/supabaseClient';
+import { PipelineManager } from './PipelineManager';
 
 export class JobTimeoutMonitor {
   private static interval: NodeJS.Timeout | null = null;
@@ -166,12 +167,22 @@ export class JobTimeoutMonitor {
           console.warn(`[JobTimeoutMonitor] Resetting busy worker "${activeWorker.id}" that timed out on job ${job.id}`);
           activeWorker.status = 'idle';
           activeWorker.currentJobId = undefined;
-          
+
           try {
-            activeWorker.send('cancel_job', { jobId: job.id, reason: 'Job timed out on control plane.' });
+            // The remote render-worker listens for message type 'abort_job' (see
+            // render-worker/src/index.ts), not 'cancel_job' — this previously sent a message
+            // type nothing was listening for, so the worker's ffmpeg process kept running to
+            // completion regardless of the timeout, wasting resources and risking a stale
+            // result overwriting whatever state the job moved to afterward.
+            activeWorker.send('abort_job', { jobId: job.id, reason: 'Job timed out on control plane.' });
           } catch (e) {
             // ignore socket errors on cancel payload
           }
+        } else {
+          // Not on a remote worker — may be running in-process (AutoScalingService's elastic
+          // workers, or the local JobQueue-polling Worker.ts both ultimately call
+          // PipelineManager.run) on this same coordinator. Kill its ffmpeg child directly.
+          PipelineManager.killJob(job.id);
         }
 
         if (attempts < maxAttempts) {

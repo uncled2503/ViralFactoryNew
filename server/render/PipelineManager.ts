@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import { JobQueue, RenderJob, JobStatus } from './JobQueue';
 import { StorageManager } from './Storage';
 import { TemplateEngine } from './TemplateEngine';
@@ -40,7 +40,26 @@ function isAllowedAssetUrl(url: string): boolean {
   return getAllowedAssetHosts().has(parsed.hostname.toLowerCase());
 }
 
+// Tracks the in-flight ffmpeg child process for each job so it can actually be killed on
+// timeout/cancel. Previously, JobTimeoutMonitor and the /cancel endpoint only updated
+// JobQueue/DB state — the real ffmpeg process this function spawns kept running regardless,
+// wasting CPU/RAM indefinitely and, if the job got re-queued and picked up again, risking two
+// ffmpeg processes rendering the same job concurrently (with the orphaned one's eventual `close`
+// handler still writing stale results over whatever state the job has moved to since).
+const activeProcesses = new Map<string, ChildProcess>();
+
 export class PipelineManager {
+  /**
+   * Kills the in-flight ffmpeg process for a job, if one is currently running. Returns true if a
+   * process was found and a kill signal was sent.
+   */
+  static killJob(jobId: string): boolean {
+    const proc = activeProcesses.get(jobId);
+    if (!proc || proc.exitCode !== null || proc.killed) return false;
+    proc.kill('SIGKILL');
+    return true;
+  }
+
   /**
    * Main entrypoint to process an active rendering Job through the multi-stage pipeline
    */
@@ -321,7 +340,8 @@ export class PipelineManager {
 
       ffmpegStartTime = Date.now();
       const renderProcess = spawn(ffmpegPath, ffmpegArgs);
-      
+      activeProcesses.set(jobId, renderProcess);
+
       await new Promise<void>((resolvePromise, rejectPromise) => {
         let lastReportedPercent = 25;
         
@@ -359,6 +379,7 @@ export class PipelineManager {
 
         renderProcess.on('close', (code) => {
           ffmpegEndTime = Date.now();
+          if (activeProcesses.get(jobId) === renderProcess) activeProcesses.delete(jobId);
           if (code === 0) {
             addLog('Monitorar progresso', 'FFmpeg finalizou processo de codificação com código de retorno 0.');
             resolvePromise();
@@ -371,6 +392,7 @@ export class PipelineManager {
 
         renderProcess.on('error', (err) => {
           ffmpegEndTime = Date.now();
+          if (activeProcesses.get(jobId) === renderProcess) activeProcesses.delete(jobId);
           addLog('Monitorar progresso', `Erro na execução do processo de renderização: ${err.message}`, true);
           rejectPromise(err);
         });
