@@ -1681,8 +1681,13 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       // mid-render), the backend keeps writing its progress/status back into this same row —
       // undoing the delete within seconds. Cancel it FIRST and wait for that to land (a 404 just
       // means the job was already finished/gone, which is fine) so nothing is still in flight to
-      // resurrect the row when the delete below runs.
+      // resurrect the row when the deletes below run.
       await authenticatedFetch(`/api/render/job/${id}/cancel`, { method: 'POST' }).catch(() => {});
+      // The server keeps its OWN independent copy of this task (loadUserWorkspace reads it via
+      // /api/db/sync on every load) — a copy the Supabase delete below never touches. Left behind,
+      // it gets revived into the job queue on the coordinator's next restart (every deploy) and
+      // re-synced back into Supabase, resurrecting a task that was already deleted.
+      await authenticatedFetch(`/api/render/job/${id}`, { method: 'DELETE' }).catch(() => {});
       if (isSupabaseConfigured()) {
         RenderService.deleteRenderingTask(user.id, id);
       }

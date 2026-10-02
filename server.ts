@@ -853,6 +853,37 @@ async function startServer() {
     }
   });
 
+  // Permanently removes a rendering task from the server's own local database (the one
+  // /api/db/sync reads on every loadUserWorkspace call, independent of the rendering_tasks
+  // table in Supabase). Deleting a task client-side only ever removed the Supabase row; this
+  // row survived in the local DB and got revived into the in-memory job queue by
+  // JobQueue.recoverJobsFromDb() on every coordinator restart, which re-upserted it back into
+  // Supabase — resurrecting a task the user had just deleted.
+  app.delete('/api/render/job/:id', async (req, res) => {
+    try {
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Identificação de usuário ausente ou inválida.' });
+        return;
+      }
+
+      JobQueue.cancelJob(req.params.id);
+
+      await LocalDbMutex.runLocked((dbData) => {
+        dbData.rendering_tasks = (dbData.rendering_tasks || []).filter((t: any) => {
+          if (!t || t.id !== req.params.id) return true;
+          // Only remove this user's own task — leave anyone else's row untouched if the id
+          // somehow collided.
+          return (t.user_id || t.userId) !== authUser.userId;
+        });
+      });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Sync server database from/to client localStorage states when requested
   app.get('/api/db/sync', async (req, res) => {
     try {
