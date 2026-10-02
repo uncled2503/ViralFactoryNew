@@ -904,7 +904,11 @@ async function startServer() {
         rendering_tasks: (dbData.rendering_tasks || []).filter((t: any) => t && (t.userId === userId || t.user_id === userId)),
         invoices: (dbData.invoices || []).filter((inv: any) => inv && (inv.userId === userId || inv.user_id === userId)),
         templates: (dbData.templates || []).filter((t: any) => t && (t.is_public || t.userId === userId || t.user_id === userId || !t.userId)),
-        settings: (dbData.settings || []).filter((s: any) => s && s.key !== 'stripe_secret_key' && s.key !== 'stripe_webhook_secret' && !s.key.includes('key') && !s.key.includes('secret')),
+        // `settings` is deliberately omitted here — it's admin-only configuration (API keys,
+        // billing toggles) the client never reads, and the previous denylist filter (substring
+        // match on 'key'/'secret', case-sensitive) would have let any differently-named or
+        // camelCase secret through to every logged-in user. Admins get the real list via
+        // /api/admin/settings, which is gated by adminAuthMiddleware.
         // Every folder belongs to exactly one account — see the POST handler's "6. Sync Storage
         // Folders" for how that's enforced on write.
         storage_folders: (dbData.storage_folders || []).filter((f: any) => f && (f.userId === userId || f.user_id === userId)),
@@ -1324,7 +1328,12 @@ async function startServer() {
       }
 
       const totalAmount = billingCycle === 'annual' ? price * 12 : price;
-      const apiKey = process.env.ROYPAY_API_KEY || "81bb141jmdaw9u32-d3q9md3qd-qdwq59";
+      const apiKey = process.env.ROYPAY_API_KEY;
+      if (!apiKey) {
+        console.error('[RoyPay Integration] ROYPAY_API_KEY is not configured.');
+        res.status(503).json({ error: 'Pagamentos temporariamente indisponíveis. Tente novamente em instantes.' });
+        return;
+      }
 
       // SECURITY: a random per-transaction token, known only to us and to RoyPay (via the
       // callback URL we send them) — never exposed to the client. The webhook handler requires
@@ -1349,7 +1358,7 @@ async function startServer() {
         "callbackUrl": callbackUrl
       };
 
-      console.log('[RoyPay Integration] Requesting Cash In:', requestPayload);
+      console.log('[RoyPay Integration] Requesting Cash In:', { ...requestPayload, 'api-key': '[REDACTED]' });
 
       let royPayResponse: any;
       try {

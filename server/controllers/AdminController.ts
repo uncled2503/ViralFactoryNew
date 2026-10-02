@@ -1,6 +1,12 @@
 import { Request, Response } from 'express';
 import { AdminService } from '../services/AdminService';
 
+// Every ADMIN_ROLES entry in adminAuth.ts (suporte, financeiro, moderador, gerente,
+// administrador...) is treated as equally "admin" for the purpose of reaching /api/admin/* at
+// all, but role management is a strictly higher-privilege action than that gate implies — only
+// these owner-tier roles may change ANY user's role field, and only they may be granted it.
+const OWNER_TIER_ROLES = new Set(['owner', 'saas_owner', 'saas owner', 'super_admin', 'super admin']);
+
 export class AdminController {
   static async getDashboard(req: Request, res: Response) {
     try {
@@ -25,7 +31,16 @@ export class AdminController {
       const { id } = req.params;
       const updateData = req.body;
       const adminName = (req as any).adminName || 'SaaS Admin';
-      
+      const callerRole = String((req as any).adminRole || '').trim().toLowerCase();
+
+      // Role management is a strictly higher-privilege action than reaching /api/admin/* at all —
+      // every admin-tier role (suporte, financeiro, moderador...) was otherwise equally able to
+      // grant itself (or anyone) owner/super_admin via this same endpoint.
+      if (updateData && typeof updateData.role !== 'undefined' && !OWNER_TIER_ROLES.has(callerRole)) {
+        res.status(403).json({ error: 'Apenas administradores de nível Owner podem alterar a função (role) de um usuário.' });
+        return;
+      }
+
       const updated = await AdminService.updateUser(id, updateData, adminName);
       if (!updated) {
         res.status(404).json({ error: 'User not found or failed to update' });

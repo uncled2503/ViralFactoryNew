@@ -1273,7 +1273,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       loadUserWorkspace(updatedUser);
 
       if (isSupabaseConfigured()) {
-        ProjectService.deleteProject(id);
+        ProjectService.deleteProject(id, user.id);
         UserService.upsertUser(updatedUser);
       }
     }
@@ -1410,7 +1410,7 @@ Resultado: ${isBlocked ? 'BLOQUEADO' : 'PERMITIDO'}
       loadUserWorkspace(updatedUser);
 
       if (isSupabaseConfigured()) {
-        TemplateService.deleteTemplate(id);
+        TemplateService.deleteTemplate(id, user.id);
         UserService.upsertUser(updatedUser);
       }
     }

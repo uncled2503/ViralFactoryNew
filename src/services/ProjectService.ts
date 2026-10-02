@@ -85,13 +85,17 @@ export class ProjectService {
   }
 
   /**
-   * Deletes a project by ID
+   * Deletes a project by ID, scoped to its owner.
    */
-  static async deleteProject(projectId: string): Promise<boolean> {
+  static async deleteProject(projectId: string, userId: string): Promise<boolean> {
     try {
       // Must match the safeUUID conversion applied on upsert, or a non-UUID client-side id
-      // never matches the stored row's hashed id and this silently deletes 0 rows.
-      return await db.delete(this.TABLE, { id: safeUUID(projectId) });
+      // never matches the stored row's hashed id and this silently deletes 0 rows. Scoped by
+      // user_id too — RenderService.deleteRenderingTask already does this; this sibling method
+      // deleting by id alone meant a crafted request with another user's project id (if RLS is
+      // ever missing/misconfigured) could delete it with no client-side defense-in-depth at all.
+      const validUserId = safeUUID(userId);
+      return await db.delete(this.TABLE, { id: safeUUID(projectId), user_id: validUserId });
     } catch (err) {
       console.error('ProjectService.deleteProject failed:', err);
       return false;

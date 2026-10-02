@@ -206,23 +206,34 @@ export class TemplateEngine {
 
     // 3. Absolute Fallback: Generate template layers using old metadata
     const duration = template?.duration_seconds || template?.default_duration || 30;
+    // The canvas size MUST match whatever the client's position editor (VideoAreaEditor) used to
+    // compute vars.videoZone — that editor now takes the project's real aspect ratio as its
+    // canvas size (see NewProjectWizard.tsx's ASPECT_CANVAS_SIZE), so this must derive from the
+    // same project.aspect instead of hardcoding 1080x1920. A mismatch here is exactly what made
+    // "centered in the editor" land in the wrong place for any non-9:16 project.
+    const ASPECT_CANVAS_SIZE: Record<string, { width: number; height: number }> = {
+      '9:16': { width: 1080, height: 1920 },
+      '16:9': { width: 1920, height: 1080 },
+      '1:1': { width: 1080, height: 1080 },
+    };
+    const canvasSize = ASPECT_CANVAS_SIZE[project?.aspect as string] || ASPECT_CANVAS_SIZE['9:16'];
     const videoPosition = vars.videoZone ? { x: vars.videoZone.x, y: vars.videoZone.y } : { x: 0, y: 460 };
-    const videoSize = vars.videoZone ? { width: vars.videoZone.width, height: vars.videoZone.height } : { width: 1080, height: 1000 };
+    const videoSize = vars.videoZone ? { width: vars.videoZone.width, height: vars.videoZone.height } : { width: canvasSize.width, height: Math.round(canvasSize.height * 0.52) };
     const videoRotation = (vars.videoZone && vars.videoZone.rotation !== undefined) ? vars.videoZone.rotation : 0;
     const videoOpacity = (vars.videoZone && vars.videoZone.opacity !== undefined) ? vars.videoZone.opacity : 100;
     const videoZIndex = (vars.videoZone && vars.videoZone.zIndex !== undefined) ? vars.videoZone.zIndex : 1;
     const videoFit = (vars.videoZone && vars.videoZone.scaleMode) ? vars.videoZone.scaleMode : 'cover';
 
     return {
-      width: 1080,
-      height: 1920,
+      width: canvasSize.width,
+      height: canvasSize.height,
       duration: duration,
       layers: [
         vars.backgroundImageUrl ? {
           id: 'layer-base-bg',
           type: 'background',
           position: { x: 0, y: 0 },
-          size: { width: 1080, height: 1920 },
+          size: canvasSize,
           rotation: 0,
           opacity: 100,
           zIndex: 0,
@@ -236,7 +247,7 @@ export class TemplateEngine {
           id: 'layer-base-bg',
           type: 'overlay',
           position: { x: 0, y: 0 },
-          size: { width: 1080, height: 1920 },
+          size: canvasSize,
           rotation: 0,
           opacity: 100,
           zIndex: 0,

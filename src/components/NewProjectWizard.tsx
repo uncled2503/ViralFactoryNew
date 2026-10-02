@@ -26,7 +26,17 @@ import {
 } from 'lucide-react';
 import { uploadFileToServer } from '../utils/uploadFile';
 import { StorageFilePicker } from './StorageFilePicker';
-import { StorageFile, Project, RenderingTask } from '../types';
+import { StorageFile, Project, RenderingTask, AspectRatio } from '../types';
+
+// Must match how server/render/TemplateEngine.ts's fallback canvas sizes line up with each
+// AspectRatio — the video-position editor needs to compute coordinates in the SAME canvas size
+// the backend will stamp them onto verbatim, or "centered" in the editor lands somewhere else
+// entirely in the output for any non-9:16 template.
+const ASPECT_CANVAS_SIZE: Record<AspectRatio, { width: number; height: number }> = {
+  '9:16': { width: 1080, height: 1920 },
+  '16:9': { width: 1920, height: 1080 },
+  '1:1': { width: 1080, height: 1080 },
+};
 
 interface NewProjectWizardProps {
   isOpen: boolean;
@@ -65,6 +75,11 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
     zIndex: 1
   });
   const [videoPosition, setVideoPosition] = useState<'bottom_half' | 'top_half' | 'full_bg' | 'pip' | 'custom'>('custom');
+
+  // The actually-selected template's real aspect ratio/canvas size — falls back to 9:16 only
+  // when no template is selected yet (matches the default used elsewhere in this wizard).
+  const selectedTemplateAspect: AspectRatio = templates.find(t => t.id === selectedTemplateId)?.aspect || '9:16';
+  const selectedTemplateCanvas = ASPECT_CANVAS_SIZE[selectedTemplateAspect];
 
   // Step 3 States
   const [sourceVideos, setSourceVideos] = useState<Array<{ id: string; name: string; size: string; progress: number; status: 'uploading' | 'completed' | 'error'; url?: string }>>([]);
@@ -301,7 +316,7 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
           projectName,
           description,
           templateId,
-          '9:16',
+          selectedTemplateAspect,
           {
             layoutPosition: 'custom',
             videoZone: { ...videoZone },
@@ -625,6 +640,8 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
                           onChange={setVideoZone}
                           backgroundUrl={templateFileUrl}
                           templateName={templateFile ? templateFile.name : (selectedTemplateId || 'Legenda Padrão')}
+                          canvasWidth={selectedTemplateCanvas.width}
+                          canvasHeight={selectedTemplateCanvas.height}
                         />
                       </div>
                     </motion.div>

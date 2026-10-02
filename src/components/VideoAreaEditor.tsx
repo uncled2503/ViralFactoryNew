@@ -33,19 +33,31 @@ interface VideoAreaEditorProps {
   onChange: (value: VideoZoneData) => void;
   backgroundUrl: string | null;
   templateName?: string;
+  // The actual template/project canvas size this videoZone's coordinates are expressed in.
+  // Defaults to 9:16 (1080x1920) for backward compatibility, but MUST match whatever canvas
+  // size the backend (server/render/TemplateEngine.ts) applies these coordinates to verbatim —
+  // a mismatch here is exactly what made "centered in the editor" land in the wrong place for
+  // any non-9:16 template, since the editor was always computing against a hardcoded 1080x1920
+  // regardless of the real template's dimensions.
+  canvasWidth?: number;
+  canvasHeight?: number;
 }
 
-const CANVAS_VIRTUAL_WIDTH = 1080;
-const CANVAS_VIRTUAL_HEIGHT = 1920;
-const BASE_DISPLAY_WIDTH = 225; // 9:16 aspect ratio base width
-const BASE_DISPLAY_HEIGHT = 400; // 9:16 aspect ratio base height
+const BASE_DISPLAY_HEIGHT = 400; // on-screen preview base height, in CSS pixels, before zoom
 
 export const VideoAreaEditor: React.FC<VideoAreaEditorProps> = ({
   value,
   onChange,
   backgroundUrl,
-  templateName
+  templateName,
+  canvasWidth = 1080,
+  canvasHeight = 1920
 }) => {
+  const CANVAS_VIRTUAL_WIDTH = canvasWidth;
+  const CANVAS_VIRTUAL_HEIGHT = canvasHeight;
+  // Preserve the real canvas aspect ratio in the on-screen preview box — a fixed 9:16-shaped
+  // box would otherwise squash/stretch a differently-shaped canvas's coordinate math.
+  const BASE_DISPLAY_WIDTH = BASE_DISPLAY_HEIGHT * (canvasWidth / canvasHeight);
   const [zoom, setZoom] = useState<number>(1.0);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [activeResizeHandle, setActiveResizeHandle] = useState<string | null>(null);
@@ -189,18 +201,20 @@ export const VideoAreaEditor: React.FC<VideoAreaEditorProps> = ({
           yBottom: false
         };
 
-        // Horizontal Centers Snap (box center aligns with canvas center X = 540)
+        // Horizontal Centers Snap (box center aligns with the real canvas center X)
+        const canvasCenterX = CANVAS_VIRTUAL_WIDTH / 2;
         const boxCenterX = nextX + nextW / 2;
-        if (Math.abs(boxCenterX - 540) < snapThreshold) {
-          nextX = 540 - nextW / 2;
+        if (Math.abs(boxCenterX - canvasCenterX) < snapThreshold) {
+          nextX = canvasCenterX - nextW / 2;
           currentGuides.xCenter = true;
           snapX = true;
         }
 
-        // Vertical Centers Snap (box center aligns with canvas center Y = 960)
+        // Vertical Centers Snap (box center aligns with the real canvas center Y)
+        const canvasCenterY = CANVAS_VIRTUAL_HEIGHT / 2;
         const boxCenterY = nextY + nextH / 2;
-        if (Math.abs(boxCenterY - 960) < snapThreshold) {
-          nextY = 960 - nextH / 2;
+        if (Math.abs(boxCenterY - canvasCenterY) < snapThreshold) {
+          nextY = canvasCenterY - nextH / 2;
           currentGuides.yCenter = true;
           snapY = true;
         }
@@ -559,7 +573,7 @@ export const VideoAreaEditor: React.FC<VideoAreaEditorProps> = ({
 
           {/* Coordinate Parameters */}
           <div className="space-y-3 border-t border-gray-900 pt-3">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">Geometria (1080×1920)</label>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">Geometria ({CANVAS_VIRTUAL_WIDTH}×{CANVAS_VIRTUAL_HEIGHT})</label>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-[9px] font-mono text-gray-500 block">Coordenada X (px)</span>
@@ -586,7 +600,7 @@ export const VideoAreaEditor: React.FC<VideoAreaEditorProps> = ({
                 <input
                   type="number"
                   value={value.width}
-                  onChange={(e) => updateZone({ width: Math.max(10, parseInt(e.target.value) || 1080) })}
+                  onChange={(e) => updateZone({ width: Math.max(10, parseInt(e.target.value) || CANVAS_VIRTUAL_WIDTH) })}
                   className="w-full mt-1 px-2.5 py-1.5 bg-gray-900 border border-gray-850 rounded text-xs text-white font-mono"
                 />
               </div>
@@ -595,7 +609,7 @@ export const VideoAreaEditor: React.FC<VideoAreaEditorProps> = ({
                 <input
                   type="number"
                   value={value.height}
-                  onChange={(e) => updateZone({ height: Math.max(10, parseInt(e.target.value) || 1920) })}
+                  onChange={(e) => updateZone({ height: Math.max(10, parseInt(e.target.value) || CANVAS_VIRTUAL_HEIGHT) })}
                   className="w-full mt-1 px-2.5 py-1.5 bg-gray-900 border border-gray-850 rounded text-xs text-white font-mono"
                 />
               </div>

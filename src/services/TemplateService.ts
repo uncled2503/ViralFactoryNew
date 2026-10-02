@@ -93,13 +93,17 @@ export class TemplateService {
   }
 
   /**
-   * Deletes a layout template by ID
+   * Deletes a layout template by ID, scoped to its owner.
    */
-  static async deleteTemplate(templateId: string): Promise<boolean> {
+  static async deleteTemplate(templateId: string, userId: string): Promise<boolean> {
     try {
       // Must match the safeUUID conversion applied on upsert, or a non-UUID client-side id
-      // never matches the stored row's hashed id and this silently deletes 0 rows.
-      return await db.delete(this.TABLE, { id: safeUUID(templateId) });
+      // never matches the stored row's hashed id and this silently deletes 0 rows. Scoped by
+      // user_id too, matching RenderService.deleteRenderingTask — a user should only ever be
+      // able to delete their own templates, never a crafted id for someone else's (or a public
+      // one, which isn't user-owned at all).
+      const validUserId = safeUUID(userId);
+      return await db.delete(this.TABLE, { id: safeUUID(templateId), user_id: validUserId });
     } catch (err) {
       console.error('TemplateService.deleteTemplate failed:', err);
       return false;
