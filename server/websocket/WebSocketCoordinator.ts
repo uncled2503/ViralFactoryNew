@@ -104,10 +104,17 @@ export class WebSocketCoordinator {
           }
 
           if (type === 'register') {
-            // Opt-in shared-secret check: only enforced when WORKER_SECRET is set server-side,
-            // so existing trusted-network deployments (docker-compose, same-host) keep working
-            // unchanged. Required once a worker connects over the public internet.
+            // Shared-secret check: opt-in outside production (so a local docker-compose/same-host
+            // dev setup keeps working with no config), but REQUIRED in production — this process
+            // is reachable over the public internet (Cloudflare Tunnel), and an unset secret there
+            // would let anyone register a fake "worker" and receive real jobs, including signed
+            // URLs to user media.
             const requiredSecret = process.env.WORKER_SECRET;
+            if (process.env.NODE_ENV === 'production' && !requiredSecret) {
+              console.error('[WebSocketCoordinator] Rejecting worker registration: WORKER_SECRET is not configured in production.');
+              ws.close(4001, 'Unauthorized: server misconfiguration (WORKER_SECRET not set)');
+              return;
+            }
             if (requiredSecret && payload?.secret !== requiredSecret) {
               console.warn(`[WebSocketCoordinator] Rejected worker registration from ${ip}: invalid or missing WORKER_SECRET.`);
               ws.close(4001, 'Unauthorized: invalid worker secret');

@@ -251,6 +251,22 @@ export const ProfileSettings: React.FC = () => {
 
     try {
       if (isSupabaseConfigured() && supabaseClient) {
+        // Verify the current password is actually correct before allowing the change.
+        // supabase-js has no standalone "check this password" call for an already-active
+        // session, so re-authenticating with it is the standard way to confirm it — previously
+        // this field was only checked for being non-empty and never verified against anything,
+        // so a hijacked session (or an unlocked, logged-in device) could change the password
+        // without knowing the real current one.
+        const { error: verifyError } = await supabaseClient.auth.signInWithPassword({
+          email: user.email,
+          password: currentPassword
+        });
+        if (verifyError) {
+          showToast('Senha atual incorreta.', 'error');
+          setIsSaving(false);
+          return;
+        }
+
         // Attempt password change via Supabase Auth API
         const { error } = await supabaseClient.auth.updateUser({
           password: newPassword

@@ -145,10 +145,15 @@ export class AdminRepository {
         console.error('updateUser Supabase error:', err);
       }
     }
-    const db = LocalDbMutex.getDbDataSync();
-    const users = db.saas_users || db.users || [];
-    const index = users.findIndex((u: any) => u.id === id);
-    if (index !== -1) {
+    // runLocked (not getDbDataSync) — the unlocked version races any concurrent writer touching
+    // saas_users (e.g. a user's own POST /api/db/sync, which does take the lock) and, since it
+    // never schedules runLocked's debounced write, the mutation only actually reaches Supabase if
+    // some unrelated runLocked call happens to fire afterward — a crash before that leaves an
+    // admin action that returned {success:true} never actually persisted.
+    return LocalDbMutex.runLocked((dbData) => {
+      const users = dbData.saas_users || dbData.users || [];
+      const index = users.findIndex((u: any) => u.id === id);
+      if (index === -1) return null;
       const updated = {
         ...users[index],
         ...mapFrontendUserToDbUser(updateData),
@@ -156,8 +161,7 @@ export class AdminRepository {
       };
       users[index] = updated;
       return mapDbUserToFrontendUser(updated);
-    }
-    return null;
+    });
   }
 
   /**
@@ -178,11 +182,12 @@ export class AdminRepository {
         console.error('deleteUser Supabase error:', err);
       }
     }
-    const db = LocalDbMutex.getDbDataSync();
-    const lenBefore = db.saas_users.length;
-    db.saas_users = db.saas_users.filter((u: any) => u.id !== id);
-    db.users = db.saas_users;
-    return db.saas_users.length !== lenBefore;
+    return LocalDbMutex.runLocked((dbData) => {
+      const lenBefore = dbData.saas_users.length;
+      dbData.saas_users = dbData.saas_users.filter((u: any) => u.id !== id);
+      dbData.users = dbData.saas_users;
+      return dbData.saas_users.length !== lenBefore;
+    });
   }
 
   /**
@@ -327,19 +332,20 @@ export class AdminRepository {
         console.error('createAuditLog Supabase error:', err);
       }
     }
-    const db = LocalDbMutex.getDbDataSync();
-    const newLog = {
-      id: randomUUID(),
-      admin_name: log.admin_name || 'System',
-      action: log.action || 'ACTION',
-      target_user: log.target_user || 'SYSTEM',
-      ip: log.ip || '127.0.0.1',
-      status: log.status || 'SUCCESS',
-      timestamp: log.timestamp || new Date().toISOString()
-    };
-    if (!db.audit_logs) db.audit_logs = [];
-    db.audit_logs.unshift(newLog);
-    return newLog;
+    return LocalDbMutex.runLocked((dbData) => {
+      const newLog = {
+        id: randomUUID(),
+        admin_name: log.admin_name || 'System',
+        action: log.action || 'ACTION',
+        target_user: log.target_user || 'SYSTEM',
+        ip: log.ip || '127.0.0.1',
+        status: log.status || 'SUCCESS',
+        timestamp: log.timestamp || new Date().toISOString()
+      };
+      if (!dbData.audit_logs) dbData.audit_logs = [];
+      dbData.audit_logs.unshift(newLog);
+      return newLog;
+    });
   }
 
   /**
@@ -649,21 +655,22 @@ export class AdminRepository {
         console.error('updateSetting Supabase error:', err);
       }
     }
-    const db = LocalDbMutex.getDbDataSync();
-    if (!db.settings) db.settings = [];
-    const index = db.settings.findIndex((s: any) => s.key === key);
-    const updated = {
-      id: index !== -1 ? db.settings[index].id : `s-${Math.random().toString(36).substr(2, 9)}`,
-      key,
-      value: typeof value === 'string' ? value : JSON.stringify(value),
-      description: description || (index !== -1 ? db.settings[index].description : '')
-    };
-    if (index !== -1) {
-      db.settings[index] = updated;
-    } else {
-      db.settings.push(updated);
-    }
-    return updated;
+    return LocalDbMutex.runLocked((dbData) => {
+      if (!dbData.settings) dbData.settings = [];
+      const index = dbData.settings.findIndex((s: any) => s.key === key);
+      const updated = {
+        id: index !== -1 ? dbData.settings[index].id : `s-${Math.random().toString(36).substr(2, 9)}`,
+        key,
+        value: typeof value === 'string' ? value : JSON.stringify(value),
+        description: description || (index !== -1 ? dbData.settings[index].description : '')
+      };
+      if (index !== -1) {
+        dbData.settings[index] = updated;
+      } else {
+        dbData.settings.push(updated);
+      }
+      return updated;
+    });
   }
 
   /**

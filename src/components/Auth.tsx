@@ -88,12 +88,20 @@ export const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
     } catch (err: any) {
       const errMsg = err.message || '';
       if (
-        errMsg.includes('Database error saving new user') || 
-        errMsg.includes('database error') || 
+        errMsg.includes('Database error saving new user') ||
+        errMsg.includes('database error') ||
         errMsg.includes('trigger') ||
         errMsg.includes('saas_users')
       ) {
-        setError('Erro de Trigger no Supabase (saas_users ou tabelas ausentes). Para solucionar isso e liberar todos os cadastros imediatamente, execute o script SQL de tabelas fornecido no console ou siga as instruções abaixo para criar a tabela de usuários.');
+        // The real diagnostic (which table/trigger, what to run) is a setup instruction for
+        // whoever operates this deployment, not something to hand an end user in production —
+        // it names the real database table and tells a stranger to run SQL against it.
+        console.error('[Auth] Signup failed with a backend setup error (see details below) — this usually means the saas_users table/trigger isn\'t set up yet:', errMsg);
+        setError('Não foi possível concluir o cadastro no momento. Tente novamente em instantes ou contate o suporte.');
+      } else if (errMsg.includes('already registered') || errMsg.includes('already exists')) {
+        // Deliberately non-committal — confirming an email is already registered lets an
+        // attacker enumerate valid accounts via the signup form.
+        setError('Não foi possível concluir o cadastro com esses dados. Se você já tem uma conta, tente fazer login ou recuperar sua senha.');
       } else {
         setError(errMsg || 'Ocorreu um erro. Tente novamente.');
       }

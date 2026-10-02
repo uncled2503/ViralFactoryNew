@@ -70,11 +70,9 @@ export const UsersTab: React.FC<UsersTabProps> = ({
   const handleToggleSuspension = (targetUser: User) => {
     const nextStatus = targetUser.status === 'active' ? 'suspended' : 'active';
     adminUpdateUser(targetUser.id, { status: nextStatus });
-    if (selectedUser?.id === targetUser.id) {
-      setSelectedUser({ ...selectedUser, status: nextStatus });
-    }
+    setSelectedUser(prev => (prev && prev.id === targetUser.id) ? { ...prev, status: nextStatus } : prev);
     showToast(
-      `Usuário ${targetUser.name} foi ${nextStatus === 'suspended' ? 'suspenso' : 'ativado'} com sucesso.`, 
+      `Usuário ${targetUser.name} foi ${nextStatus === 'suspended' ? 'suspenso' : 'ativado'} com sucesso.`,
       'success'
     );
   };
@@ -82,25 +80,19 @@ export const UsersTab: React.FC<UsersTabProps> = ({
   const handleUpdatePlan = (userId: string, newPlan: PlanTier) => {
     const planConfig = PLANS_DETAILS.find(p => p.tier === newPlan);
     if (!planConfig) return;
-    adminUpdateUser(userId, { 
+    adminUpdateUser(userId, {
       subscription: newPlan,
       usageLimit: planConfig.limits.maxVideosPerMonth
     });
-    if (selectedUser?.id === userId) {
-      setSelectedUser({ 
-        ...selectedUser, 
-        subscription: newPlan, 
-        usageLimit: planConfig.limits.maxVideosPerMonth 
-      });
-    }
+    setSelectedUser(prev => (prev && prev.id === userId)
+      ? { ...prev, subscription: newPlan, usageLimit: planConfig.limits.maxVideosPerMonth }
+      : prev);
     showToast(`Plano de ${selectedUser?.name} alterado para ${newPlan}.`, 'success');
   };
 
   const handleUpdateRole = (userId: string, newRole: UserRole) => {
     adminUpdateUser(userId, { role: newRole });
-    if (selectedUser?.id === userId) {
-      setSelectedUser({ ...selectedUser, role: newRole });
-    }
+    setSelectedUser(prev => (prev && prev.id === userId) ? { ...prev, role: newRole } : prev);
     showToast(`Cargo de ${selectedUser?.name} alterado para ${newRole}.`, 'success');
   };
 
@@ -144,15 +136,29 @@ export const UsersTab: React.FC<UsersTabProps> = ({
 
   const handleQuotaAdjustment = (type: 'renders' | 'storage', value: number) => {
     if (!selectedUser) return;
+    const targetId = selectedUser.id;
+    // Functional update — two fast clicks on the same +/- button (e.g. "+10" twice) can both
+    // fire before React re-renders with the first click's result; reading selectedUser from the
+    // closure made both computes start from the same pre-click value, so only one +10 actually
+    // landed. The updater itself stays a pure compute (no side effects, safe under StrictMode's
+    // double-invoke) — adminUpdateUser/showToast fire afterward using the captured result.
+    let nextValue: number | null = null;
+    setSelectedUser(prev => {
+      if (!prev || prev.id !== targetId) return prev;
+      if (type === 'renders') {
+        nextValue = Math.max(0, prev.usageLimit + value);
+        return { ...prev, usageLimit: nextValue };
+      } else {
+        nextValue = Math.max(0, prev.storageUsedMB + value);
+        return { ...prev, storageUsedMB: nextValue };
+      }
+    });
+    if (nextValue === null) return;
     if (type === 'renders') {
-      const nextLimit = Math.max(0, selectedUser.usageLimit + value);
-      adminUpdateUser(selectedUser.id, { usageLimit: nextLimit });
-      setSelectedUser({ ...selectedUser, usageLimit: nextLimit });
-      showToast(`Limite mensal de renders ajustado para ${nextLimit}.`, 'success');
+      adminUpdateUser(targetId, { usageLimit: nextValue });
+      showToast(`Limite mensal de renders ajustado para ${nextValue}.`, 'success');
     } else {
-      const nextStorage = Math.max(0, selectedUser.storageUsedMB + value);
-      adminUpdateUser(selectedUser.id, { storageUsedMB: nextStorage });
-      setSelectedUser({ ...selectedUser, storageUsedMB: nextStorage });
+      adminUpdateUser(targetId, { storageUsedMB: nextValue });
       showToast(`Armazenamento ajustado em ${value > 0 ? '+' : ''}${value}MB.`, 'success');
     }
   };
