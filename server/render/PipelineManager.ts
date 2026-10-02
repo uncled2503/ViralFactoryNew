@@ -12,6 +12,34 @@ import { ExportPresetManager } from './ExportPresetManager';
 import { RenderEngine } from './RenderEngine';
 import { FFmpegCommandBuilder } from './FFmpegCommandBuilder';
 
+// Hostnames a remote asset URL is allowed to come from before it's passed to ffprobe/ffmpeg as
+// an `-i` input. Project/template JSON is client-supplied and never otherwise validated here —
+// without this, a crafted backgroundVideoUrl/audioUrl/etc. pointing at an internal service,
+// cloud metadata endpoint (169.254.169.254), or local file:// path would be fetched/read by
+// ffmpeg/ffprobe as if it were a trusted video/image/audio asset (SSRF / local file read).
+function getAllowedAssetHosts(): Set<string> {
+  const hosts = new Set<string>();
+  const addHost = (url?: string | null) => {
+    if (!url) return;
+    try { hosts.add(new URL(url).hostname.toLowerCase()); } catch { /* not a valid absolute URL, ignore */ }
+  };
+  addHost(process.env.VITE_SUPABASE_URL);
+  addHost(process.env.SUPABASE_URL);
+  addHost(process.env.APP_URL);
+  return hosts;
+}
+
+function isAllowedAssetUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  return getAllowedAssetHosts().has(parsed.hostname.toLowerCase());
+}
+
 export class PipelineManager {
   /**
    * Main entrypoint to process an active rendering Job through the multi-stage pipeline
@@ -181,8 +209,11 @@ export class PipelineManager {
         if (contentUrl) {
           if (contentUrl.startsWith('/') && fs.existsSync(path.join(process.cwd(), 'public', contentUrl))) {
             resolvedAssets.set(layer.id, path.join(process.cwd(), 'public', contentUrl));
+          } else if (isAllowedAssetUrl(contentUrl)) {
+            resolvedAssets.set(layer.id, contentUrl); // Use directly if remote and from an allowed host
           } else {
-            resolvedAssets.set(layer.id, contentUrl); // Use directly if remote
+            addLog('Validar Assets', `Asset da camada "${layer.id}" rejeitado: URL não é um caminho local válido nem pertence a um host permitido (${contentUrl}).`, true);
+            throw new Error(`Asset inválido ou não permitido na camada "${layer.id}".`);
           }
         }
       }

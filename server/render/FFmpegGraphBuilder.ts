@@ -105,15 +105,19 @@ export class FFmpegGraphBuilder {
         continue;
       }
 
-      // Base properties
-      const x = layer.data?.position?.x ?? layer.data?.x ?? 0;
-      const y = layer.data?.position?.y ?? layer.data?.y ?? 0;
-      const w = layer.data?.size?.width ?? layer.data?.width ?? width;
-      const h = layer.data?.size?.height ?? layer.data?.height ?? height;
-      const start = layer.data?.timeline?.start ?? layer.data?.durationStart ?? 0;
-      const end = layer.data?.timeline?.end ?? layer.data?.durationEnd ?? duration;
+      // Base properties — layer.data is typed `any` and ultimately comes from project/template
+      // JSON that's never runtime-validated, so these are forced through safeNumber here, once,
+      // at the source. Every one of these flows unescaped into FFmpeg filter expression strings
+      // downstream (this file, FFmpegAnimationEngine, drawbox/overlay x/y/w/h) — a non-numeric
+      // string here would otherwise inject arbitrary filtergraph syntax.
+      const x = TextEngine.safeNumber(layer.data?.position?.x ?? layer.data?.x, 0);
+      const y = TextEngine.safeNumber(layer.data?.position?.y ?? layer.data?.y, 0);
+      const w = TextEngine.safeNumber(layer.data?.size?.width ?? layer.data?.width, width, 0, 20000);
+      const h = TextEngine.safeNumber(layer.data?.size?.height ?? layer.data?.height, height, 0, 20000);
+      const start = TextEngine.safeNumber(layer.data?.timeline?.start ?? layer.data?.durationStart, 0, 0, 86400);
+      const end = TextEngine.safeNumber(layer.data?.timeline?.end ?? layer.data?.durationEnd, duration, 0, 86400);
       const layerDuration = end - start;
-      const opacity = layer.data?.opacity !== undefined ? layer.data.opacity : 100;
+      const opacity = TextEngine.safeNumber(layer.data?.opacity, 100, 0, 100);
       const anims = layer.data?.animations || [];
 
       // Compile animations using FFmpegAnimationEngine
@@ -212,7 +216,7 @@ export class FFmpegGraphBuilder {
         const text = layer.data?.content ?? layer.data?.text ?? '';
         const font = layer.data?.styles?.font ?? layer.data?.font ?? 'Inter';
         const color = layer.data?.styles?.color ?? layer.data?.color ?? '#FFFFFF';
-        const size = layer.data?.styles?.size ?? layer.data?.size ?? 40;
+        const size = TextEngine.safeNumber(layer.data?.styles?.size ?? layer.data?.size, 40, 1, 2000);
         const align = layer.data?.styles?.align ?? layer.data?.align ?? 'center';
 
         const escapedText = TextEngine.escapeDrawtext(text);
@@ -224,17 +228,16 @@ export class FFmpegGraphBuilder {
 
         const shadowEnabled = layer.data?.styles?.shadowEnabled ?? layer.data?.shadowEnabled;
         const shadowColor = layer.data?.styles?.shadowColor ?? layer.data?.shadowColor ?? 'black';
-        const shadowOffsetX = layer.data?.styles?.shadowOffsetX ?? layer.data?.shadowOffsetX ?? 2;
-        const shadowOffsetY = layer.data?.styles?.shadowOffsetY ?? layer.data?.shadowOffsetY ?? 2;
+        const shadowOffsetX = TextEngine.safeNumber(layer.data?.styles?.shadowOffsetX ?? layer.data?.shadowOffsetX, 2, -500, 500);
+        const shadowOffsetY = TextEngine.safeNumber(layer.data?.styles?.shadowOffsetY ?? layer.data?.shadowOffsetY, 2, -500, 500);
 
         const strokeEnabled = layer.data?.styles?.strokeEnabled ?? layer.data?.strokeEnabled;
         const strokeColor = layer.data?.styles?.strokeColor ?? layer.data?.strokeColor ?? 'black';
-        const strokeWidth = layer.data?.styles?.strokeWidth ?? layer.data?.strokeWidth ?? 2;
+        const strokeWidth = TextEngine.safeNumber(layer.data?.styles?.strokeWidth ?? layer.data?.strokeWidth, 2, 0, 500);
 
-        const formatColor = (c: string) => (c && c.startsWith('#') ? '0x' + c.slice(1) : c || 'white');
-        const fontCol = formatColor(color);
-        const shadowCol = formatColor(shadowColor);
-        const strokeCol = formatColor(strokeColor);
+        const fontCol = TextEngine.safeColor(color);
+        const shadowCol = TextEngine.safeColor(shadowColor, 'black');
+        const strokeCol = TextEngine.safeColor(strokeColor, 'black');
 
         const fontParam = FontManager.getFFmpegFontParam();
         let drawtextFilter = `drawtext=${fontParam}:text='${escapedText}':fontcolor='${fontCol}':fontsize=${size}:x='${xPos}':y='${compiledAnims.y}':alpha='${compiledAnims.alpha}':enable='between(t,${start},${end})'`;
@@ -254,10 +257,9 @@ export class FFmpegGraphBuilder {
       } else if (type === 'progressbar') {
         const color = layer.data?.styles?.color ?? layer.data?.color ?? '#6366F1';
         const bgColor = layer.data?.styles?.bgColor ?? layer.data?.bgColor ?? '#1F2937';
-        const formatColor = (c: string) => (c && c.startsWith('#') ? '0x' + c.slice(1) : c || 'white');
-        const pbColor = formatColor(color);
-        const pbBgColor = formatColor(bgColor);
-        const pbHeight = h || 10;
+        const pbColor = TextEngine.safeColor(color, '0x6366F1');
+        const pbBgColor = TextEngine.safeColor(bgColor, '0x1F2937');
+        const pbHeight = TextEngine.safeNumber(h, 10, 1, 2000);
         const pbLabel = `[pb_${layer.id}]`;
 
         const bgBox = `drawbox=y='${compiledAnims.y}':color='${pbBgColor}':width=iw:height=${pbHeight}:t=fill:enable='between(t,${start},${end})'`;
@@ -269,8 +271,7 @@ export class FFmpegGraphBuilder {
         ctx.currentLabel = pbLabel;
       } else if (type === 'shape') {
         const color = layer.data?.styles?.color ?? layer.data?.color ?? '#FFFFFF';
-        const formatColor = (c: string) => (c && c.startsWith('#') ? '0x' + c.slice(1) : c || 'white');
-        const shapeColorFormatted = formatColor(color);
+        const shapeColorFormatted = TextEngine.safeColor(color);
         const shapeType = layer.data?.styles?.shapeType ?? layer.data?.shapeType ?? 'rectangle';
         const shapeLabel = `[shape_${layer.id}]`;
 

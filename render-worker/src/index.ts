@@ -14,6 +14,19 @@ import { FontManager } from './render/FontManager.js';
 // Load environment variables from .env
 dotenv.config();
 
+// This is a long-running daemon (auto-restarted via a Scheduled Task / docker restart policy on
+// crash) with no global safety net anywhere in this codebase before this — an unhandled
+// rejection (e.g. a download stream erroring after Promise.all already settled, during
+// concurrent cleanup) would otherwise crash the whole process outright under modern Node,
+// abandoning whatever job was in flight with zero notice to the coordinator. Log and keep
+// running rather than let one bad promise take down an otherwise-healthy worker.
+process.on('unhandledRejection', (reason) => {
+  console.error('[Worker] Unhandled promise rejection (worker continues running):', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[Worker] Uncaught exception (worker continues running):', err);
+});
+
 const API_URL = process.env.API_URL || 'http://localhost:3000';
 const WS_URL = process.env.WS_URL || 'ws://localhost:3000/ws/worker';
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
@@ -438,7 +451,12 @@ async function executeJob(
   logStructured('JOB_START', { jobId, layersCount: layers.length, preset: preset?.id, duration });
   addLog('Worker Init', `Worker ${WORKER_ID} claimed Job ${jobId}. Beginning pipeline...`);
 
-  const jobTempDir = path.resolve(tempAssetsRoot, jobId);
+  // jobId comes straight from the coordinator's start_job payload with no format guarantee — a
+  // value containing "../" would resolve jobTempDir outside tempAssetsRoot entirely, and this
+  // directory is later force-recursively-deleted (both pre-render below and in the cleanup
+  // `finally`), making an unsanitized jobId an arbitrary-recursive-delete primitive.
+  const safeJobId = String(jobId).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const jobTempDir = path.resolve(tempAssetsRoot, safeJobId);
   const localOutputVideoPath = path.join(jobTempDir, `completed_render.mp4`);
   const localOutputThumbPath = path.join(jobTempDir, `completed_thumb.jpg`);
   const localOutputPreviewPath = path.join(jobTempDir, `completed_preview.mp4`);
@@ -530,8 +548,10 @@ async function executeJob(
     const localTimeoutLimitMs = parseInt(process.env.JOB_TIMEOUT_MS || String(timeoutMinutes * 60 * 1000), 10);
 
     ffmpegTimeout = setTimeout(() => {
-      logStructured('MALICIOUS_ATTEMPT', {
-        type: 'FFMPEG_STUCK_TIMEOUT',
+      // Previously logged as event "MALICIOUS_ATTEMPT" — this is an ordinary stuck/slow-render
+      // timeout, not an attack signal, and mislabeling it would pollute security monitoring with
+      // false positives.
+      logStructured('FFMPEG_STUCK_TIMEOUT', {
         jobId,
         limitMs: localTimeoutLimitMs
       });

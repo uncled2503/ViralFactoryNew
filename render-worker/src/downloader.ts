@@ -4,6 +4,27 @@ import { Readable } from 'stream';
 import { finished } from 'stream/promises';
 import { RenderLayer } from './render/LayerEngine.js';
 
+// Hostnames a remote asset URL is allowed to come from before this worker fetches it. Layer
+// data comes from the coordinator's job payload — ultimately sourced from client-supplied
+// project/template JSON that's never otherwise validated — so without this, a crafted asset URL
+// pointing at an internal service or a cloud metadata endpoint (169.254.169.254) would be
+// fetched and fed into ffmpeg as if it were a trusted asset (SSRF).
+function isAllowedAssetUrl(url: string, apiUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  const host = parsed.hostname.toLowerCase();
+  if (host.endsWith('.supabase.co')) return true;
+  try {
+    if (host === new URL(apiUrl).hostname.toLowerCase()) return true;
+  } catch { /* apiUrl misconfigured, fall through */ }
+  return false;
+}
+
 export class AssetDownloader {
   /**
    * Scans all layers for remote assets, downloads them in parallel, 
@@ -61,6 +82,11 @@ export class AssetDownloader {
         downloadUrl = `${apiUrl.replace(/\/+$/, '')}${url}`;
       }
 
+      if (!isAllowedAssetUrl(downloadUrl, apiUrl)) {
+        console.error(`[Worker Downloader] Rejected asset for layer "${layer.id}": URL is not http(s) or not from an allowed host: ${downloadUrl}`);
+        throw new Error(`Asset URL for layer ${layer.id} is not allowed.`);
+      }
+
       // Determine correct local file extension
       let extension = path.extname(url).toLowerCase();
       if (!extension) {
@@ -72,7 +98,11 @@ export class AssetDownloader {
         else extension = '.bin';
       }
 
-      const localFileName = `layer_${layer.id}${extension}`;
+      // layer.id is job-supplied with no format guarantee — strip anything that isn't
+      // alphanumeric/hyphen/underscore before it's used to build a filesystem path, or a value
+      // like "../../../../tmp/evil" could write the downloaded content outside tempJobDir.
+      const safeLayerId = String(layer.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const localFileName = `layer_${safeLayerId}${extension}`;
       const localFilePath = path.join(tempJobDir, localFileName);
 
       try {

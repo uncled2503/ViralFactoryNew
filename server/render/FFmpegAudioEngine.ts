@@ -13,6 +13,8 @@ export interface AudioTransitionConfig {
   };
 }
 
+import { TextEngine } from './TextEngine';
+
 export class FFmpegAudioEngine {
   /**
    * Compiles advanced audio filters for an individual audio stream.
@@ -35,27 +37,33 @@ export class FFmpegAudioEngine {
     }
 
     // 2. Handle Trim (atrim)
-    const tStart = config.trimStart !== undefined ? config.trimStart : 0;
-    const tDuration = config.trimDuration !== undefined ? config.trimDuration : layerDuration;
+    // These values are typed as `number` but originate from project/template JSON that's never
+    // actually validated at runtime — a crafted string here (e.g. containing a comma, which is
+    // this filter chain's own separator) would otherwise splice arbitrary extra filters into the
+    // graph. safeNumber forces each one through a real, finite, clamped number first.
+    const tStart = TextEngine.safeNumber(config.trimStart, 0, 0, 86400);
+    const tDuration = TextEngine.safeNumber(config.trimDuration, layerDuration, 0, 86400);
     filters.push(`atrim=start=${tStart}:duration=${tDuration}`);
     filters.push('asetpts=PTS-STARTPTS');
 
     // 3. Handle Volume (volume)
-    const baseVolume = config.volume !== undefined ? config.volume : 1.0;
+    const baseVolume = TextEngine.safeNumber(config.volume, 1.0, 0, 100);
     filters.push(`volume=${baseVolume}`);
 
     // 4. Handle Fade In / Fade Out (afade)
-    if (config.fadeInDuration && config.fadeInDuration > 0) {
-      filters.push(`afade=t=in:ss=0:d=${config.fadeInDuration}`);
+    const fadeInDuration = TextEngine.safeNumber(config.fadeInDuration, 0, 0, 3600);
+    if (fadeInDuration > 0) {
+      filters.push(`afade=t=in:ss=0:d=${fadeInDuration}`);
     }
-    if (config.fadeOutDuration && config.fadeOutDuration > 0) {
-      const fadeOutStart = Math.max(0, tDuration - config.fadeOutDuration);
-      filters.push(`afade=t=out:st=${fadeOutStart}:d=${config.fadeOutDuration}`);
+    const fadeOutDuration = TextEngine.safeNumber(config.fadeOutDuration, 0, 0, 3600);
+    if (fadeOutDuration > 0) {
+      const fadeOutStart = Math.max(0, tDuration - fadeOutDuration);
+      filters.push(`afade=t=out:st=${fadeOutStart}:d=${fadeOutDuration}`);
     }
 
     // 5. Handle Delay (adelay)
     // Delay shifts the audio start time to align with the timeline start offset or explicit delay
-    const totalDelay = (config.delay || 0) + startOffset;
+    const totalDelay = TextEngine.safeNumber(config.delay, 0, 0, 86400) + startOffset;
     if (totalDelay > 0) {
       const delayMs = Math.round(totalDelay * 1000);
       // adelay applies to all channels. e.g. 1000|1000 for stereo, or just 1000 for all if formatted as delayMs|delayMs

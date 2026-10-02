@@ -143,10 +143,10 @@ export class JobTimeoutMonitor {
       if (elapsed > timeoutMs) {
         const attempts = (job.attempts || 0) + 1;
         
-        // Structured log for potentially malicious or stuck job attempt
+        // An ordinary stuck/slow render, not a security signal — mislabeling it
+        // "MALICIOUS_ATTEMPT" would pollute security monitoring with false positives.
         const logData = {
-          event: 'MALICIOUS_ATTEMPT',
-          type: 'JOB_TIMEOUT_EXCEEDED',
+          event: 'JOB_TIMEOUT_EXCEEDED',
           jobId: job.id,
           userId: job.userId,
           projectId: job.projectId,
