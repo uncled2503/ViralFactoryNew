@@ -17,7 +17,7 @@ import { FFmpegCommandBuilder } from './FFmpegCommandBuilder';
 // without this, a crafted backgroundVideoUrl/audioUrl/etc. pointing at an internal service,
 // cloud metadata endpoint (169.254.169.254), or local file:// path would be fetched/read by
 // ffmpeg/ffprobe as if it were a trusted video/image/audio asset (SSRF / local file read).
-function getAllowedAssetHosts(): Set<string> {
+export function getAllowedAssetHosts(): Set<string> {
   const hosts = new Set<string>();
   const addHost = (url?: string | null) => {
     if (!url) return;
@@ -29,7 +29,7 @@ function getAllowedAssetHosts(): Set<string> {
   return hosts;
 }
 
-function isAllowedAssetUrl(url: string): boolean {
+export function isAllowedAssetUrl(url: string): boolean {
   let parsed: URL;
   try {
     parsed = new URL(url);

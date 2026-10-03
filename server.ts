@@ -13,7 +13,8 @@ import { WorkerWebSocketServer } from './server/render/WorkerWebSocketServer';
 import { adminRouter } from './server/routes/admin';
 import { adminAuthMiddleware } from './server/middlewares/adminAuth';
 import { getAuthenticatedUser } from './server/utils/authHelper';
-import { publicApiLimiter, adminApiLimiter, paymentApiLimiter } from './server/middlewares/rateLimiter';
+import { publicApiLimiter, adminApiLimiter, paymentApiLimiter, aiApiLimiter } from './server/middlewares/rateLimiter';
+import { HeadlineGenerationService, HeadlineGenerationError } from './server/services/HeadlineGenerationService';
 import { JobTimeoutMonitor } from './server/render/JobTimeoutMonitor';
 import { RedisService } from './server/services/RedisService';
 import { SupabaseStorageService } from './server/services/SupabaseStorageService';
@@ -893,6 +894,27 @@ async function startServer() {
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Generates AI headline suggestions for a source video by extracting a frame via ffmpeg and
+  // asking Gemini to describe a viral headline for it. Dedicated tighter limiter on top of the
+  // general publicApiLimiter — each call spawns an ffmpeg process and bills a Gemini API call.
+  app.post('/api/ai/generate-headlines', aiApiLimiter, async (req, res) => {
+    try {
+      const authUser = await getAuthenticatedUser(req);
+      if (!authUser || !authUser.userId) {
+        res.status(401).json({ error: 'Não autorizado. Identificação de usuário ausente ou inválida.' });
+        return;
+      }
+
+      const { videoUrl, context, count } = req.body || {};
+      const headlines = await HeadlineGenerationService.generateHeadlines({ videoUrl, context, count });
+      res.json({ headlines });
+    } catch (e: any) {
+      const status = e instanceof HeadlineGenerationError ? e.status : 500;
+      if (status === 500) console.error('[AI Headlines Error]:', e);
+      res.status(status).json({ error: e.message });
     }
   });
 

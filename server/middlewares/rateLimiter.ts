@@ -134,3 +134,13 @@ export const paymentApiLimiter = createRateLimiter({
   max: parseInt(process.env.PAYMENT_RATE_LIMIT_MAX || '10', 10),
   type: 'PAYMENT_API'
 });
+
+// Headline generation calls out to the Gemini API (billed per call) and spawns an ffmpeg
+// process per request to grab a video frame — both cost real money/CPU, so this needs a
+// tighter cap than the generic publicApiLimiter even though a batch of many videos will
+// legitimately call it several times in a row.
+export const aiApiLimiter = createRateLimiter({
+  windowMs: parseInt(process.env.AI_RATE_LIMIT_WINDOW_MS || '60000', 10),
+  max: parseInt(process.env.AI_RATE_LIMIT_MAX || '20', 10),
+  type: 'AI_API'
+});

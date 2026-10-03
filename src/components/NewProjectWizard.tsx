@@ -25,6 +25,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { uploadFileToServer } from '../utils/uploadFile';
+import { authenticatedFetch } from '../utils/api';
 import { StorageFilePicker } from './StorageFilePicker';
 import { StorageFile, Project, RenderingTask, AspectRatio } from '../types';
 
@@ -82,13 +83,18 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
   const selectedTemplateCanvas = ASPECT_CANVAS_SIZE[selectedTemplateAspect];
 
   // Step 3 States
-  const [sourceVideos, setSourceVideos] = useState<Array<{ id: string; name: string; size: string; progress: number; status: 'uploading' | 'completed' | 'error'; url?: string }>>([]);
+  const [sourceVideos, setSourceVideos] = useState<Array<{ id: string; name: string; size: string; progress: number; status: 'uploading' | 'completed' | 'error'; url?: string; headline?: string }>>([]);
   const [sourceDragActive, setSourceDragActive] = useState(false);
   const sourceFileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [batchResult, setBatchResult] = useState<{ total: number; successCount: number; blocked: boolean } | null>(null);
   const [showVideoPicker, setShowVideoPicker] = useState(false);
+
+  // Step 4 States (AI headline generation per video, reviewed/edited before the batch fires)
+  const [headlineSuggestions, setHeadlineSuggestions] = useState<Record<string, string[]>>({});
+  const [generatingHeadlineIds, setGeneratingHeadlineIds] = useState<Set<string>>(new Set());
+  const [isGeneratingAllHeadlines, setIsGeneratingAllHeadlines] = useState(false);
 
   // Template Drag & Drop Handlers
   const handleTemplateDrag = (e: React.DragEvent) => {
@@ -226,6 +232,57 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
     ]);
   };
 
+  // Extracts a frame from the video server-side and asks Gemini for headline suggestions based
+  // on what's actually in it. `overwrite: false` (used by "Gerar Todos") only fills in videos
+  // that don't already have a headline, so it never clobbers one the user typed/picked by hand;
+  // the per-video button always passes overwrite: true since that's an explicit "redo this one".
+  const generateHeadlineForVideo = async (
+    video: { id: string; name: string; url?: string; headline?: string },
+    { overwrite = true }: { overwrite?: boolean } = {}
+  ) => {
+    if (!video.url) return;
+    setGeneratingHeadlineIds(prev => new Set(prev).add(video.id));
+    try {
+      const res = await authenticatedFetch('/api/ai/generate-headlines', {
+        method: 'POST',
+        body: JSON.stringify({ videoUrl: video.url, count: 4 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Falha ao gerar headlines (status ${res.status}).`);
+      const suggestions: string[] = Array.isArray(data.headlines) ? data.headlines : [];
+      setHeadlineSuggestions(prev => ({ ...prev, [video.id]: suggestions }));
+      if (suggestions[0]) {
+        setSourceVideos(prev => prev.map(v => v.id === video.id && (overwrite || !v.headline) ? { ...v, headline: suggestions[0] } : v));
+      }
+    } catch (err: any) {
+      showToast(`Erro ao gerar headline para "${video.name}": ${err.message || 'erro desconhecido'}`, 'error');
+    } finally {
+      setGeneratingHeadlineIds(prev => {
+        const next = new Set(prev);
+        next.delete(video.id);
+        return next;
+      });
+    }
+  };
+
+  const generateAllHeadlines = async () => {
+    const targets = sourceVideos.filter(v => v.url && v.status === 'completed' && !v.headline);
+    if (targets.length === 0) return;
+    setIsGeneratingAllHeadlines(true);
+    // Small concurrency, same reasoning as the source-video upload queue: don't hammer the
+    // server (and the Gemini-call rate limiter) with every video in the batch at once.
+    const CONCURRENCY = 2;
+    const queue = [...targets];
+    const runNext = async (): Promise<void> => {
+      const video = queue.shift();
+      if (!video) return;
+      await generateHeadlineForVideo(video, { overwrite: false });
+      return runNext();
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => runNext()));
+    setIsGeneratingAllHeadlines(false);
+  };
+
   const handleStartBatchProcessing = async () => {
     if (sourceVideos.length === 0) return;
     setIsProcessingBatch(true);
@@ -322,10 +379,11 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
             videoZone: { ...videoZone },
             backgroundImageUrl: templateFile?.url,
             backgroundVideoUrl: video.url,
-            // This wizard only composites template + video — no on-screen text unless the
-            // user explicitly adds it later in an editor. Override createProject's defaults
-            // (which otherwise burn the project name in as a headline).
-            title: undefined,
+            // Per-video headline, typed manually or generated by AI in Step 4 — left undefined
+            // when the user didn't set one, which keeps this wizard's old default behavior of
+            // not burning any on-screen text into the output (overriding createProject's own
+            // default of using the project name as a headline).
+            title: video.headline || undefined,
             subtitles: undefined
           },
           true // skipWorkspaceReload — this runs once per video in the batch loop
@@ -392,6 +450,9 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
     setSourceVideos([]);
     setIsProcessingBatch(false);
     setBatchResult(null);
+    setHeadlineSuggestions({});
+    setGeneratingHeadlineIds(new Set());
+    setIsGeneratingAllHeadlines(false);
   };
 
   return (
@@ -759,19 +820,76 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
-                      className="h-full flex flex-col items-center justify-center text-center p-4 space-y-4"
+                      className="h-full flex flex-col space-y-3"
                     >
-                      <div className="w-14 h-14 rounded-full bg-indigo-950/50 border border-indigo-500/35 flex items-center justify-center text-indigo-400 shadow-2xl shadow-indigo-500/25 animate-bounce">
-                        <Sparkles className="w-7 h-7" />
+                      <div className="text-center shrink-0">
+                        <span className="text-[10px] font-mono text-indigo-400 font-bold uppercase tracking-wider block">Passo 4 de 4</span>
+                        <h2 className="text-lg font-bold text-white tracking-tight mt-1">Revisar & Confirmar</h2>
+                        <p className="text-[11px] text-gray-500 font-mono mt-0.5">
+                          {sourceVideos.length} vídeos · template <strong className="text-indigo-400">"{templateFile?.name || 'Personalizado'}"</strong> · posição <strong className="text-indigo-400">"{videoPosition.toUpperCase()}"</strong>
+                        </p>
                       </div>
-                      <div className="space-y-2 max-w-md">
-                        <h2 className="text-xl font-bold text-white tracking-tight">Fábrica Pronta para Renderizar!</h2>
-                        <p className="text-xs text-gray-400 leading-relaxed">
-                          O template de layout <strong className="text-indigo-400">"{templateFile?.name || 'Personalizado'}"</strong> foi configurado com sucesso na posição <strong className="text-indigo-400">"{videoPosition.toUpperCase()}"</strong>.
-                        </p>
-                        <p className="text-[11px] text-gray-500 font-mono">
-                          Deseja disparar a renderização em lote para os <strong className="text-white">{sourceVideos.length} vídeos</strong> carregados na fila?
-                        </p>
+
+                      <div className="flex items-center justify-between shrink-0">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider font-mono">Headline por vídeo (opcional)</label>
+                        <button
+                          type="button"
+                          onClick={generateAllHeadlines}
+                          disabled={isGeneratingAllHeadlines || sourceVideos.every(v => !!v.headline)}
+                          className="py-1.5 px-3 bg-indigo-950/40 hover:bg-indigo-950/70 border border-indigo-500/30 rounded-lg text-[10px] font-bold text-indigo-300 hover:text-white transition flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {isGeneratingAllHeadlines ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          <span>{isGeneratingAllHeadlines ? 'Gerando...' : 'Gerar Headlines com IA'}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto space-y-2 pr-1 border border-gray-900 rounded-lg p-2.5 bg-slate-950/50">
+                        {sourceVideos.map((video) => (
+                          <div key={video.id} className="p-2.5 rounded-lg bg-slate-950 border border-gray-900 space-y-1.5">
+                            <div className="flex items-center gap-2 text-xs">
+                              <FileVideo className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                              <p className="font-semibold text-gray-200 truncate flex-1">{video.name}</p>
+                              <button
+                                type="button"
+                                onClick={() => generateHeadlineForVideo(video)}
+                                disabled={!video.url || generatingHeadlineIds.has(video.id)}
+                                className="p-1 rounded text-indigo-400 hover:text-indigo-300 hover:bg-indigo-950/40 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                                title="Gerar/Regenerar headline com IA"
+                              >
+                                {generatingHeadlineIds.has(video.id) ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                            <input
+                              type="text"
+                              value={video.headline || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setSourceVideos(prev => prev.map(v => v.id === video.id ? { ...v, headline: val } : v));
+                              }}
+                              placeholder="Sem headline (vídeo sem texto sobreposto)"
+                              maxLength={80}
+                              className="w-full bg-gray-950 border border-gray-850 rounded px-2 py-1.5 text-[11px] text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-indigo-500/50"
+                            />
+                            {headlineSuggestions[video.id] && headlineSuggestions[video.id].length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                {headlineSuggestions[video.id].map((s, i) => (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => setSourceVideos(prev => prev.map(v => v.id === video.id ? { ...v, headline: s } : v))}
+                                    className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition cursor-pointer ${
+                                      video.headline === s
+                                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                                        : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-white hover:border-indigo-500/40'
+                                    }`}
+                                  >
+                                    {s}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </motion.div>
                   )}
