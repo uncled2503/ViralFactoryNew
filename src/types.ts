@@ -201,6 +201,9 @@ export interface Template {
   updatedAt: string;
   bgMusicUrl?: string;
   backgroundImageUrl?: string;
+  // Solid-color canvas background — mutually exclusive with backgroundImageUrl (the editor only
+  // ever sets one of the two, clearing the other).
+  backgroundColor?: string;
   defaultDuration: number; // in seconds
   scenesCount: number;
   layers: {

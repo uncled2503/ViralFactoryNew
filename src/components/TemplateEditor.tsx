@@ -7,6 +7,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { AspectRatio, Template } from '../types';
+import { uploadFileToServer } from '../utils/uploadFile';
 import {
   ArrowLeft,
   Upload,
@@ -40,14 +41,9 @@ interface TemplateEditorProps {
   onSave: (updatedTemplate: Template) => void;
 }
 
-// Hardcoded sample templates/mock background options for quick generation
-const BACKGROUND_PRESETS = [
-  { name: 'Achadinhos Shopee', url: '/assets/13-_LniUGFI.webp' },
-  { name: 'Curiosidades Curiosas', url: '/assets/14-CPvLg7dt.webp' },
-  { name: 'Notícias Rápidas', url: '/assets/02-uAy4VjXQ.webp' },
-  { name: 'Motivacional Dark', url: '/assets/03-B2jCMS6j.webp' },
-  { name: 'Receitas Deliciosas', url: '/assets/04-BANhblpL.webp' }
-];
+// The background image bank starts empty for every account — no hardcoded demo content.
+// It's populated purely by what the user uploads via the "Upload Canva" tab below.
+const BACKGROUND_PRESETS: { name: string; url: string }[] = [];
 
 export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClose, onSave }) => {
   const { showToast } = useApp();
@@ -57,11 +53,13 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
   const [aspect, setAspect] = useState<AspectRatio>(template.aspect);
   const [duration, setDuration] = useState(template.defaultDuration || 30);
 
-  // Background state
-  const [backgroundType, setBackgroundType] = useState<'upload' | 'preset'>('preset');
-  const [backgroundImageUrl, setBackgroundImageUrl] = useState<string>(
-    template.backgroundImageUrl || BACKGROUND_PRESETS[0].url
+  // Background state — a template with no saved image starts on the solid-color tab, white by
+  // default, instead of silently landing on whatever the (now-empty) preset bank used to default to.
+  const [backgroundType, setBackgroundType] = useState<'upload' | 'preset' | 'color'>(
+    template.backgroundImageUrl ? 'upload' : 'color'
   );
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState<string>(template.backgroundImageUrl || '');
+  const [backgroundColor, setBackgroundColor] = useState<string>(template.backgroundColor || '#FFFFFF');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // Zones state (cast layers as any to handle customizable fields)
@@ -158,38 +156,24 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
     showToast('Plano de fundo selecionado!', 'success');
   };
 
-  // Simulate Canva background image upload
-  const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Real upload (signed URL + PUT, same path the project wizard and Pastas use) — this used to
+  // just FileReader-encode the image as a base64 data URL and store that directly, which bloated
+  // every save with the full image bytes instead of a real, durable, reusable URL.
+  const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
 
-    setUploadProgress(10);
-    
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Url = reader.result as string;
-      
-      // Simulate progress to 100% for smooth UI feedback, then set backgroundImageUrl
-      let progress = 10;
-      const interval = setInterval(() => {
-        progress += 30;
-        if (progress >= 100) {
-          clearInterval(interval);
-          setBackgroundImageUrl(base64Url);
-          setUploadProgress(null);
-          showToast('Template de fundo carregado com sucesso!', 'success');
-        } else {
-          setUploadProgress(progress);
-        }
-      }, 150);
-    };
-
-    reader.onerror = () => {
+    setUploadProgress(0);
+    try {
+      const assetUrl = await uploadFileToServer(file, (pct) => setUploadProgress(pct));
+      setBackgroundImageUrl(assetUrl);
+      showToast('Template de fundo carregado com sucesso!', 'success');
+    } catch (err: any) {
+      showToast(`Erro ao enviar a imagem de fundo: ${err.message || 'erro desconhecido'}`, 'error');
+    } finally {
       setUploadProgress(null);
-      showToast('Erro ao ler o arquivo de imagem', 'error');
-    };
-
-    reader.readAsDataURL(file);
+    }
   };
 
   // Add Dynamic Zone
@@ -333,8 +317,15 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
       updatedAt: new Date().toISOString()
     } as any;
     
-    // Store background meta
-    updated.backgroundImageUrl = backgroundImageUrl;
+    // Store background meta — color and image are mutually exclusive, so saving one clears
+    // the other rather than leaving a stale value that a later load might fall back to.
+    if (backgroundType === 'color') {
+      updated.backgroundColor = backgroundColor;
+      updated.backgroundImageUrl = undefined;
+    } else {
+      updated.backgroundImageUrl = backgroundImageUrl || undefined;
+      updated.backgroundColor = undefined;
+    }
 
     onSave(updated);
     showToast('Template salvo com sucesso na fábrica!', 'success');
@@ -421,6 +412,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
 
             <div className="flex bg-gray-900 p-1 rounded-xl gap-1">
               <button
+                onClick={() => setBackgroundType('color')}
+                className={`flex-1 text-center py-1.5 rounded-lg text-xs font-bold transition ${backgroundType === 'color' ? 'bg-gray-950 text-white shadow-md' : 'text-gray-400 hover:text-gray-200'}`}
+              >
+                Cor Sólida
+              </button>
+              <button
                 onClick={() => setBackgroundType('preset')}
                 className={`flex-1 text-center py-1.5 rounded-lg text-xs font-bold transition ${backgroundType === 'preset' ? 'bg-gray-950 text-white shadow-md' : 'text-gray-400 hover:text-gray-200'}`}
               >
@@ -434,21 +431,45 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
               </button>
             </div>
 
-            {backgroundType === 'preset' ? (
-              <div className="grid grid-cols-2 gap-2 max-h-[140px] overflow-y-auto pr-1">
-                {BACKGROUND_PRESETS.map((preset, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handlePresetSelect(preset.url)}
-                    className={`relative aspect-[9/16] rounded-lg border-2 overflow-hidden transition cursor-pointer group ${backgroundImageUrl === preset.url ? 'border-indigo-500' : 'border-transparent hover:border-gray-700'}`}
-                  >
-                    <img src={preset.url} alt={preset.name} className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center p-1">
-                      <span className="text-[8px] font-bold text-white text-center leading-tight">{preset.name}</span>
-                    </div>
-                  </button>
-                ))}
+            {backgroundType === 'color' ? (
+              <div>
+                <label className="block text-[9px] font-mono font-semibold text-gray-500 mb-1">Cor de Fundo do Canvas</label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={backgroundColor}
+                    onChange={(e) => setBackgroundColor(e.target.value)}
+                    className="w-10 h-8 bg-gray-900 border border-gray-850 rounded-lg p-0.5 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={backgroundColor}
+                    onChange={(e) => setBackgroundColor(e.target.value)}
+                    className="flex-1 bg-gray-900 border border-gray-850 rounded-xl px-3 py-1 text-xs focus:outline-none"
+                  />
+                </div>
               </div>
+            ) : backgroundType === 'preset' ? (
+              BACKGROUND_PRESETS.length === 0 ? (
+                <div className="text-center py-6 bg-gray-900/10 border border-dashed border-gray-900 rounded-xl">
+                  <p className="text-[11px] text-gray-500 font-medium px-2">Nenhuma imagem de fundo salva ainda. Envie uma na aba "Upload Canva".</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 max-h-[140px] overflow-y-auto pr-1">
+                  {BACKGROUND_PRESETS.map((preset, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handlePresetSelect(preset.url)}
+                      className={`relative aspect-[9/16] rounded-lg border-2 overflow-hidden transition cursor-pointer group ${backgroundImageUrl === preset.url ? 'border-indigo-500' : 'border-transparent hover:border-gray-700'}`}
+                    >
+                      <img src={preset.url} alt={preset.name} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center p-1">
+                        <span className="text-[8px] font-bold text-white text-center leading-tight">{preset.name}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )
             ) : (
               <div className="space-y-3">
                 <label className="border border-dashed border-gray-800 hover:border-indigo-500/50 rounded-xl p-5 flex flex-col items-center justify-center gap-2 cursor-pointer transition bg-gray-900/20 hover:bg-gray-900/40">
@@ -469,6 +490,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
                     <div className="w-full bg-gray-950 h-1 rounded-full overflow-hidden">
                       <div className="bg-indigo-500 h-full transition-all duration-150" style={{ width: `${uploadProgress}%` }} />
                     </div>
+                  </div>
+                )}
+
+                {backgroundImageUrl && (
+                  <div className="relative aspect-[9/16] rounded-lg border-2 border-indigo-500/50 overflow-hidden max-h-[140px] mx-auto">
+                    <img src={backgroundImageUrl} alt="Fundo atual" className="w-full h-full object-cover" />
                   </div>
                 )}
               </div>
@@ -575,13 +602,17 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
             ref={canvasRef}
             className={`relative rounded-2xl bg-gray-950 shadow-2xl border border-gray-900 overflow-hidden ${aspect === '9:16' ? 'aspect-[9/16] h-[75vh]' : aspect === '16:9' ? 'aspect-[16/9] w-[70%]' : 'aspect-square h-[60vh]'}`}
           >
-            {/* Uploaded Background Visual representation */}
-            <img
-              src={backgroundImageUrl}
-              alt="Fundo Canva"
-              className="absolute inset-0 w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+            {/* Background Visual representation — solid color unless an image is actually set */}
+            {backgroundType !== 'color' && backgroundImageUrl ? (
+              <img
+                src={backgroundImageUrl}
+                alt="Fundo Canva"
+                className="absolute inset-0 w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="absolute inset-0 w-full h-full" style={{ backgroundColor }} />
+            )}
 
             {/* Dimmed backdrop when zones edit active */}
             <div className="absolute inset-0 bg-black/10 pointer-events-none" />
