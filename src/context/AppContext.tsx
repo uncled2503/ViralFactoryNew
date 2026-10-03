@@ -646,13 +646,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 4. Folders
     const userFoldersKey = `vf_folders_${userId}`;
     const savedFolders = localStorage.getItem(userFoldersKey);
+    const localFolders: StorageFolder[] = savedFolders ? JSON.parse(savedFolders) : [];
     let curFolders: StorageFolder[] = [];
 
     if (serverDb.storage_folders && serverDb.storage_folders.length > 0) {
-      curFolders = serverDb.storage_folders;
+      // Same race this function's other sections already guard against with mergeDbWithLocal:
+      // a folder organizeBatchOutputs just created (e.g. a new "Lote ..." subfolder right after
+      // a batch finishes) is written to local state + localStorage immediately, but its
+      // syncFoldersToServer POST is fire-and-forget and may not have landed yet. Since
+      // loadUserWorkspace runs after nearly every action, an unqualified overwrite here could
+      // race that POST and wipe the brand-new folder (and its files) back out of local state —
+      // which would persist, since any subsequent sync starts from this now-incomplete state.
+      // A DB-returned folder id always wins over the local copy (so a real deletion sticks);
+      // a local-only id (not yet round-tripped) is kept.
+      curFolders = mergeDbWithLocal(serverDb.storage_folders, localFolders);
       localStorage.setItem(userFoldersKey, JSON.stringify(curFolders));
     } else if (savedFolders) {
-      curFolders = JSON.parse(savedFolders);
+      curFolders = localFolders;
     } else {
       curFolders = INITIAL_FOLDERS;
       localStorage.setItem(userFoldersKey, JSON.stringify(INITIAL_FOLDERS));
