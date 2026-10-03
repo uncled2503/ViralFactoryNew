@@ -221,19 +221,26 @@ export class PipelineManager {
       
       addLog('Gerar Filter Graph', `Preset de Exportação resolvido: ${preset.name} (${preset.width}x${preset.height} @ ${preset.fps}fps)`);
 
-      // Resolve assets as required by GraphBuilder
+      // Resolve assets as required by GraphBuilder. Only layer types that actually carry a
+      // downloadable asset are considered here — text-bearing types (headline, cta, instagram,
+      // captions, freeText, watermark-as-text, etc.) have real, non-URL strings in `content`
+      // (the caption text, the @username, ...), and treating every layer's content as a
+      // would-be asset URL threw "Asset inválido" and aborted the ENTIRE render the moment any
+      // template included a text layer. Mirrors render-worker/src/downloader.ts's type-based
+      // matching, which never had this bug since it only inspects content for these types.
+      const ASSET_BEARING_TYPES = new Set(['video', 'image', 'logo', 'dynamicimage', 'avatar', 'audio', 'audiolayer', 'background']);
       const resolvedAssets = new Map<string, string>();
       for (const layer of renderLayers) {
+        if (!ASSET_BEARING_TYPES.has(layer.type)) continue;
         const contentUrl = layer.data?.content || layer.data?.url || layer.data?.videoUrl;
-        if (contentUrl) {
-          if (contentUrl.startsWith('/') && fs.existsSync(path.join(process.cwd(), 'public', contentUrl))) {
-            resolvedAssets.set(layer.id, path.join(process.cwd(), 'public', contentUrl));
-          } else if (isAllowedAssetUrl(contentUrl)) {
-            resolvedAssets.set(layer.id, contentUrl); // Use directly if remote and from an allowed host
-          } else {
-            addLog('Validar Assets', `Asset da camada "${layer.id}" rejeitado: URL não é um caminho local válido nem pertence a um host permitido (${contentUrl}).`, true);
-            throw new Error(`Asset inválido ou não permitido na camada "${layer.id}".`);
-          }
+        if (!contentUrl || typeof contentUrl !== 'string' || contentUrl.trim() === '') continue;
+        if (contentUrl.startsWith('/') && fs.existsSync(path.join(process.cwd(), 'public', contentUrl))) {
+          resolvedAssets.set(layer.id, path.join(process.cwd(), 'public', contentUrl));
+        } else if (isAllowedAssetUrl(contentUrl)) {
+          resolvedAssets.set(layer.id, contentUrl); // Use directly if remote and from an allowed host
+        } else {
+          addLog('Validar Assets', `Asset da camada "${layer.id}" rejeitado: URL não é um caminho local válido nem pertence a um host permitido (${contentUrl}).`, true);
+          throw new Error(`Asset inválido ou não permitido na camada "${layer.id}".`);
         }
       }
 

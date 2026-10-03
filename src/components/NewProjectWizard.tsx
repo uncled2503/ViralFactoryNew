@@ -22,10 +22,12 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
-  HardDrive
+  HardDrive,
+  UserCircle2
 } from 'lucide-react';
 import { uploadFileToServer } from '../utils/uploadFile';
 import { authenticatedFetch } from '../utils/api';
+import { compileTemplateLayers } from '../utils/compileTemplateLayers';
 import { StorageFilePicker } from './StorageFilePicker';
 import { StorageFile, Project, RenderingTask, AspectRatio } from '../types';
 
@@ -83,7 +85,7 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
   const selectedTemplateCanvas = ASPECT_CANVAS_SIZE[selectedTemplateAspect];
 
   // Step 3 States
-  const [sourceVideos, setSourceVideos] = useState<Array<{ id: string; name: string; size: string; progress: number; status: 'uploading' | 'completed' | 'error'; url?: string; headline?: string }>>([]);
+  const [sourceVideos, setSourceVideos] = useState<Array<{ id: string; name: string; size: string; progress: number; status: 'uploading' | 'completed' | 'error'; url?: string; headline?: string; avatarUrl?: string; username?: string }>>([]);
   const [sourceDragActive, setSourceDragActive] = useState(false);
   const sourceFileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
@@ -91,10 +93,12 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
   const [batchResult, setBatchResult] = useState<{ total: number; successCount: number; blocked: boolean } | null>(null);
   const [showVideoPicker, setShowVideoPicker] = useState(false);
 
-  // Step 4 States (AI headline generation per video, reviewed/edited before the batch fires)
+  // Step 4 States (AI headline generation + avatar/username per video, reviewed before the batch fires)
   const [headlineSuggestions, setHeadlineSuggestions] = useState<Record<string, string[]>>({});
   const [generatingHeadlineIds, setGeneratingHeadlineIds] = useState<Set<string>>(new Set());
   const [isGeneratingAllHeadlines, setIsGeneratingAllHeadlines] = useState(false);
+  const [uploadingAvatarIds, setUploadingAvatarIds] = useState<Set<string>>(new Set());
+  const avatarFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   // Template Drag & Drop Handlers
   const handleTemplateDrag = (e: React.DragEvent) => {
@@ -283,6 +287,25 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
     setIsGeneratingAllHeadlines(false);
   };
 
+  const handleAvatarFileChange = async (videoId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploadingAvatarIds(prev => new Set(prev).add(videoId));
+    try {
+      const assetUrl = await uploadFileToServer(file);
+      setSourceVideos(prev => prev.map(v => v.id === videoId ? { ...v, avatarUrl: assetUrl } : v));
+    } catch (err: any) {
+      showToast(`Erro ao enviar a foto de perfil: ${err.message || 'erro desconhecido'}`, 'error');
+    } finally {
+      setUploadingAvatarIds(prev => {
+        const next = new Set(prev);
+        next.delete(videoId);
+        return next;
+      });
+    }
+  };
+
   const handleStartBatchProcessing = async () => {
     if (sourceVideos.length === 0) return;
     setIsProcessingBatch(true);
@@ -290,7 +313,8 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
 
     const defaultTemplate = templates[0] || { id: 'tmp-reels-subtitles', name: 'Legendas Dinâmicas Neon' };
     const templateId = selectedTemplateId || defaultTemplate.id;
-    const templateName = templates.find(t => t.id === templateId)?.name || defaultTemplate.name;
+    const selectedTemplate = templates.find(t => t.id === templateId);
+    const templateName = selectedTemplate?.name || defaultTemplate.name;
 
     // Show every video in the batch as a queued card in Renderizações immediately, instead of
     // them trickling in one by one as each one's actual turn to render comes up — each
@@ -369,23 +393,50 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
         const projectName = `Render [Customizado] - ${video.name.replace(/\.[^/.]+$/, "")}`;
         const description = `Vídeo renderizado via Pipeline Inteligente. Moldura: Customizada (${videoZone.width}x${videoZone.height}).`;
 
+        // Templates built in the Estrutura Automatizada editor (zones for headline/avatar/
+        // username/etc., positioned in % of the canvas) used to be purely decorative here — this
+        // wizard only ever read the template's name/aspect. compileTemplateLayers converts those
+        // zones into the real render pipeline's pixel-based TemplateJSON, with this video's
+        // headline/avatar/username substituted into whichever zone has the matching type. If the
+        // selected template predates the zone editor (no zone-shaped layers), this returns null
+        // and the wizard falls back to its original flat overlay+video composition below.
+        const compiledTemplate = selectedTemplate
+          ? compileTemplateLayers(
+              selectedTemplate,
+              selectedTemplateCanvas.width,
+              selectedTemplateCanvas.height,
+              selectedTemplate.defaultDuration || 30,
+              { videoUrl: video.url, headline: video.headline, avatarUrl: video.avatarUrl, username: video.username }
+            )
+          : null;
+
         const createdProject = createProject(
           projectName,
           description,
           templateId,
           selectedTemplateAspect,
-          {
-            layoutPosition: 'custom',
-            videoZone: { ...videoZone },
-            backgroundImageUrl: templateFile?.url,
-            backgroundVideoUrl: video.url,
-            // Per-video headline, typed manually or generated by AI in Step 4 — left undefined
-            // when the user didn't set one, which keeps this wizard's old default behavior of
-            // not burning any on-screen text into the output (overriding createProject's own
-            // default of using the project name as a headline).
-            title: video.headline || undefined,
-            subtitles: undefined
-          },
+          compiledTemplate
+            ? {
+                layoutPosition: 'custom',
+                videoZone: { ...videoZone },
+                templateJson: compiledTemplate,
+                title: video.headline || undefined,
+                username: video.username || undefined,
+                avatarUrl: video.avatarUrl || undefined,
+                subtitles: undefined
+              }
+            : {
+                layoutPosition: 'custom',
+                videoZone: { ...videoZone },
+                backgroundImageUrl: templateFile?.url,
+                backgroundVideoUrl: video.url,
+                // Per-video headline, typed manually or generated by AI in Step 4 — left
+                // undefined when the user didn't set one, which keeps this wizard's old default
+                // behavior of not burning any on-screen text into the output (overriding
+                // createProject's own default of using the project name as a headline).
+                title: video.headline || undefined,
+                subtitles: undefined
+              },
           true // skipWorkspaceReload — this runs once per video in the batch loop
         );
 
@@ -453,6 +504,7 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
     setHeadlineSuggestions({});
     setGeneratingHeadlineIds(new Set());
     setIsGeneratingAllHeadlines(false);
+    setUploadingAvatarIds(new Set());
   };
 
   return (
@@ -888,6 +940,42 @@ export const NewProjectWizard: React.FC<NewProjectWizardProps> = ({ isOpen, flow
                                 ))}
                               </div>
                             )}
+
+                            <div className="flex items-center gap-2 pt-1">
+                              <input
+                                ref={(el) => { avatarFileInputRefs.current[video.id] = el; }}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleAvatarFileChange(video.id, e)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => avatarFileInputRefs.current[video.id]?.click()}
+                                disabled={uploadingAvatarIds.has(video.id)}
+                                className="shrink-0 w-7 h-7 rounded-full bg-gray-950 border border-gray-800 hover:border-indigo-500/50 overflow-hidden flex items-center justify-center text-gray-500 hover:text-indigo-400 transition cursor-pointer disabled:opacity-40"
+                                title="Enviar foto de perfil"
+                              >
+                                {uploadingAvatarIds.has(video.id) ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                ) : video.avatarUrl ? (
+                                  <img src={video.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                  <UserCircle2 className="w-4 h-4" />
+                                )}
+                              </button>
+                              <input
+                                type="text"
+                                value={video.username || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setSourceVideos(prev => prev.map(v => v.id === video.id ? { ...v, username: val } : v));
+                                }}
+                                placeholder="@usuario (opcional)"
+                                maxLength={40}
+                                className="flex-1 bg-gray-950 border border-gray-850 rounded px-2 py-1.5 text-[11px] text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-indigo-500/50"
+                              />
+                            </div>
                           </div>
                         ))}
                       </div>

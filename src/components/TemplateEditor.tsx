@@ -32,7 +32,9 @@ import {
   Unlock,
   Type as FontIcon,
   MousePointer,
-  Paintbrush
+  Paintbrush,
+  UserCircle2,
+  Square
 } from 'lucide-react';
 
 interface TemplateEditorProps {
@@ -214,12 +216,31 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
       newZone.lineHeight = 1.2;
       newZone.padding = 4;
       newZone.radius = 4;
+    } else if (type === 'avatar') {
+      // Sized to read as roughly square on the standard 1080x1920 canvas (18% * 1080 ≈
+      // 194px, 10% * 1920 ≈ 192px) — a circle avatar needs near-equal pixel width/height or
+      // it renders as an oval.
+      newZone.width = 18;
+      newZone.height = 10;
+      newZone.scale = 100;
+      newZone.shapeType = 'circle';
+      newZone.ringEnabled = true;
+      newZone.ringColor = '#ec4899';
+      newZone.ringWidth = 6;
+      newZone.shadowEnabled = true;
     } else if (type === 'logo' || type === 'dynamicImage') {
       newZone.width = 25;
       newZone.height = 15;
       newZone.scale = 100;
       newZone.radius = 6;
       newZone.shadowEnabled = true;
+    } else if (type === 'overlay') {
+      newZone.width = 100;
+      newZone.height = 100;
+      newZone.x = 0;
+      newZone.y = 0;
+      newZone.color = '#FFFFFF';
+      newZone.opacity = 55;
     } else if (type === 'progressBar') {
       newZone.width = 80;
       newZone.height = 2;
@@ -521,8 +542,10 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
                   { type: 'subheadline', name: 'Subheadline', icon: <Type className="w-3.5 h-3.5 text-purple-400" /> },
                   { type: 'cta', name: 'CTA', icon: <Type className="w-3.5 h-3.5 text-amber-400" /> },
                   { type: 'logo', name: 'Logo', icon: <ImageIcon className="w-3.5 h-3.5 text-emerald-400" /> },
-                  { type: 'instagram', name: 'Instagram', icon: <Instagram className="w-3.5 h-3.5 text-pink-400" /> },
+                  { type: 'avatar', name: 'Avatar de Perfil', icon: <UserCircle2 className="w-3.5 h-3.5 text-pink-400" /> },
+                  { type: 'instagram', name: 'Instagram (@)', icon: <Instagram className="w-3.5 h-3.5 text-pink-400" /> },
                   { type: 'watermark', name: 'Watermark', icon: <FontIcon className="w-3.5 h-3.5 text-slate-400" /> },
+                  { type: 'overlay', name: 'Overlay (Tint)', icon: <Square className="w-3.5 h-3.5 text-gray-400" /> },
                   { type: 'progressBar', name: 'Progresso', icon: <Sliders className="w-3.5 h-3.5 text-teal-400" /> },
                   { type: 'captions', name: 'Legendas Auto', icon: <FontIcon className="w-3.5 h-3.5 text-violet-400" /> },
                   { type: 'freeText', name: 'Texto Livre', icon: <Type className="w-3.5 h-3.5 text-rose-400" /> },
@@ -655,6 +678,29 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
                     ) : zone.type === 'progressBar' ? (
                       <div className="w-full bg-gray-800 h-1 rounded overflow-hidden">
                         <div className="bg-indigo-500 h-full w-[65%]" />
+                      </div>
+                    ) : zone.type === 'overlay' ? (
+                      <div
+                        className="absolute inset-0 flex items-center justify-center"
+                        style={{ backgroundColor: zone.color || '#FFFFFF', opacity: (zone.opacity ?? 55) / 100 }}
+                      >
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-gray-900 mix-blend-difference">OVERLAY</span>
+                      </div>
+                    ) : zone.type === 'avatar' || zone.type === 'logo' || zone.type === 'dynamicImage' ? (
+                      <div className="flex flex-col items-center justify-center gap-1 w-full h-full">
+                        <div
+                          className="flex items-center justify-center bg-gray-800 text-gray-400 overflow-hidden"
+                          style={{
+                            width: zone.shapeType === 'circle' ? '70%' : '85%',
+                            aspectRatio: zone.shapeType === 'circle' ? '1 / 1' : undefined,
+                            height: zone.shapeType === 'circle' ? undefined : '70%',
+                            borderRadius: zone.shapeType === 'circle' ? '9999px' : `${zone.radius || 0}px`,
+                            boxShadow: zone.ringEnabled ? `0 0 0 ${zone.ringWidth ?? 6}px ${zone.ringColor || '#ec4899'}` : undefined,
+                          }}
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                        </div>
+                        <span className="text-[8px] font-mono text-gray-500">{zone.defaultValue}</span>
                       </div>
                     ) : (
                       <div
@@ -827,6 +873,107 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClos
                       <option value="stretch">Esticar (Stretch)</option>
                     </select>
                   </div>
+                </div>
+              )}
+
+              {/* Avatar/Image specific Inspector Options */}
+              {['avatar', 'logo', 'dynamicImage'].includes(selectedZone.type) && (
+                <div className="space-y-4 pt-4 border-t border-gray-900/60">
+                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                    <UserCircle2 className="w-3.5 h-3.5" />
+                    Formato da Imagem
+                  </span>
+
+                  <div className="flex bg-gray-900 p-1 rounded-xl gap-1">
+                    <button
+                      onClick={() => updateZoneField(selectedZone.id, 'shapeType', 'square')}
+                      className={`flex-1 text-center py-1.5 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${(selectedZone.shapeType || 'square') === 'square' ? 'bg-gray-950 text-white shadow-md' : 'text-gray-400 hover:text-gray-200'}`}
+                    >
+                      <Square className="w-3 h-3" />
+                      <span>Quadrado</span>
+                    </button>
+                    <button
+                      onClick={() => updateZoneField(selectedZone.id, 'shapeType', 'circle')}
+                      className={`flex-1 text-center py-1.5 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1.5 ${selectedZone.shapeType === 'circle' ? 'bg-gray-950 text-white shadow-md' : 'text-gray-400 hover:text-gray-200'}`}
+                    >
+                      <UserCircle2 className="w-3 h-3" />
+                      <span>Círculo</span>
+                    </button>
+                  </div>
+
+                  {selectedZone.shapeType === 'circle' && (
+                    <>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!selectedZone.ringEnabled}
+                          onChange={(e) => updateZoneField(selectedZone.id, 'ringEnabled', e.target.checked)}
+                          className="rounded text-indigo-500 accent-indigo-500 cursor-pointer"
+                        />
+                        <span className="text-[10px] font-mono font-semibold text-gray-400">Anel ao redor (estilo Instagram)</span>
+                      </label>
+
+                      {selectedZone.ringEnabled && (
+                        <div className="grid grid-cols-2 gap-2.5 pl-1.5">
+                          <div>
+                            <label className="block text-[9px] font-mono font-semibold text-gray-500 mb-1">Cor do Anel</label>
+                            <input
+                              type="color"
+                              value={selectedZone.ringColor || '#ec4899'}
+                              onChange={(e) => updateZoneField(selectedZone.id, 'ringColor', e.target.value)}
+                              className="w-full h-8 rounded border-0 cursor-pointer bg-transparent p-0"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-mono font-semibold text-gray-500 mb-1">Espessura</label>
+                            <input
+                              type="number"
+                              value={selectedZone.ringWidth ?? 6}
+                              onChange={(e) => updateZoneField(selectedZone.id, 'ringWidth', Math.max(0, parseInt(e.target.value) || 0))}
+                              className="w-full bg-gray-900 border border-gray-850 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {selectedZone.shapeType !== 'circle' && (
+                    <div>
+                      <label className="block text-[9px] font-mono font-semibold text-gray-500 mb-1">Arredondamento (Radius)</label>
+                      <input
+                        type="number"
+                        value={selectedZone.radius || 0}
+                        onChange={(e) => updateZoneField(selectedZone.id, 'radius', Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full bg-gray-900 border border-gray-850 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Overlay (solid color tint) specific Inspector Options */}
+              {selectedZone.type === 'overlay' && (
+                <div className="space-y-4 pt-4 border-t border-gray-900/60">
+                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                    <Square className="w-3.5 h-3.5" />
+                    Cor do Overlay
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={selectedZone.color || '#FFFFFF'}
+                      onChange={(e) => updateZoneField(selectedZone.id, 'color', e.target.value)}
+                      className="w-10 h-8 bg-gray-900 border border-gray-850 rounded-lg p-0.5 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={selectedZone.color || '#FFFFFF'}
+                      onChange={(e) => updateZoneField(selectedZone.id, 'color', e.target.value)}
+                      className="flex-1 bg-gray-900 border border-gray-850 rounded-xl px-3 py-1 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <p className="text-[9px] text-gray-500 leading-relaxed">Use a Opacidade acima para controlar a intensidade do efeito (ex: branco a 50-60% cria um visual "lavado" sobre o vídeo de fundo).</p>
                 </div>
               )}
 

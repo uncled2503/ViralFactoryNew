@@ -188,10 +188,14 @@ export class FFmpegGraphBuilder {
             ctx.audioLabels.push(audioLabel);
           }
         }
-      } else if (type === 'image' || type === 'logo' || type === 'watermark') {
+      } else if (type === 'image' || type === 'logo' || type === 'dynamicimage' || type === 'avatar') {
         if (inputIndex !== undefined) {
           const scaledLabel = `[scaled_img_${layer.id}]`;
+          const maskedLabel = `[masked_img_${layer.id}]`;
           const overlayLabel = `[overlay_img_${layer.id}]`;
+
+          const shapeType = layer.data?.styles?.shapeType ?? layer.data?.shapeType;
+          const isCircle = shapeType === 'circle';
 
           const imgFilters = [
             `scale=w='${compiledAnims.scaleW}':h='${compiledAnims.scaleH}'`,
@@ -201,17 +205,70 @@ export class FFmpegGraphBuilder {
           ];
 
           const imageSegment = `[${inputIndex}:v]${imgFilters.join(',')}${scaledLabel}`;
-          const overlaySegment = `${ctx.currentLabel}${scaledLabel}overlay=x='${compiledAnims.x}':y='${compiledAnims.y}':enable='between(t,${start},${end})'${overlayLabel}`;
+          filterSegments.push(imageSegment);
+          let avatarLabel = scaledLabel;
 
-          filterSegments.push(imageSegment, overlaySegment);
+          if (isCircle) {
+            // Per-pixel alpha mask: fully opaque inside the circle inscribed in the scaled box,
+            // transparent outside — the standard ffmpeg idiom for a circular crop (there's no
+            // native "round corners" filter). Verified against a live ffmpeg 8.1 build: geq's
+            // expression evaluator only recognizes uppercase W/H for the current frame's
+            // dimensions — lowercase w/h is an undefined-constant parse error there, not a
+            // silent fallback, so this would have hard-failed every circular-avatar render.
+            const circleMask = `${scaledLabel}format=rgba,geq=lum='lum(X,Y)':a='if(lte(pow(X-(W/2),2)+pow(Y-(H/2),2),pow(min(W,H)/2,2)),255,0)'${maskedLabel}`;
+            filterSegments.push(circleMask);
+            avatarLabel = maskedLabel;
+
+            const ringEnabled = layer.data?.styles?.ringEnabled ?? layer.data?.ringEnabled;
+            if (ringEnabled) {
+              // Ring: a solid-color disc drawn slightly larger than the avatar, overlaid first so
+              // the (inset) avatar sits on top of it — the visible edge forms a flat border ring.
+              // Not a true conic gradient (ffmpeg has no native gradient-angle filter), so this is
+              // a solid color, which still reads as an Instagram-style ring at avatar sizes.
+              const ringColor = TextEngine.safeColor(layer.data?.styles?.ringColor ?? layer.data?.ringColor ?? '#ec4899');
+              const ringWidth = TextEngine.safeNumber(layer.data?.styles?.ringWidth ?? layer.data?.ringWidth, 6, 0, 200);
+              const ringSrcLabel = `[ring_src_${layer.id}]`;
+              const ringMaskedLabel = `[ring_${layer.id}]`;
+              const ringPlacedLabel = `[ring_placed_${layer.id}]`;
+              const avatarOnRingLabel = `[avatar_on_ring_${layer.id}]`;
+
+              filterSegments.push(
+                `color=c=${ringColor}:s=${w + ringWidth * 2}x${h + ringWidth * 2}:d=${duration}${ringSrcLabel}`,
+                `${ringSrcLabel}format=rgba,geq=lum='lum(X,Y)':a='if(lte(pow(X-(W/2),2)+pow(Y-(H/2),2),pow(min(W,H)/2,2)),255,0)'${ringMaskedLabel}`,
+                `${ctx.currentLabel}${ringMaskedLabel}overlay=x='${compiledAnims.x}-${ringWidth}':y='${compiledAnims.y}-${ringWidth}':enable='between(t,${start},${end})'${ringPlacedLabel}`
+              );
+
+              const avatarOverlaySegment = `${ringPlacedLabel}${avatarLabel}overlay=x='${compiledAnims.x}':y='${compiledAnims.y}':enable='between(t,${start},${end})'${avatarOnRingLabel}`;
+              filterSegments.push(avatarOverlaySegment);
+              ctx.currentLabel = avatarOnRingLabel;
+              continue;
+            }
+          }
+
+          const overlaySegment = `${ctx.currentLabel}${avatarLabel}overlay=x='${compiledAnims.x}':y='${compiledAnims.y}':enable='between(t,${start},${end})'${overlayLabel}`;
+          filterSegments.push(overlaySegment);
           ctx.currentLabel = overlayLabel;
         }
+      } else if (type === 'overlay') {
+        // A full solid-color tint over whatever's beneath it (e.g. a semi-transparent white box
+        // over the background video for a washed-out look) — reuses the same drawbox approach as
+        // the 'shape' rectangle below, just under the name TemplateEditor.tsx's zone picker uses.
+        const color = layer.data?.styles?.color ?? layer.data?.color ?? '#FFFFFF';
+        const overlayColorFormatted = TextEngine.safeColor(color);
+        const overlayLabel = `[solid_overlay_${layer.id}]`;
+        const overlaySegment = `${ctx.currentLabel}drawbox=x='${compiledAnims.x}':y='${compiledAnims.y}':w='${compiledAnims.scaleW}':h='${compiledAnims.scaleH}':color='${overlayColorFormatted}@${(opacity / 100).toFixed(2)}':t=fill:enable='between(t,${start},${end})'${overlayLabel}`;
+        filterSegments.push(overlaySegment);
+        ctx.currentLabel = overlayLabel;
       } else if (
         type === 'text' ||
         type === 'headline' ||
         type === 'subheadline' ||
         type === 'subtitle' ||
-        type === 'cta'
+        type === 'cta' ||
+        type === 'instagram' ||
+        type === 'watermark' ||
+        type === 'captions' ||
+        type === 'freetext'
       ) {
         const text = layer.data?.content ?? layer.data?.text ?? '';
         const font = layer.data?.styles?.font ?? layer.data?.font ?? 'Inter';

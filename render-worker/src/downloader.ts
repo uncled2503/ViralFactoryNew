@@ -53,7 +53,7 @@ export class AssetDownloader {
       let url: string | null = null;
       if (type === 'video') {
         url = layer.data?.content || layer.data?.styles?.videoUrl || layer.data?.videoUrl || null;
-      } else if (type === 'image' || type === 'logo' || type === 'watermark') {
+      } else if (type === 'image' || type === 'logo' || type === 'watermark' || type === 'dynamicimage' || type === 'avatar') {
         url = layer.data?.content || layer.data?.styles?.imageUrl || layer.data?.imageUrl || null;
       } else if (type === 'audio' || type === 'audiolayer') {
         url = layer.data?.content || layer.data?.styles?.audioUrl || layer.data?.audioUrl || null;
