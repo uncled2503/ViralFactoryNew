@@ -54,6 +54,8 @@ export interface TemplateModel {
   scenes_count: number;
   layers: any[];
   bg_music_url?: string;
+  background_image_url?: string;
+  background_color?: string;
   is_public: boolean;
   created_at?: string;
   updated_at?: string;

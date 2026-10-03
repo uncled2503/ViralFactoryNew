@@ -34,10 +34,18 @@ export function compileTemplateLayers(
   overrides: TemplateOverrides
 ): { width: number; height: number; duration: number; layers: any[] } | null {
   const zones = template.layers as any[];
-  // Zone-shaped layers always carry `x` (percentage position) — the simpler legacy layer shape
-  // (just {id, type, name, defaultValue}, e.g. createTemplate's default) never does. Same check
-  // TemplateEditor.tsx itself uses to decide whether to load existing layers as zones.
-  if (!zones || zones.length === 0 || zones[0].x === undefined) return null;
+  // Zone-shaped layers (built via TemplateEditor.tsx) always carry `x`/`rotation` as a
+  // PERCENTAGE (0-100) position. Two other layer shapes exist in the wild and must be rejected
+  // here, or their values would be misread as percentages and placed wildly off-canvas:
+  // createTemplate's simple default ({id, type, name, defaultValue}, no `x` at all) and the
+  // older seeded templates (e.g. "Corte Viral Top/Bottom"), which DO have `x`/`width` but as
+  // absolute pixels (up to 1080+) and have no `rotation` field at all.
+  const first = zones[0];
+  const isPercentZoneShape =
+    first && typeof first.x === 'number' && first.x <= 100 &&
+    typeof first.width === 'number' && first.width <= 100 &&
+    first.rotation !== undefined;
+  if (!zones || zones.length === 0 || !isPercentZoneShape) return null;
 
   // One override consumed per matching zone TYPE, not per zone id — a template only ever needs
   // one headline/avatar/username/video slot for this to make sense, and letting the first match
